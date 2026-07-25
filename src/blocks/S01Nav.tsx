@@ -46,6 +46,7 @@ export default function S01Nav() {
   return (
     <>
       <header
+        aria-label="Navegación principal"
         className={`fixed left-1/2 -translate-x-1/2 z-[9999] transition-all duration-500 w-[95%] max-w-6xl rounded-2xl border border-line/30 shadow-[0_8px_32px_0_rgba(27,50,70,0.1)] backdrop-blur-xl flex items-center justify-between ${
           isScrolled ? 'top-4 bg-surface/80 py-3 px-6' : 'top-6 bg-surface/50 py-4 px-6 md:px-8'
         }`}
@@ -60,6 +61,7 @@ export default function S01Nav() {
             <Link
               key={link.label}
               to={link.href}
+              aria-current={location.pathname === link.href ? 'page' : undefined}
               className={`text-sm font-medium transition-colors duration-200 focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4 rounded-sm ${
                 location.pathname === link.href ? 'text-accent' : 'text-fg hover:text-accent'
               }`}
@@ -81,7 +83,7 @@ export default function S01Nav() {
         <button
           className="lg:hidden p-3 -m-3 focus-visible:outline-accent rounded-sm"
           onClick={() => setMobileMenuOpen(true)}
-          aria-label="Open menu"
+          aria-label="Abrir menú"
           aria-expanded={mobileMenuOpen}
         >
           <Menu className="w-6 h-6 text-fg" />
@@ -97,6 +99,9 @@ export default function S01Nav() {
             exit={{ y: -20 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="fixed inset-0 z-[10000] bg-bg flex flex-col pt-24 px-6 pb-12"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menú de navegación"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setMobileMenuOpen(false);
@@ -106,7 +111,7 @@ export default function S01Nav() {
             <button
               className="absolute top-6 right-6 p-2 focus-visible:outline-accent rounded-sm"
               onClick={() => setMobileMenuOpen(false)}
-              aria-label="Close menu"
+              aria-label="Cerrar menú"
             >
               <X className="w-8 h-8 text-fg" />
             </button>
@@ -123,6 +128,7 @@ export default function S01Nav() {
                   key={link.label}
                   to={link.href}
                   onClick={() => setMobileMenuOpen(false)}
+                  aria-current={location.pathname === link.href ? 'page' : undefined}
                   className={`font-display text-3xl font-bold focus-visible:outline-accent rounded-sm inline-block w-max ${
                     location.pathname === link.href ? 'text-accent' : 'text-fg'
                   }`}

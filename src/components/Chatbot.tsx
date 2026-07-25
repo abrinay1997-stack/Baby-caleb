@@ -155,7 +155,7 @@ export default function Chatbot() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Escribe tu mensaje..."
-              maxLength={200}
+              maxLength={250}
               className="flex-1 bg-bg border border-line rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-accent text-fg"
             />
             <button

@@ -1,25 +1,106 @@
 <!doctype html>
-<html lang="es">
+<html lang="es-PA">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
     <title>Baby Caleb Panamá | Pañales y Wipes Nateen hipoalergénicos</title>
-    <meta name="description" content="Pañales Nateen hipoalergénicos, sin cloro, sin perfumes. Talla Prematuro a XL. Delivery en Ciudad de Panamá y punto físico en Super Carnes." />
+    <meta
+      name="description"
+      content="Pañales Nateen hipoalergénicos de bambú, sin cloro, sin perfumes. Talla Prematuro a XL. Delivery en Ciudad de Panamá y retiro en Casa de la Carne (Ancón)."
+    />
     <meta name="theme-color" content="#F9F6ED" />
+    <meta name="author" content="Baby Caleb Panamá" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="%SITE_URL%/" />
 
-    <link rel="icon" type="image/png" href="/img/logo.png" />
-    <link rel="apple-touch-icon" href="/img/logo.png" />
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="64x64" href="/img/favicon-64.png" />
+    <link rel="icon" type="image/png" sizes="256x256" href="/img/logo-badge.png" />
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
 
+    <!-- Fonts: preconnect + async load to avoid render-blocking -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap"
+    />
+
+    <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Baby Caleb Panamá | Pañales y Wipes Nateen" />
-    <meta property="og:description" content="Pañales Nateen hipoalergénicos, sin cloro, sin perfumes. Delivery en Ciudad de Panamá." />
-    <meta property="og:image" content="/img/promo-nateen-familia.png" />
+    <meta property="og:site_name" content="Baby Caleb Panamá" />
+    <meta property="og:title" content="Baby Caleb Panamá | Pañales y Wipes Nateen hipoalergénicos" />
+    <meta
+      property="og:description"
+      content="Pañales y wipes hipoalergénicos, sin cloro, sin perfumes. Delivery en Ciudad de Panamá y retiro en Casa de la Carne / Meat House (Ancón)."
+    />
+    <meta property="og:url" content="%SITE_URL%/" />
+    <meta property="og:image" content="%SITE_URL%/img/og-cover.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:alt" content="Pañales y wipes Nateen hipoalergénicos de Baby Caleb Panamá" />
     <meta property="og:locale" content="es_PA" />
 
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Baby Caleb Panamá" />
-    <meta name="twitter:description" content="Pañales y wipes hipoalergénicos Nateen." />
-    <meta name="twitter:image" content="/img/promo-nateen-familia.png" />
+    <meta name="twitter:title" content="Baby Caleb Panamá | Pañales y Wipes Nateen" />
+    <meta name="twitter:description" content="Pañales y wipes hipoalergénicos Nateen, sin cloro y sin perfumes. Delivery en Ciudad de Panamá." />
+    <meta name="twitter:image" content="%SITE_URL%/img/og-cover.png" />
+    <meta name="twitter:image:alt" content="Pañales y wipes Nateen hipoalergénicos de Baby Caleb Panamá" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "%SITE_URL%/#organization",
+            "name": "Baby Caleb Panamá",
+            "url": "%SITE_URL%/",
+            "logo": "%SITE_URL%/img/logo.png",
+            "image": "%SITE_URL%/img/og-cover.png",
+            "description": "Especialistas en pañales y wipes hipoalergénicos Nateen en Panamá.",
+            "email": "babycalebpanama@gmail.com",
+            "telephone": "+507-6757-5065",
+            "sameAs": [
+              "https://instagram.com/babycalebpanama",
+              "https://wa.me/50767575065"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "%SITE_URL%/#website",
+            "url": "%SITE_URL%/",
+            "name": "Baby Caleb Panamá",
+            "inLanguage": "es-PA",
+            "publisher": { "@id": "%SITE_URL%/#organization" }
+          },
+          {
+            "@type": "Store",
+            "name": "Baby Caleb Panamá",
+            "image": "%SITE_URL%/img/og-cover.png",
+            "url": "%SITE_URL%/",
+            "telephone": "+507-6757-5065",
+            "priceRange": "$$",
+            "currenciesAccepted": "USD",
+            "areaServed": "Ciudad de Panamá",
+            "openingHours": "Mo-Sa 09:00-18:00",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Ciudad de Panamá",
+              "addressCountry": "PA"
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -34,7 +34,8 @@ export interface ProductVariant {
   size: string;
   range: string;
   units: string;
-  price: number;
+  /** Precio en USD. Ausente cuando se cotiza por WhatsApp (ej. Fulares Moon). */
+  price?: number;
   image: string;
 }
 
@@ -43,7 +44,8 @@ export interface ProductData {
   name: string;
   description: string;
   image: string;
-  priceFrom: number;
+  /** Precio "desde". Ausente cuando el producto se cotiza por WhatsApp. */
+  priceFrom?: number;
   variants: ProductVariant[];
 }
 

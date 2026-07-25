@@ -37,16 +37,23 @@ export default function S14FAQ() {
           return (
             <div key={idx} className="faq-item bg-bg border border-line rounded-xl overflow-hidden">
               <button
+                id={`faq-q-${idx}`}
                 className="w-full text-left px-6 py-6 flex items-center justify-between focus-visible:outline-accent"
                 onClick={() => setOpenIndex(isOpen ? null : idx)}
                 aria-expanded={isOpen}
+                aria-controls={`faq-a-${idx}`}
               >
                 <span className="font-bold text-fg pr-8">{faq.q}</span>
                 <ChevronDown
-                  className={cn("w-5 h-5 text-muted transition-transform duration-300", isOpen && "rotate-180")}
+                  className={cn("w-5 h-5 text-muted transition-transform duration-300 flex-shrink-0", isOpen && "rotate-180")}
+                  aria-hidden="true"
                 />
               </button>
               <div
+                id={`faq-a-${idx}`}
+                role="region"
+                aria-labelledby={`faq-q-${idx}`}
+                aria-hidden={!isOpen}
                 className={cn(
                   "grid transition-all duration-300 ease-in-out",
                   isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"

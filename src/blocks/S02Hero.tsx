@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import SplitType from 'split-type';
 import { getContentData } from '../data/content';
@@ -89,12 +90,12 @@ export default function S02Hero() {
             >
               {data.cta.label}
             </a>
-            <a
-              href="/productos"
-              className="flex w-full sm:inline-flex items-center justify-center border border-line bg-bg/60 backdrop-blur text-fg px-8 py-4 rounded-pill font-bold text-lg hover:border-accent hover:text-accent transition-colors"
+            <Link
+              to="/productos"
+              className="flex w-full sm:inline-flex items-center justify-center border border-line bg-bg/60 backdrop-blur text-fg px-8 py-4 rounded-pill font-bold text-lg hover:border-accent hover:text-accent transition-colors focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4"
             >
               Ver catálogo
-            </a>
+            </Link>
           </div>
         </div>
 

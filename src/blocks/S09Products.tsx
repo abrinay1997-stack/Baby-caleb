@@ -47,12 +47,12 @@ export default function S09Products() {
                   decoding="async"
                 />
                 <span className="absolute top-4 left-4 bg-bg/90 backdrop-blur text-fg font-bold text-xs px-3 py-1.5 rounded-pill border border-line">
-                  Desde ${product.priceFrom}
+                  {product.priceFrom != null ? `Desde $${product.priceFrom}` : 'Consultar'}
                 </span>
               </div>
               <div className="p-8 flex flex-col flex-grow">
                 <h3 className="text-2xl text-fg mb-3 leading-tight">{product.name}</h3>
-                <p className="text-muted text-sm mb-6 flex-grow leading-relaxed">
+                <p className="text-muted text-sm mb-6 leading-relaxed">
                   {product.description}
                 </p>
 
@@ -68,7 +68,7 @@ export default function S09Products() {
                           <span className="font-bold text-fg">{v.size}</span>
                           <span className="text-muted"> · {v.units}</span>
                         </div>
-                        <span className="font-bold text-accent">${v.price}</span>
+                        <span className="font-bold text-accent">{v.price != null ? `$${v.price}` : 'Consultar'}</span>
                       </div>
                     ))}
                   </div>
@@ -78,7 +78,8 @@ export default function S09Products() {
                   href={`${WHATSAPP_BASE}${message}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={buttonVariants({ variant: 'outline', className: 'w-full' })}
+                  aria-label={`Pedir ${product.name} por WhatsApp`}
+                  className={buttonVariants({ variant: 'outline', className: 'w-full mt-auto' })}
                 >
                   Pedir por WhatsApp
                 </a>

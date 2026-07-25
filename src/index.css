@@ -28,3 +28,27 @@
     text-wrap: balance;
   }
 }
+
+/* La barra de navegación es fixed; damos scroll-margin a las secciones con id
+   para que al enlazar por ancla no queden ocultas debajo del nav. */
+:where(section[id], [id].scroll-anchor) {
+  scroll-margin-top: 7rem;
+}
+
+/* Evita scroll horizontal accidental por blobs/animaciones que sobresalen. */
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* Respeta la preferencia de movimiento reducido a nivel global. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
