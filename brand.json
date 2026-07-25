@@ -1,0 +1,23 @@
+{
+  "brand": "baby-caleb",
+  "family": "E",
+  "color": {
+    "bg": "#F9F6ED",
+    "surface": "#F2EFE5",
+    "fg": "#1B3246",
+    "muted": "rgba(27, 50, 70, 0.7)",
+    "line": "rgba(27, 50, 70, 0.12)",
+    "accent": "#EE924A",
+    "accent-fg": "#F9F6ED",
+    "sage": "#91C9A2"
+  },
+  "type": {
+    "display": "Montserrat",
+    "body": "Montserrat",
+    "utility": "Montserrat",
+    "displayWeight": 700,
+    "heroScale": 1.0
+  },
+  "motion": { "intensity": "high", "smoothScroll": true, "pageTransitions": true },
+  "signature": "soft-3d-floating"
+}

@@ -1,0 +1,55 @@
+:root {
+  /* ---------- ESPACIADO ---------- */
+  --sp-1: 0.25rem;  --sp-2: 0.5rem;   --sp-3: 0.75rem;  --sp-4: 1rem;
+  --sp-6: 1.5rem;   --sp-8: 2rem;     --sp-12: 3rem;    --sp-16: 4rem;
+  --sp-24: 6rem;    --sp-32: 8rem;    --sp-48: 12rem;   --sp-64: 16rem;
+
+  --section-y:      clamp(6rem, 12vh, 12rem);
+  --section-y-lg:   clamp(10rem, 20vh, 20rem);
+  --block-gap:      clamp(2rem, 5vw, 6rem);
+
+  /* ---------- LAYOUT ---------- */
+  --gutter:      clamp(1.25rem, 5vw, 5rem);
+  --container:   80rem;      /* 1280px */
+  --container-wide: 100rem;
+  --measure:     68ch;       
+
+  /* ---------- TIPOGRAFÍA FLUIDA ---------- */
+  --fs-mono:    0.6875rem;                              
+  --fs-xs:      clamp(0.75rem, 0.72rem + 0.15vw, 0.8125rem);
+  --fs-sm:      clamp(0.875rem, 0.84rem + 0.18vw, 0.9375rem);
+  --fs-base:    clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --fs-lg:      clamp(1.25rem, 1.1rem + 0.7vw, 1.5rem);
+  --fs-xl:      clamp(1.75rem, 1.4rem + 1.6vw, 2.5rem);
+  --fs-2xl:     clamp(2.25rem, 1.6rem + 3vw, 4rem);
+  --fs-3xl:     clamp(3rem, 1.8rem + 6vw, 6.5rem);
+  --fs-hero:    clamp(3.5rem, 1.5rem + 11vw, 8rem);  
+
+  --lh-tight: 1.15;  --lh-snug: 1.25;  --lh-body: 1.6;  --lh-relaxed: 1.75;
+  --tr-display: -0.03em;   
+  --tr-body: 0em;
+  --tr-mono: 0.14em;       
+
+  /* ---------- LÍNEAS, RADIOS, ELEVACIÓN ---------- */
+  --hairline: 1px;
+  --r-none: 0; --r-sm: 8px; --r-md: 16px; --r-lg: 24px; --r-pill: 999px;
+  --shadow-glow: 0 0 80px -20px var(--accent);
+  --shadow-soft: 0 4px 20px -2px rgba(27, 50, 70, 0.05);
+
+  /* ---------- MOVIMIENTO ---------- */
+  --d-fast:   0.25s;   
+  --d-base:   0.6s;    
+  --d-slow:   1.0s;    
+  --d-cine:   1.4s;    
+  --ease-out:   cubic-bezier(0.16, 1, 0.3, 1);      
+  --ease-inout: cubic-bezier(0.76, 0, 0.24, 1);     
+  --ease-soft:  cubic-bezier(0.33, 1, 0.68, 1);     
+  --stagger: 0.045s;
+
+  /* ---------- CAPAS ---------- */
+  --z-canvas: 0; --z-content: 10; --z-nav: 100; --z-cursor: 500; --z-overlay: 1000;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --d-fast:0.01s; --d-base:0.01s; --d-slow:0.01s; --d-cine:0.01s; --stagger:0s; }
+}

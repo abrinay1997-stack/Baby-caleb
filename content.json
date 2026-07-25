@@ -1,0 +1,103 @@
+{
+  "meta": {
+    "title": "Baby Caleb Panamá | Cuidado Hipoalergénico",
+    "description": "Pañales y wipes hipoalergénicos Nateen y fulares Moon en Panamá. Cuidado suave y ecológico para la piel de tu bebé.",
+    "ogImage": ""
+  },
+  "hero": {
+    "kicker": "EN BABY CALEB PANAMÁ PENSAMOS EN CADA ETAPA",
+    "h1": "Cuidado hipoalergénico para la piel de tu bebé",
+    "sub": "Sin químicos agresivos, sin perfumes, sin alcohol, sin cloro.",
+    "cta": {
+      "label": "Pedir por WhatsApp",
+      "href": "https://wa.me/50767575065"
+    }
+  },
+  "trust": [
+    { "icon": "leaf", "label": "Hipoalergénico" },
+    { "icon": "droplet-off", "label": "Sin cloro" },
+    { "icon": "recycle", "label": "Biodegradable" },
+    { "icon": "heart", "label": "Piel sensible" }
+  ],
+  "products": [
+    {
+      "id": "nateen-diapers",
+      "name": "Pañales Nateen",
+      "description": "Pañales ecológicos, hipoalergénicos y súper absorbentes.",
+      "sizes": ["RN", "S", "M", "L", "XL", "XXL (+55 lbs)"],
+      "options": ["Paquete pequeño", "Caja grande"],
+      "image": "diapers"
+    },
+    {
+      "id": "nateen-wipes",
+      "name": "Wipes Nateen",
+      "description": "Toallitas húmedas hipoalergénicas, 99% agua.",
+      "sizes": ["Paquete 80 uds"],
+      "options": ["Unidad", "Caja"],
+      "image": "wipes"
+    },
+    {
+      "id": "moon-wraps",
+      "name": "Fulares Moon",
+      "description": "Portabebés ergonómicos, prearmados y ajustables.",
+      "sizes": ["Unitalla (RN a 25 lbs)"],
+      "options": ["Varios colores"],
+      "image": "wrap"
+    }
+  ],
+  "differentiators": [
+    { "title": "Prueba de talla", "text": "Paquetes pequeños disponibles para que encuentres la talla ideal." },
+    { "title": "Talla XXL", "text": "Disponemos de tallas grandes para niños de más de 55 libras." },
+    { "title": "Atención Personal", "text": "Asesoría directa y humana a través de WhatsApp." },
+    { "title": "Delivery y Retiro", "text": "Entregas a domicilio o retiro en Casa de la Carne, Ancón." }
+  ],
+  "education": [
+    {
+      "question": "¿Sabías que no es lo mismo 'libre de cloro' que 'sin cloro'?",
+      "answer": "Nuestros pañales Nateen son TCF (Totally Chlorine Free), lo que significa que no se usó ningún tipo de compuesto de cloro en el blanqueo de la pulpa. ¡No te dejes engañar!"
+    }
+  ],
+  "testimonials": [
+    {
+      "name": "Elizabeth M.",
+      "role": "Mamá de 2",
+      "quote": "Desde que usamos Nateen, las irritaciones desaparecieron por completo. La talla XXL fue un salvavidas.",
+      "result": "Cero alergias",
+      "date": "2026-06-15"
+    },
+    {
+      "name": "Ana C.",
+      "role": "Mamá primeriza",
+      "quote": "El fular Moon es súper fácil de usar. Me encanta poder tener a mi bebé cerca mientras hago mis cosas.",
+      "result": "Porteo seguro",
+      "date": "2026-07-10"
+    }
+  ],
+  "howToBuy": [
+    { "step": "01", "title": "Escríbenos", "text": "Contáctanos directamente por WhatsApp." },
+    { "step": "02", "title": "Elige", "text": "Selecciona el producto, presentación y talla ideal." },
+    { "step": "03", "title": "Recibe", "text": "Pide delivery o retira en nuestro punto físico." }
+  ],
+  "faq": [
+    { "q": "¿Cómo sé qué talla necesita mi bebé?", "a": "Las tallas de pañales van por peso. RN, S, M, L, XL, y XXL para +55 lbs. Consúltanos por WhatsApp para asesorarte." },
+    { "q": "¿Cuál es la diferencia entre hipoalergénico y sin cloro?", "a": "Hipoalergénico significa que tiene bajo riesgo de causar alergias. Sin cloro (TCF) asegura que no hay residuos tóxicos del blanqueamiento." },
+    { "q": "¿Tienen punto físico?", "a": "Sí, puedes retirar tus pedidos en Casa de la Carne / Meat House en Ancón, Panamá." }
+  ],
+  "nap": {
+    "address": "Casa de la Carne / Meat House, Ancón, Panamá",
+    "phone": "+507 6757-5065",
+    "hours": ["Lunes a Sábado: 9:00 - 18:00"],
+    "maps": ""
+  },
+  "legal": {
+    "company": "Baby Caleb Panamá",
+    "vat": "",
+    "privacyUrl": "/privacidad"
+  },
+  "social": {
+    "instagram": "@babycalebpanama",
+    "facebook": "Baby Caleb",
+    "whatsapp": "https://wa.me/50767575065",
+    "email": "babycalebpanama@gmail.com"
+  }
+}
