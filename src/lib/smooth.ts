@@ -44,3 +44,17 @@ export function initSmoothScroll() {
   // fuerza un refresh para que las secciones que ya estén en viewport disparen.
   requestAnimationFrame(() => ScrollTrigger.refresh());
 }
+
+/**
+ * Salta al tope de la página. Usa Lenis cuando está activo (para no pelear con
+ * su rAF) y cae a window.scrollTo cuando el smooth scroll está deshabilitado
+ * (p. ej. con prefers-reduced-motion).
+ */
+export function scrollToTop() {
+  if (typeof window === 'undefined') return;
+  if (lenis) {
+    lenis.scrollTo(0, { immediate: true });
+  } else {
+    window.scrollTo(0, 0);
+  }
+}

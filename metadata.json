@@ -1,6 +1,6 @@
 {
   "name": "Baby Caleb Panamá",
-  "description": "Catálogo web de Baby Caleb Panamá - Pañales hipoalergénicos Nateen y fulares Moon.",
+  "description": "Catálogo web de Baby Caleb Panamá - Pañales y wipes hipoalergénicos Nateen.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -5,7 +5,7 @@
 
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { initSmoothScroll } from './lib/smooth';
+import { initSmoothScroll, scrollToTop } from './lib/smooth';
 
 import S01Nav from './blocks/S01Nav';
 import S20Footer from './blocks/S20Footer';
@@ -22,7 +22,7 @@ import Tips from './pages/Tips';
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
-    window.scrollTo(0, 0);
+    scrollToTop();
   }, [pathname]);
   return null;
 }
@@ -35,6 +35,12 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[10001] focus:bg-accent focus:text-accent-fg focus:px-5 focus:py-3 focus:rounded-pill focus:font-bold focus:shadow-soft"
+      >
+        Saltar al contenido
+      </a>
       <div className="bg-bg min-h-screen text-fg font-body">
         <S01Nav />
         <Routes>
@@ -52,4 +58,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-

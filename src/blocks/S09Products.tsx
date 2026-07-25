@@ -52,7 +52,7 @@ export default function S09Products() {
               </div>
               <div className="p-8 flex flex-col flex-grow">
                 <h3 className="text-2xl text-fg mb-3 leading-tight">{product.name}</h3>
-                <p className="text-muted text-sm mb-6 flex-grow leading-relaxed">
+                <p className="text-muted text-sm mb-6 leading-relaxed">
                   {product.description}
                 </p>
 
@@ -78,7 +78,8 @@ export default function S09Products() {
                   href={`${WHATSAPP_BASE}${message}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={buttonVariants({ variant: 'outline', className: 'w-full' })}
+                  aria-label={`Pedir ${product.name} por WhatsApp`}
+                  className={buttonVariants({ variant: 'outline', className: 'w-full mt-auto' })}
                 >
                   Pedir por WhatsApp
                 </a>
