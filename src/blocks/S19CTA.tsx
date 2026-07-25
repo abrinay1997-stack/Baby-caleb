@@ -8,9 +8,7 @@ export default function S19CTA() {
 
   const containerRef = useGsapContext(() => {
     gsap.from('.cta-content > *', {
-      y: 40,
-      opacity: 0,
-      duration: 1,
+      y: 40,      duration: 1,
       stagger: 0.15,
       ease: 'power3.out',
       scrollTrigger: {

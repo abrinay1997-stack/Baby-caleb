@@ -1,84 +1,115 @@
 import { gsap } from 'gsap';
 import { getContentData } from '../data/content';
 import { useGsapContext } from '../hooks/useGsapContext';
-import { MapPin, Phone, Clock } from 'lucide-react';
+import { MapPin, Phone, Clock, Truck, Store } from 'lucide-react';
 import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
 
 export default function S18Coverage() {
-  const data = getContentData().nap;
+  const { nap, coverage } = getContentData();
 
   const containerRef = useGsapContext(() => {
     gsap.from('.cov-content > *', {
       y: 20,
-      opacity: 0,
       duration: 0.8,
       stagger: 0.1,
       ease: 'power3.out',
       scrollTrigger: {
         trigger: containerRef.current,
         start: 'top 80%',
-      }
+      },
     });
-    
-    gsap.from('.cov-map', {
-      opacity: 0,
-      scale: 0.95,
-      duration: 1,
+    gsap.from('.cov-block', {
+      y: 20,
+      duration: 0.8,
+      stagger: 0.1,
       ease: 'power3.out',
       scrollTrigger: {
         trigger: containerRef.current,
         start: 'top 80%',
-      }
+      },
     });
   });
 
   return (
     <Section ref={containerRef} variant="bg" className="border-t border-line">
-      <div className="grid md:grid-cols-2 gap-12 items-center">
+      <div className="grid md:grid-cols-2 gap-12 items-start">
         <div className="cov-content flex flex-col gap-8">
-          <SectionHeader 
-            kicker="05 / Ubicación" 
-            title="Encuéntranos en Ancón." 
+          <SectionHeader
+            kicker="05 / Cobertura"
+            title="Delivery y puntos físicos."
           />
-          
+
           <div className="space-y-6">
-            <div className="flex gap-4">
-              <MapPin className="w-6 h-6 text-sage flex-shrink-0" />
-              <div>
-                <h4 className="font-bold text-fg mb-1">Dirección Física</h4>
-                <p className="text-muted">{data.address}</p>
-              </div>
-            </div>
-            
             <div className="flex gap-4">
               <Phone className="w-6 h-6 text-sage flex-shrink-0" />
               <div>
                 <h4 className="font-bold text-fg mb-1">Teléfono / WhatsApp</h4>
-                <a href={`tel:${data.phone.replace(/ /g, '')}`} className="text-muted hover:text-accent transition-colors">
-                  {data.phone}
+                <a
+                  href={`tel:${nap.phone.replace(/ /g, '')}`}
+                  className="text-muted hover:text-accent transition-colors"
+                >
+                  {nap.phone}
                 </a>
               </div>
             </div>
-            
+
             <div className="flex gap-4">
               <Clock className="w-6 h-6 text-sage flex-shrink-0" />
               <div>
                 <h4 className="font-bold text-fg mb-1">Horario</h4>
-                {data.hours.map((h, i) => (
-                  <p key={i} className="text-muted">{h}</p>
+                {nap.hours.map((h, i) => (
+                  <p key={i} className="text-muted">
+                    {h}
+                  </p>
                 ))}
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <MapPin className="w-6 h-6 text-sage flex-shrink-0" />
+              <div>
+                <h4 className="font-bold text-fg mb-1">Puntos físicos</h4>
+                <p className="text-muted">{nap.address}</p>
               </div>
             </div>
           </div>
         </div>
-        
-        <div className="cov-map aspect-square md:aspect-auto md:h-[400px] bg-surface rounded-2xl border border-line flex items-center justify-center p-8">
-           {/* Map placeholder */}
-           <div className="text-center text-muted">
-              <MapPin className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="font-mono text-sm uppercase">Mapa (Google Maps Lazy Load)</p>
-           </div>
+
+        <div className="grid gap-6">
+          <div className="cov-block bg-surface border border-line rounded-2xl p-6 md:p-8">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center text-sage">
+                <Truck size={20} />
+              </div>
+              <h3 className="font-bold text-lg text-fg">Delivery</h3>
+            </div>
+            <ul className="space-y-3">
+              {coverage.delivery.map((d, i) => (
+                <li key={i} className="flex items-start justify-between gap-4 text-sm border-b border-line last:border-b-0 pb-3 last:pb-0">
+                  <span className="text-fg">{d.zona}</span>
+                  <span className="mono text-xs text-accent whitespace-nowrap">{d.costo}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="cov-block bg-surface border border-line rounded-2xl p-6 md:p-8">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center text-sage">
+                <Store size={20} />
+              </div>
+              <h3 className="font-bold text-lg text-fg">Puntos de retiro</h3>
+            </div>
+            <ul className="space-y-3">
+              {coverage.stores.map((s, i) => (
+                <li key={i} className="flex flex-col text-sm border-b border-line last:border-b-0 pb-3 last:pb-0">
+                  <span className="font-bold text-fg">{s.name}</span>
+                  <span className="text-muted text-xs">{s.address}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </Section>

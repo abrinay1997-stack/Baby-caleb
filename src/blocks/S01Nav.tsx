@@ -37,6 +37,8 @@ export default function S01Nav() {
   const links = [
     { label: 'Productos', href: '/productos' },
     { label: 'Beneficios', href: '/beneficios' },
+    { label: 'Historia', href: '/historia' },
+    { label: 'Tips', href: '/tips' },
     { label: 'Cómo comprar', href: '/como-comprar' },
     { label: 'FAQ', href: '/faq' }
   ];
@@ -53,7 +55,7 @@ export default function S01Nav() {
         </Link>
 
         {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-8">
+        <nav className="hidden lg:flex items-center gap-6 xl:gap-8">
           {links.map((link) => (
             <Link
               key={link.label}
@@ -69,7 +71,7 @@ export default function S01Nav() {
             href={whatsappLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="bg-accent text-accent-fg px-6 py-2.5 rounded-pill text-sm font-bold hover:opacity-90 transition-opacity focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4 shadow-soft"
+            className="bg-accent text-accent-fg px-5 py-2.5 rounded-pill text-sm font-bold hover:opacity-90 transition-opacity focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4 shadow-soft"
           >
             Pedir por WhatsApp
           </a>
@@ -77,7 +79,7 @@ export default function S01Nav() {
 
         {/* Mobile Toggle */}
         <button
-          className="md:hidden p-3 -m-3 focus-visible:outline-accent rounded-sm"
+          className="lg:hidden p-3 -m-3 focus-visible:outline-accent rounded-sm"
           onClick={() => setMobileMenuOpen(true)}
           aria-label="Open menu"
           aria-expanded={mobileMenuOpen}
@@ -90,9 +92,9 @@ export default function S01Nav() {
       <AnimatePresence>
         {mobileMenuOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            exit={{ y: -20 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="fixed inset-0 z-[10000] bg-bg flex flex-col pt-24 px-6 pb-12"
             onClick={(e) => {

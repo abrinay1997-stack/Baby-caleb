@@ -9,9 +9,7 @@ export default function S11Testimonials() {
 
   const containerRef = useGsapContext(() => {
     gsap.from('.test-card', {
-      y: 40,
-      opacity: 0,
-      duration: 0.8,
+      y: 40,      duration: 0.8,
       stagger: 0.2,
       ease: 'power3.out',
       scrollTrigger: {

@@ -12,9 +12,7 @@ export default function S03Education() {
   const containerRef = useGsapContext((ctx) => {
     let qSplit = new SplitType(qRef.current!, { types: 'words' });
     
-    gsap.from(qSplit.words, {
-      opacity: 0.2,
-      duration: 1,
+    gsap.from(qSplit.words, {      duration: 1,
       ease: 'none',
       stagger: 0.1,
       scrollTrigger: {
@@ -25,9 +23,7 @@ export default function S03Education() {
       }
     });
     
-    gsap.from('.edu-ans', {
-      opacity: 0,
-      y: 20,
+    gsap.from('.edu-ans', {      y: 20,
       duration: 0.8,
       ease: 'power3.out',
       scrollTrigger: {

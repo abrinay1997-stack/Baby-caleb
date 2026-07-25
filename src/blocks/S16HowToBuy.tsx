@@ -9,9 +9,7 @@ export default function S16HowToBuy() {
 
   const containerRef = useGsapContext(() => {
     gsap.from('.buy-step', {
-      x: -30,
-      opacity: 0,
-      duration: 0.8,
+      x: -30,      duration: 0.8,
       stagger: 0.15,
       ease: 'power3.out',
       scrollTrigger: {

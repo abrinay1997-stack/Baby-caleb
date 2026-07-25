@@ -9,17 +9,28 @@ export default function S20Footer() {
       <div className="container-normal">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
           <div className="md:col-span-2">
-            <span className="font-display font-bold text-2xl text-fg tracking-tight block mb-4">Baby Caleb</span>
+            <img
+              src="/img/logo.png"
+              alt="Baby Caleb — pañales desechables"
+              className="w-32 h-32 md:w-36 md:h-36 object-contain mb-4"
+              loading="lazy"
+              decoding="async"
+            />
             <p className="text-muted text-sm max-w-sm">
-              Especialistas en pañales hipoalergénicos Nateen y fulares Moon. Cuidando de tu bebé en cada etapa.
+              Especialistas en pañales y wipes hipoalergénicos Nateen — cuidamos la piel de tu bebé en cada etapa.
+            </p>
+            <p className="text-muted text-xs italic mt-4 max-w-sm">
+              «Los hijos son un regalo del Señor; son una recompensa de su parte.» — Salmos 127:3
             </p>
           </div>
-          
+
           <div>
             <h4 className="font-bold text-fg mb-4">Enlaces</h4>
             <ul className="space-y-2">
               <li><Link to="/productos" className="text-sm text-muted hover:text-accent transition-colors">Productos</Link></li>
               <li><Link to="/beneficios" className="text-sm text-muted hover:text-accent transition-colors">Beneficios</Link></li>
+              <li><Link to="/historia" className="text-sm text-muted hover:text-accent transition-colors">Historia</Link></li>
+              <li><Link to="/tips" className="text-sm text-muted hover:text-accent transition-colors">Tips</Link></li>
               <li><Link to="/como-comprar" className="text-sm text-muted hover:text-accent transition-colors">Cómo comprar</Link></li>
               <li><Link to="/faq" className="text-sm text-muted hover:text-accent transition-colors">FAQ</Link></li>
             </ul>

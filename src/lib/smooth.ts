@@ -4,6 +4,12 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 gsap.registerPlugin(ScrollTrigger);
 
+// Los .from() de las secciones dejan los elementos en su estado inicial
+// (opacity: 0). Si el ScrollTrigger no dispara, los elementos quedan invisibles.
+// Con `toggleActions: 'play none none none'` garantizamos que al primer
+// contacto con el viewport se reproduzca la animación una vez, sin reset.
+ScrollTrigger.defaults({ toggleActions: 'play none none none' });
+
 let lenis: Lenis | null = null;
 
 export function initSmoothScroll() {
@@ -33,4 +39,8 @@ export function initSmoothScroll() {
     lenis.destroy();
     lenis = null;
   }
+
+  // Después de que Lenis está listo y todos los ScrollTrigger están registrados,
+  // fuerza un refresh para que las secciones que ya estén en viewport disparen.
+  requestAnimationFrame(() => ScrollTrigger.refresh());
 }

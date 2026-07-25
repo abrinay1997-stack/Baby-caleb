@@ -16,6 +16,8 @@ import Productos from './pages/Productos';
 import Beneficios from './pages/Beneficios';
 import ComoComprar from './pages/ComoComprar';
 import FAQ from './pages/FAQ';
+import Historia from './pages/Historia';
+import Tips from './pages/Tips';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -39,6 +41,8 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/productos" element={<Productos />} />
           <Route path="/beneficios" element={<Beneficios />} />
+          <Route path="/historia" element={<Historia />} />
+          <Route path="/tips" element={<Tips />} />
           <Route path="/como-comprar" element={<ComoComprar />} />
           <Route path="/faq" element={<FAQ />} />
         </Routes>

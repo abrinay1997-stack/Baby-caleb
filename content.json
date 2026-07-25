@@ -1,13 +1,21 @@
 {
   "meta": {
-    "title": "Baby Caleb Panamá | Cuidado Hipoalergénico",
-    "description": "Pañales y wipes hipoalergénicos Nateen y fulares Moon en Panamá. Cuidado suave y ecológico para la piel de tu bebé.",
-    "ogImage": ""
+    "title": "Baby Caleb Panamá | Pañales y Wipes Nateen hipoalergénicos",
+    "description": "Pañales Nateen hipoalergénicos, sin cloro, sin perfumes. Talla Prematuro a XL. Delivery en Ciudad de Panamá y punto físico en Super Carnes.",
+    "ogImage": "/img/promo-nateen-familia.png"
+  },
+  "brand": {
+    "name": "Baby Caleb",
+    "tagline": "Pañales y Wipes",
+    "logo": "/img/logo.png",
+    "badge": "/img/logo.png",
+    "verse": "«Los hijos son un regalo del Señor; son una recompensa de su parte.» — Salmos 127:3"
   },
   "hero": {
-    "kicker": "EN BABY CALEB PANAMÁ PENSAMOS EN CADA ETAPA",
+    "kicker": "PENSAMOS EN LA PIEL DE TU BEBÉ",
     "h1": "Cuidado hipoalergénico para la piel de tu bebé",
-    "sub": "Sin químicos agresivos, sin perfumes, sin alcohol, sin cloro.",
+    "sub": "Pañales y wipes Nateen: sin químicos agresivos, sin perfumes, sin alcohol, sin cloro.",
+    "image": "/img/hero-bebe.png",
     "cta": {
       "label": "Pedir por WhatsApp",
       "href": "https://wa.me/50767575065"
@@ -15,7 +23,7 @@
   },
   "trust": [
     { "icon": "leaf", "label": "Hipoalergénico" },
-    { "icon": "droplet-off", "label": "Sin cloro" },
+    { "icon": "droplet-off", "label": "Sin cloro (TCF)" },
     { "icon": "recycle", "label": "Biodegradable" },
     { "icon": "heart", "label": "Piel sensible" }
   ],
@@ -23,68 +31,117 @@
     {
       "id": "nateen-diapers",
       "name": "Pañales Nateen",
-      "description": "Pañales ecológicos, hipoalergénicos y súper absorbentes.",
-      "sizes": ["RN", "S", "M", "L", "XL", "XXL (+55 lbs)"],
-      "options": ["Paquete pequeño", "Caja grande"],
-      "image": "diapers"
+      "description": "Ecológicos, súper absorbentes y sin cloro. Talla Prematuro a XL, con presentaciones de paquete y caja.",
+      "image": "/img/producto-panal-nateen-s.png",
+      "priceFrom": 17,
+      "variants": [
+        { "size": "Prematuro", "range": "menos de 6 lb", "units": "50 uds",  "price": 17, "image": "/img/producto-prematuro.png" },
+        { "size": "Caja S",    "range": "6 a 13 lb",     "units": "160 uds", "price": 50, "image": "/img/producto-caja-s.png" },
+        { "size": "Caja M",    "range": "9 a 20 lb",     "units": "144 uds", "price": 50, "image": "/img/producto-caja-m.png" },
+        { "size": "Caja L",    "range": "15 a 40 lb",    "units": "128 uds", "price": 45, "image": "/img/producto-caja-l.png" },
+        { "size": "Caja XL",   "range": "26 a 55 lb",    "units": "112 uds", "price": 45, "image": "/img/producto-caja-xl.png" }
+      ]
     },
     {
       "id": "nateen-wipes",
       "name": "Wipes Nateen",
-      "description": "Toallitas húmedas hipoalergénicas, 99% agua.",
-      "sizes": ["Paquete 80 uds"],
-      "options": ["Unidad", "Caja"],
-      "image": "wipes"
+      "description": "Toallitas hipoalergénicas con 99% agua purificada y aloe vera. Sin alcohol, sin parabenos, sin perfumes.",
+      "image": "/img/producto-wipes-caja.png",
+      "priceFrom": 25,
+      "variants": [
+        { "size": "Caja", "range": "13 paquetes de 80", "units": "1.040 toallitas", "price": 25, "image": "/img/producto-wipes-caja.png" }
+      ]
     },
     {
-      "id": "moon-wraps",
-      "name": "Fulares Moon",
-      "description": "Portabebés ergonómicos, prearmados y ajustables.",
-      "sizes": ["Unitalla (RN a 25 lbs)"],
-      "options": ["Varios colores"],
-      "image": "wrap"
+      "id": "nateen-wipes-adulto",
+      "name": "Wipes Nateen Adulto",
+      "description": "Toallitas grandes hipoalergénicas ideales para adultos mayores, cuidadores e higiene diaria.",
+      "image": "/img/producto-wipes-adulto.png",
+      "priceFrom": 15,
+      "variants": [
+        { "size": "Pack", "range": "6 paquetes de 40", "units": "240 toallitas", "price": 15, "image": "/img/producto-wipes-adulto.png" }
+      ]
     }
   ],
   "differentiators": [
-    { "title": "Prueba de talla", "text": "Paquetes pequeños disponibles para que encuentres la talla ideal." },
-    { "title": "Talla XXL", "text": "Disponemos de tallas grandes para niños de más de 55 libras." },
-    { "title": "Atención Personal", "text": "Asesoría directa y humana a través de WhatsApp." },
-    { "title": "Delivery y Retiro", "text": "Entregas a domicilio o retiro en Casa de la Carne, Ancón." }
+    { "title": "Prueba de talla",       "text": "Paquetes pequeños disponibles para que encuentres la talla ideal antes de comprar caja." },
+    { "title": "De Prematuro a XL",     "text": "Cubrimos desde bebés de menos de 6 libras hasta niños de más de 55 libras." },
+    { "title": "Atención personal",     "text": "Asesoría directa y humana por WhatsApp — nada de bots ni formularios." },
+    { "title": "Delivery y retiro",     "text": "Entregas a domicilio en Ciudad de Panamá y retiro en Super Carnes." }
   ],
   "education": [
     {
       "question": "¿Sabías que no es lo mismo 'libre de cloro' que 'sin cloro'?",
-      "answer": "Nuestros pañales Nateen son TCF (Totally Chlorine Free), lo que significa que no se usó ningún tipo de compuesto de cloro en el blanqueo de la pulpa. ¡No te dejes engañar!"
+      "answer": "Nuestros pañales Nateen son TCF (Totally Chlorine Free): no se usó ningún compuesto de cloro en el blanqueo de la pulpa. La mayoría del mercado son ECF (Elemental Chlorine Free), que sí usan derivados del cloro."
     }
   ],
   "testimonials": [
     {
       "name": "Elizabeth M.",
       "role": "Mamá de 2",
-      "quote": "Desde que usamos Nateen, las irritaciones desaparecieron por completo. La talla XXL fue un salvavidas.",
+      "quote": "Desde que usamos Nateen, las irritaciones desaparecieron por completo. La talla XL fue un salvavidas.",
       "result": "Cero alergias",
       "date": "2026-06-15"
     },
     {
       "name": "Ana C.",
       "role": "Mamá primeriza",
-      "quote": "El fular Moon es súper fácil de usar. Me encanta poder tener a mi bebé cerca mientras hago mis cosas.",
-      "result": "Porteo seguro",
+      "quote": "El servicio por WhatsApp es súper cercano. Me guiaron con la talla y la caja de wipes me dura muchísimo.",
+      "result": "Talla correcta",
       "date": "2026-07-10"
+    },
+    {
+      "name": "Carla R.",
+      "role": "Mamá de prematuro",
+      "quote": "Encontrar pañales para prematuro en Panamá fue un alivio enorme. Súper suaves, mi bebé duerme mejor.",
+      "result": "Piel calmada",
+      "date": "2026-07-02"
     }
   ],
   "howToBuy": [
-    { "step": "01", "title": "Escríbenos", "text": "Contáctanos directamente por WhatsApp." },
-    { "step": "02", "title": "Elige", "text": "Selecciona el producto, presentación y talla ideal." },
-    { "step": "03", "title": "Recibe", "text": "Pide delivery o retira en nuestro punto físico." }
+    { "step": "01", "title": "Escríbenos", "text": "Contáctanos directamente por WhatsApp al 6757-5065." },
+    { "step": "02", "title": "Elige",      "text": "Selecciona producto, presentación y talla — te asesoramos si tienes dudas." },
+    { "step": "03", "title": "Recibe",     "text": "Delivery a domicilio en Ciudad de Panamá o retiro en Super Carnes." }
   ],
   "faq": [
-    { "q": "¿Cómo sé qué talla necesita mi bebé?", "a": "Las tallas de pañales van por peso. RN, S, M, L, XL, y XXL para +55 lbs. Consúltanos por WhatsApp para asesorarte." },
-    { "q": "¿Cuál es la diferencia entre hipoalergénico y sin cloro?", "a": "Hipoalergénico significa que tiene bajo riesgo de causar alergias. Sin cloro (TCF) asegura que no hay residuos tóxicos del blanqueamiento." },
-    { "q": "¿Tienen punto físico?", "a": "Sí, puedes retirar tus pedidos en Casa de la Carne / Meat House en Ancón, Panamá." }
+    { "q": "¿Cómo sé qué talla necesita mi bebé?", "a": "Las tallas van por peso: Prematuro (menos de 6 lb), S (6-13 lb), M (9-20 lb), L (15-40 lb), XL (26-55 lb). Si dudas, escríbenos por WhatsApp y te asesoramos." },
+    { "q": "¿Cuál es la diferencia entre hipoalergénico y sin cloro?", "a": "Hipoalergénico significa que tiene bajo riesgo de causar alergias. Sin cloro (TCF, Totally Chlorine Free) asegura que no se usaron compuestos de cloro para blanquear la pulpa — es más estricto que ECF." },
+    { "q": "¿Los wipes tienen alcohol o parabenos?", "a": "No. Nuestros wipes Nateen son 99% agua purificada con aloe vera, sin alcohol, sin parabenos, sin perfumes." },
+    { "q": "¿Tienen punto físico?", "a": "Sí: en Super Carnes (Albrook, Costa Verde y Arraiján). Próximamente Las Tablas y Santiago." },
+    { "q": "¿Cuánto cuesta el delivery?", "a": "Delivery gratis en Ciudad de Panamá de Albrook a Iglesia del Carmen. En zona de Vía Argentina a 12 de Octubre tiene costo de $2. Otras zonas se cotizan por WhatsApp." },
+    { "q": "¿Los pañales son biodegradables?", "a": "Sí — Nateen es una marca reconocida internacionalmente por producir pañales biodegradables con pulpa TCF y materiales naturales transpirables." }
+  ],
+  "coverage": {
+    "delivery": [
+      { "zona": "Ciudad de Panamá (Albrook a Iglesia del Carmen)", "costo": "Gratis" },
+      { "zona": "Ciudad de Panamá (Vía Argentina a 12 de Octubre)", "costo": "$2" },
+      { "zona": "Otras zonas", "costo": "Cotizar por WhatsApp" }
+    ],
+    "stores": [
+      { "name": "Super Carnes — Albrook",     "address": "Albrook, Ciudad de Panamá" },
+      { "name": "Super Carnes — Costa Verde", "address": "Costa Verde, Ciudad de Panamá" },
+      { "name": "Super Carnes — Arraiján",    "address": "Arraiján, Panamá Oeste" },
+      { "name": "Próximamente",                "address": "Las Tablas y Santiago" }
+    ]
+  },
+  "about": {
+    "kicker": "NUESTRA HISTORIA",
+    "title": "Cuidamos a los que más amas",
+    "body": "Baby Caleb nació de la búsqueda de una mamá que no encontraba pañales verdaderamente hipoalergénicos en Panamá. Hoy traemos la línea completa de Nateen — desde prematuro hasta talla XL — con atención personal por WhatsApp y delivery en Ciudad de Panamá.",
+    "verseLabel": "Salmos 127:3",
+    "verseText": "«Los hijos son un regalo del Señor; son una recompensa de su parte.»",
+    "image": "/img/promo-nateen-familia.png"
+  },
+  "tips": [
+    { "id": "panalitis",          "title": "Tips para evitar la pañalitis",                       "excerpt": "Cambios frecuentes, secado correcto y pañales transpirables: hábitos pequeños que evitan grandes irritaciones.", "image": "/img/tip-panalitis.png" },
+    { "id": "cloro-tcf",          "title": "Pañal 'libre de cloro' vs 'sin cloro'",              "excerpt": "ECF y TCF no son lo mismo. Te explicamos por qué Nateen (TCF) es el estándar más estricto del mercado.",           "image": "/img/tip-cloro-tcf.png" },
+    { "id": "senales-piel",       "title": "La piel avisa antes de quejarse",                    "excerpt": "3 señales de que tu pañal actual podría estar irritando a tu bebé, y qué hacer antes de que empeore.",             "image": "/img/tip-senal-rojeces.png" },
+    { "id": "quien-se-beneficia", "title": "¿Quién se beneficia más de un pañal hipoalergénico?", "excerpt": "Recién nacidos, prematuros, piel sensible o historial familiar de alergias — quién debería probar el cambio.",     "image": "/img/tip-quien-se-beneficia.png" },
+    { "id": "wipes-caja",         "title": "¿Por qué comprar la caja de wipes?",                 "excerpt": "1.040 toallitas por caja — menor costo por unidad, hipoalergénicas y con aloe vera.",                                "image": "/img/tip-wipes-caja-beneficios.png" },
+    { "id": "cuando-pediatra",    "title": "Cuándo consultar al pediatra",                       "excerpt": "Irritación de más de 3 días, ampollas o fiebre: cuándo lo del pañal ya no es cosa del pañal.",                     "image": "/img/tip-cuando-pediatra.png" }
   ],
   "nap": {
-    "address": "Casa de la Carne / Meat House, Ancón, Panamá",
+    "address": "Super Carnes — Albrook, Costa Verde, Arraiján",
     "phone": "+507 6757-5065",
     "hours": ["Lunes a Sábado: 9:00 - 18:00"],
     "maps": ""

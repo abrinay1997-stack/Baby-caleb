@@ -13,9 +13,7 @@ export default function S14FAQ() {
 
   const containerRef = useGsapContext(() => {
     gsap.from('.faq-item', {
-      y: 20,
-      opacity: 0,
-      duration: 0.8,
+      y: 20,      duration: 0.8,
       stagger: 0.1,
       ease: 'power3.out',
       scrollTrigger: {
