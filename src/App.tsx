@@ -9,6 +9,7 @@ import { initSmoothScroll } from './lib/smooth';
 
 import S01Nav from './blocks/S01Nav';
 import S20Footer from './blocks/S20Footer';
+import Chatbot from './components/Chatbot';
 
 import Home from './pages/Home';
 import Productos from './pages/Productos';
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/como-comprar" element={<ComoComprar />} />
           <Route path="/faq" element={<FAQ />} />
         </Routes>
+        <Chatbot />
         <S20Footer />
       </div>
     </BrowserRouter>
