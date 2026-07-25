@@ -4,7 +4,7 @@ import { getContentData } from '../data/content';
 import { useGsapContext } from '../hooks/useGsapContext';
 import { Section } from '../components/ui/Section';
 
-const iconMap: Record<string, React.ElementType> = {
+const iconMap: Record<string, React.ComponentType<any>> = {
   'leaf': Leaf,
   'droplet-off': DropletOff,
   'recycle': Recycle,
@@ -22,7 +22,7 @@ export default function S04Trust() {
       stagger: 0.1,
       ease: 'power3.out',
       scrollTrigger: {
-        trigger: containerRef.current,
+        trigger: containerRef.current || undefined,
         start: 'top 85%',
       }
     });
