@@ -38,8 +38,11 @@ export default function S10Gallery() {
 
       <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
         {items.map((item, idx) => {
+          const priceLabel = item.price != null ? `$${item.price}` : 'Consultar';
           const message = encodeURIComponent(
-            `Hola Baby Caleb, quiero pedir: ${item.productName} — ${item.size} (${item.units}) por $${item.price}`
+            `Hola Baby Caleb, quiero pedir: ${item.productName} — ${item.size} (${item.units})${
+              item.price != null ? ` por $${item.price}` : ''
+            }`
           );
           return (
             <a
@@ -62,7 +65,7 @@ export default function S10Gallery() {
                 <span className="mono text-[10px] text-sage">{item.productName}</span>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-bold text-fg leading-tight">{item.size}</span>
-                  <span className="font-display font-bold text-accent">${item.price}</span>
+                  <span className="font-display font-bold text-accent">{priceLabel}</span>
                 </div>
                 <span className="text-xs text-muted">{item.range}</span>
                 <span className="text-xs text-muted">{item.units}</span>

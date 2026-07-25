@@ -47,7 +47,7 @@ export default function S09Products() {
                   decoding="async"
                 />
                 <span className="absolute top-4 left-4 bg-bg/90 backdrop-blur text-fg font-bold text-xs px-3 py-1.5 rounded-pill border border-line">
-                  Desde ${product.priceFrom}
+                  {product.priceFrom != null ? `Desde $${product.priceFrom}` : 'Consultar'}
                 </span>
               </div>
               <div className="p-8 flex flex-col flex-grow">
@@ -68,7 +68,7 @@ export default function S09Products() {
                           <span className="font-bold text-fg">{v.size}</span>
                           <span className="text-muted"> · {v.units}</span>
                         </div>
-                        <span className="font-bold text-accent">${v.price}</span>
+                        <span className="font-bold text-accent">{v.price != null ? `$${v.price}` : 'Consultar'}</span>
                       </div>
                     ))}
                   </div>
