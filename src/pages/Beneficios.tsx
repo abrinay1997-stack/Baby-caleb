@@ -8,7 +8,7 @@ export default function Beneficios() {
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
       <Seo
         title="Beneficios | Pañales hipoalergénicos Nateen — Baby Caleb Panamá"
-        description="Prueba de talla, cobertura de Prematuro a XL, atención personal por WhatsApp y delivery. Descubre por qué las familias eligen Baby Caleb."
+        description="Cajas para todo el mes, tallas de RN a XXL, atención personal por WhatsApp y delivery a domicilio. Descubre por qué las familias eligen Baby Caleb."
         path="/beneficios"
       />
       <h1 className="sr-only">Beneficios de los pañales hipoalergénicos Nateen</h1>

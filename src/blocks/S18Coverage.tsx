@@ -1,7 +1,7 @@
 import { gsap } from 'gsap';
 import { getContentData } from '../data/content';
 import { useGsapContext } from '../hooks/useGsapContext';
-import { MapPin, Phone, Clock, Truck, Store } from 'lucide-react';
+import { MapPin, Phone, Clock, Truck, MessageCircle } from 'lucide-react';
 import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
 
@@ -37,7 +37,7 @@ export default function S18Coverage() {
         <div className="cov-content flex flex-col gap-8">
           <SectionHeader
             kicker="05 / Cobertura"
-            title="Delivery y puntos físicos."
+            title="Vendemos online y te lo llevamos."
           />
 
           <div className="space-y-6">
@@ -69,7 +69,7 @@ export default function S18Coverage() {
             <div className="flex gap-4">
               <MapPin className="w-6 h-6 text-sage flex-shrink-0" />
               <div>
-                <h4 className="font-bold text-fg mb-1">Puntos físicos</h4>
+                <h4 className="font-bold text-fg mb-1">Cobertura</h4>
                 <p className="text-muted">{nap.address}</p>
               </div>
             </div>
@@ -97,18 +97,16 @@ export default function S18Coverage() {
           <div className="cov-block bg-surface border border-line rounded-2xl p-6 md:p-8">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center text-sage">
-                <Store size={20} />
+                <MessageCircle size={20} />
               </div>
-              <h3 className="font-bold text-lg text-fg">Puntos de retiro</h3>
+              <h3 className="font-bold text-lg text-fg">Cómo pedir</h3>
             </div>
-            <ul className="space-y-3">
-              {coverage.stores.map((s, i) => (
-                <li key={i} className="flex flex-col text-sm border-b border-line last:border-b-0 pb-3 last:pb-0">
-                  <span className="font-bold text-fg">{s.name}</span>
-                  <span className="text-muted text-xs">{s.address}</span>
-                </li>
-              ))}
-            </ul>
+            <p className="text-sm text-muted leading-relaxed">
+              Vendemos únicamente online. Escríbenos por WhatsApp o por DM de Instagram
+              <span className="text-fg font-bold"> (@babycalebpanama)</span>, elegimos juntos la
+              talla y coordinamos la entrega a domicilio. El costo del delivery depende de tu zona
+              y te lo confirmamos antes de cerrar el pedido.
+            </p>
           </div>
         </div>
       </div>

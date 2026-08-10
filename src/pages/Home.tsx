@@ -11,7 +11,7 @@ export default function Home() {
     <main id="main-content">
       <Seo
         title="Baby Caleb Panamá | Pañales y Wipes Nateen hipoalergénicos"
-        description="Pañales Nateen hipoalergénicos de bambú, sin cloro, sin perfumes. Talla Prematuro a XL. Delivery en Ciudad de Panamá y retiro en Casa de la Carne (Ancón)."
+        description="Pañales Nateen hipoalergénicos de bambú, sin cloro, sin perfumes. Tallas RN a XXL en caja para todo el mes. Venta online con delivery en Ciudad de Panamá."
         path="/"
       />
       <S02Hero />

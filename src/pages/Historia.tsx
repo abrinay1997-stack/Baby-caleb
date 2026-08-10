@@ -9,7 +9,7 @@ export default function Historia() {
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
       <Seo
         title="Nuestra historia | Baby Caleb Panamá"
-        description="Baby Caleb nació de la búsqueda de una mamá por pañales verdaderamente hipoalergénicos en Panamá. Hoy traemos la línea completa de Nateen."
+        description="Baby Caleb nació en 2024 en Panamá para que conseguir pañales y wipes hipoalergénicos deje de ser una odisea. Marcas de confianza, cajas para todo el mes y delivery."
         path="/historia"
       />
       <h1 className="sr-only">Nuestra historia</h1>

@@ -122,7 +122,7 @@ export default function S02Hero() {
             </div>
             <div className="hero-float absolute -top-4 right-4 md:right-8 bg-sage text-bg font-bold text-xs px-4 py-2 rounded-pill shadow-soft flex items-center gap-2">
               <span className="inline-block w-2 h-2 rounded-full bg-bg" />
-              TCF · Sin cloro
+              Sin cloro · Sin perfumes
             </div>
           </div>
         </div>

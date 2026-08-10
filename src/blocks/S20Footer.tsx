@@ -17,10 +17,10 @@ export default function S20Footer() {
               decoding="async"
             />
             <p className="text-muted text-sm max-w-sm">
-              Especialistas en pañales y wipes hipoalergénicos Nateen — cuidamos la piel de tu bebé en cada etapa.
+              Esenciales de bebé hipoalergénicos y biodegradables — pensamos en cada etapa de tu bebé.
             </p>
-            <p className="text-muted text-xs italic mt-4 max-w-sm">
-              «Los hijos son un regalo del Señor; son una recompensa de su parte.» — Salmos 127:3
+            <p className="text-muted text-xs mt-4 max-w-sm">
+              Venta 100% online con entrega a domicilio en Ciudad de Panamá.
             </p>
           </div>
 

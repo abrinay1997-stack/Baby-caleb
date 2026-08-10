@@ -8,7 +8,7 @@ export default function ComoComprar() {
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
       <Seo
         title="Cómo comprar | Baby Caleb Panamá"
-        description="Haz tu pedido por WhatsApp en 3 pasos. Delivery a domicilio en Ciudad de Panamá o retiro en Casa de la Carne / Meat House (Ancón)."
+        description="Haz tu pedido por WhatsApp en 3 pasos. Vendemos 100% online con entrega a domicilio en Ciudad de Panamá."
         path="/como-comprar"
       />
       <h1 className="sr-only">Cómo comprar en Baby Caleb</h1>
