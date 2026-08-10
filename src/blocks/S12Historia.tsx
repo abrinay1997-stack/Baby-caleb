@@ -31,22 +31,23 @@ export default function S12Historia() {
           <p className="text-lg text-muted leading-relaxed max-w-lg">{about.body}</p>
 
           <div className="border-l-4 border-sage pl-6 py-4 bg-surface rounded-r-lg">
-            <p className="text-fg italic leading-relaxed">{about.verseText}</p>
-            <span className="block mono text-xs text-sage mt-2">— {about.verseLabel}</span>
+            <p className="text-fg italic leading-relaxed">
+              «En Baby Caleb Panamá pensamos en cada etapa de tu bebé.»
+            </p>
           </div>
 
           <div className="grid grid-cols-3 gap-4 mt-4">
             <div>
-              <span className="block font-display font-bold text-4xl text-accent">5+</span>
-              <span className="block text-xs text-muted mt-1">tallas de pañales</span>
+              <span className="block font-display font-bold text-4xl text-accent">6</span>
+              <span className="block text-xs text-muted mt-1">tallas, de RN a XXL</span>
             </div>
             <div>
-              <span className="block font-display font-bold text-4xl text-accent">3</span>
-              <span className="block text-xs text-muted mt-1">puntos físicos</span>
+              <span className="block font-display font-bold text-4xl text-accent">2024</span>
+              <span className="block text-xs text-muted mt-1">cuidando bebés en Panamá</span>
             </div>
             <div>
-              <span className="block font-display font-bold text-4xl text-accent">TCF</span>
-              <span className="block text-xs text-muted mt-1">certificación cloro</span>
+              <span className="block font-display font-bold text-4xl text-accent">100%</span>
+              <span className="block text-xs text-muted mt-1">online con delivery</span>
             </div>
           </div>
         </div>

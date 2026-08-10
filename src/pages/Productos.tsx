@@ -9,7 +9,7 @@ export default function Productos() {
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
       <Seo
         title="Catálogo | Pañales y Wipes Nateen — Baby Caleb Panamá"
-        description="Pañales Nateen de talla Prematuro a XL y wipes hipoalergénicos. Precios por presentación y pedido directo por WhatsApp con entrega en Ciudad de Panamá."
+        description="Pañales Nateen de talla RN a XXL, wipes hipoalergénicos y fulares Moon. Precios por presentación y pedido directo por WhatsApp con entrega en Ciudad de Panamá."
         path="/productos"
       />
       <h1 className="sr-only">Catálogo de pañales y wipes hipoalergénicos Nateen</h1>

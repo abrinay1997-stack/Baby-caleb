@@ -9,7 +9,6 @@ export interface BrandData {
   tagline: string;
   logo: string;
   badge: string;
-  verse: string;
 }
 
 export interface CTAData {
@@ -83,22 +82,14 @@ export interface CoverageDelivery {
   costo: string;
 }
 
-export interface CoverageStore {
-  name: string;
-  address: string;
-}
-
 export interface CoverageData {
   delivery: CoverageDelivery[];
-  stores: CoverageStore[];
 }
 
 export interface AboutData {
   kicker: string;
   title: string;
   body: string;
-  verseLabel: string;
-  verseText: string;
   image: string;
 }
 

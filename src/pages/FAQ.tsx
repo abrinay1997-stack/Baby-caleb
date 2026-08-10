@@ -20,7 +20,7 @@ export default function FAQ() {
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
       <Seo
         title="Preguntas frecuentes | Baby Caleb Panamá"
-        description="Tallas por peso, diferencia entre hipoalergénico y sin cloro, ingredientes de los wipes, puntos físicos y costos de delivery. Resolvemos tus dudas."
+        description="Tallas por peso de RN a XXL, diferencia entre hipoalergénico y sin cloro, ingredientes de los wipes y cómo funciona el delivery. Resolvemos tus dudas."
         path="/faq"
         jsonLd={faqJsonLd}
       />
