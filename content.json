@@ -32,15 +32,26 @@
       "name": "Pañales Nateen",
       "description": "Hipoalergénicos, súper absorbentes, sin cloro ni perfumes, 100% fibras de bambú y biodegradables. Tallas RN a XXL, en caja para todo el mes.",
       "image": "/img/producto-panal-nateen-s.png",
-      "priceFrom": 17,
+      "priceFrom": 45,
       "variants": [
-        { "size": "Paquete Prematuro", "range": "menos de 6 lb", "units": "50 uds",  "price": 17, "image": "/img/producto-prematuro.png" },
-        { "size": "Caja RN",  "range": "4 a 11 lb",      "units": "160 uds", "price": 45, "image": "/img/promo-nateen-familia.png" },
+        { "size": "Caja RN",  "range": "4 a 11 lb",      "units": "160 uds", "price": 50, "image": "/img/promo-nateen-familia.png" },
         { "size": "Caja S",   "range": "6 a 13 lb",      "units": "160 uds", "price": 50, "image": "/img/producto-caja-s.png" },
-        { "size": "Caja M",   "range": "9 a 20 lb",      "units": "144 uds", "price": 50, "image": "/img/producto-caja-m.png" },
-        { "size": "Caja L",   "range": "15 a 40 lb",     "units": "128 uds", "price": 45, "image": "/img/producto-caja-l.png" },
+        { "size": "Caja M",   "range": "8 a 19 lb",      "units": "144 uds", "price": 50, "image": "/img/producto-caja-m.png" },
+        { "size": "Caja L",   "range": "15 a 39 lb",     "units": "128 uds", "price": 45, "image": "/img/producto-caja-l.png" },
         { "size": "Caja XL",  "range": "26 a 55 lb",     "units": "112 uds", "price": 45, "image": "/img/producto-caja-xl.png" },
         { "size": "Caja XXL", "range": "más de 55 lb",   "units": "112 uds", "price": 45, "image": "/img/promo-nateen-familia.png" }
+      ]
+    },
+    {
+      "id": "nateen-pants",
+      "name": "Pañales Nateen Pants",
+      "description": "Tipo pantaloncito (pull-ups), con la misma protección hipoalergénica Nateen: sin cloro ni perfumes, 100% fibras de bambú. Caja de 160 para todo el mes. Solo tallas L, XL y XXL.",
+      "image": "/img/promo-nateen-familia.png",
+      "priceFrom": 55,
+      "variants": [
+        { "size": "Pants L",   "range": "19 a 31 lb",   "units": "160 uds", "price": 55, "image": "/img/promo-nateen-familia.png" },
+        { "size": "Pants XL",  "range": "26 a 37.5 lb", "units": "160 uds", "price": 55, "image": "/img/promo-nateen-familia.png" },
+        { "size": "Pants XXL", "range": "más de 33 lb", "units": "160 uds", "price": 55, "image": "/img/promo-nateen-familia.png" }
       ]
     },
     {
@@ -48,44 +59,35 @@
       "name": "Wipes Nateen",
       "description": "Toallitas hipoalergénicas en caja grande. Sin alcohol, sin parabenos, sin perfumes — pensadas para la piel más delicada.",
       "image": "/img/producto-wipes-caja.png",
-      "priceFrom": 25,
+      "priceFrom": 45,
       "variants": [
-        { "size": "Caja", "range": "13 paquetes de 80", "units": "1.040 toallitas", "price": 25, "image": "/img/producto-wipes-caja.png" }
+        { "size": "Caja", "range": "12 paquetes de 80", "units": "960 toallitas", "price": 45, "image": "/img/producto-wipes-caja.png" }
       ]
     },
     {
       "id": "danybaby-aquawipes",
       "name": "Wipes de agua Dany Baby",
-      "description": "AquaWipes 100: toallitas de agua 99% pura, ideales para recién nacidos. Combo de 2 cajas para que te duren el mes completo.",
+      "description": "Toallitas de agua 99% pura, sin alcohol ni perfumes, ideales para recién nacidos. Caja de 12 paquetes de 50.",
       "image": "/img/logo-badge.png",
-      "priceFrom": 35,
+      "priceFrom": 25,
       "variants": [
-        { "size": "Combo 2 cajas", "range": "agua 99% pura", "units": "1.200 toallitas", "price": 35, "image": "/img/logo-badge.png" }
-      ]
-    },
-    {
-      "id": "nateen-wipes-adulto",
-      "name": "Wipes Nateen Adulto",
-      "description": "Toallitas grandes hipoalergénicas ideales para adultos mayores, cuidadores e higiene diaria.",
-      "image": "/img/producto-wipes-adulto.png",
-      "priceFrom": 15,
-      "variants": [
-        { "size": "Pack", "range": "6 paquetes de 40", "units": "240 toallitas", "price": 15, "image": "/img/producto-wipes-adulto.png" }
+        { "size": "Caja", "range": "12 paquetes de 50", "units": "600 toallitas", "price": 25, "image": "/img/logo-badge.png" }
       ]
     },
     {
       "id": "fular-moon",
       "name": "Fulares Moon",
-      "description": "Portabebés ergonómico Moon: unitalla y ajustable, de recién nacido hasta ~25 lb. Carga a tu bebé cómoda y segura. Precio y disponibilidad por WhatsApp.",
+      "description": "Portabebés ergonómico Moon: unitalla y ajustable, de recién nacido hasta ~25 lb. Carga a tu bebé cómoda y segura. Disponibilidad y colores por WhatsApp.",
       "image": "/img/producto-fular-moon.png",
+      "priceFrom": 46,
       "variants": [
-        { "size": "Unitalla", "range": "RN a ~25 lb", "units": "ajustable", "image": "/img/producto-fular-moon.png" }
+        { "size": "Unitalla", "range": "RN a ~25 lb", "units": "ajustable", "price": 46, "image": "/img/producto-fular-moon.png" }
       ]
     }
   ],
   "differentiators": [
     { "title": "Cajas para todo el mes", "text": "Vendemos en caja grande, no por paquete suelto: te sale más accesible y no te quedas sin pañales a mitad de mes." },
-    { "title": "De prematuro a XXL",     "text": "Cubrimos desde bebés de menos de 6 libras hasta niños de más de 55 libras — la talla XXL es difícil de conseguir en Panamá." },
+    { "title": "De recién nacido a XXL", "text": "Cubrimos desde recién nacidos y prematuros (talla RN, desde 4 libras) hasta niños de más de 55 libras — la talla XXL es difícil de conseguir en Panamá." },
     { "title": "Atención personal",      "text": "Asesoría directa y humana por WhatsApp — te ayudamos a elegir la talla, nada de formularios." },
     { "title": "Delivery a domicilio",   "text": "Vendemos 100% online: haces tu pedido por WhatsApp o Instagram y te lo llevamos a domicilio en Ciudad de Panamá." }
   ],
@@ -124,11 +126,11 @@
     { "step": "03", "title": "Recibe",     "text": "Te lo llevamos a domicilio en Ciudad de Panamá. Coordinamos día y zona por WhatsApp." }
   ],
   "faq": [
-    { "q": "¿Cómo sé qué talla necesita mi bebé?", "a": "Las tallas van por peso: RN (4-11 lb), S (6-13 lb), M (9-20 lb), L (15-40 lb), XL (26-55 lb) y XXL (más de 55 lb). También tenemos paquete de prematuro para bebés de menos de 6 lb. Si dudas, escríbenos por WhatsApp y te asesoramos." },
+    { "q": "¿Cómo sé qué talla necesita mi bebé?", "a": "Las tallas van por peso: RN (4-11 lb), S (6-13 lb), M (8-19 lb), L (15-39 lb), XL (26-55 lb) y XXL (más de 55 lb). Para prematuros y recién nacidos es la talla RN. En pants: L (19-31 lb), XL (26-37.5 lb) y XXL (más de 33 lb). Si dudas, escríbenos por WhatsApp y te asesoramos." },
     { "q": "¿Tienen talla XXL?", "a": "Sí. Manejamos la talla XXL para niños de más de 55 libras, una talla que casi no se consigue en Panamá. Caja de 112 unidades." },
-    { "q": "¿Por qué venden en caja y no por paquete?", "a": "Porque la caja te alcanza para todo el mes y el costo por pañal te sale más accesible que comprando paquete por paquete. Si quieres probar la talla antes, escríbenos y coordinamos una presentación pequeña." },
+    { "q": "¿Por qué venden en caja y no por paquete?", "a": "Porque la caja te alcanza para todo el mes y el costo por pañal te sale más accesible que comprando paquete por paquete. Solo vendemos cajas completas, así que antes de pedir te ayudamos por WhatsApp a elegir bien la talla según el peso de tu bebé." },
     { "q": "¿Cuál es la diferencia entre hipoalergénico y sin cloro?", "a": "Hipoalergénico significa que tiene bajo riesgo de causar alergias. Sin cloro significa que no se usaron compuestos de cloro para blanquear la pulpa del pañal. Nuestros pañales Nateen son las dos cosas: hipoalergénicos y sin cloro ni perfumes." },
-    { "q": "¿Los wipes tienen alcohol o parabenos?", "a": "No. Nuestros wipes son hipoalergénicos, sin alcohol, sin parabenos y sin perfumes. Los AquaWipes de Dany Baby son de agua 99% pura, ideales para recién nacidos." },
+    { "q": "¿Los wipes tienen alcohol o parabenos?", "a": "No. Nuestros wipes son hipoalergénicos, sin alcohol, sin parabenos y sin perfumes. Los wipes de agua Dany Baby son 99% agua pura, ideales para recién nacidos." },
     { "q": "¿Tienen tienda física?", "a": "Hoy vendemos únicamente online: haces tu pedido por WhatsApp o por DM de Instagram y te lo entregamos por delivery en Ciudad de Panamá." },
     { "q": "¿Cuánto cuesta el delivery?", "a": "Depende de tu ubicación. Escríbenos por WhatsApp con tu zona y te confirmamos el costo antes de cerrar el pedido." },
     { "q": "¿Los pañales son biodegradables?", "a": "Sí — Nateen fabrica sus pañales con 100% fibras de bambú, biodegradables, transpirables y sin cloro ni perfumes." }
