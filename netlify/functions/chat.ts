@@ -37,16 +37,15 @@ PRODUCTOS Y PRECIOS (verificados; confirma disponibilidad y promos vigentes con 
 - Pañales NATEEN: hipoalergénicos, súper absorbentes, sin cloro, sin perfumes, 100% fibras de bambú, biodegradables. Tallas (peso → caja → precio):
   RN 2–5 kg (4–11 lb) · 160u · $50
   S 3–6 kg (6–13 lb) · 160u · $50
-  M 4–9 kg (9–20 lb) · 144u · $50
-  L 7–18 kg (15–40 lb) · 128u · $45
+  M 4–9 kg (8–19 lb) · 144u · $50
+  L 7–18 kg (15–39 lb) · 128u · $45
   XL 12–25 kg (26–55 lb) · 112u · $45
   XXL más de 55 lb · 112u · $45
   Pañales NATEEN PANTS (tipo pantaloncito), solo tallas L a XXL, caja de 160u a $55:
   Pants L 9–14 kg (19–31 lb) · Pants XL 12–17 kg (26–37.5 lb) · Pants XXL más de 15 kg (más de 33 lb)
-  También hay paquete de prematuro (menos de 6 lb, 50u, $17) y presentaciones pequeñas para probar la talla antes de la caja grande.
-- Wipes Nateen: hipoalergénicos, en caja grande (13 paquetes de 80 = 1.040 toallitas) por $25.
+  Para prematuros y recién nacidos es la talla RN. Solo se venden cajas completas: no hay paquetes sueltos ni presentaciones pequeñas.
+- Wipes Nateen: hipoalergénicos, en caja grande (12 paquetes de 80 = 960 toallitas) por $45.
 - Wipes de agua Dany Baby (agua 99% pura): caja de 12 paquetes de 50 = 600 toallitas por $25. Ya no hay combo de 2 cajas.
-- Wipes Nateen Adulto: pack de 6 paquetes de 40 = 240 toallitas por $15.
 - Fulares/portabebés Moon: unitalla ajustable, de recién nacido hasta ~25 lbs. $46.
 
 TALLAS: usa la tabla de pesos para responder "¿qué talla le toca a mi bebé?". Usa siempre "talla" (nunca "size") y libras cuando hables con la mamá.

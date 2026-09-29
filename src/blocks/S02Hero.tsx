@@ -115,7 +115,7 @@ export default function S02Hero() {
                 className="w-16 h-16 object-contain rounded-lg bg-sage/20"
               />
               <div>
-                <span className="block mono text-[10px] text-sage">Desde talla Prematuro</span>
+                <span className="block mono text-[10px] text-sage">Desde talla RN</span>
                 <span className="block font-bold text-fg leading-tight">Pañal Nateen</span>
                 <span className="block text-xs text-muted">Desde $17</span>
               </div>
