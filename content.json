@@ -35,12 +35,24 @@
       "priceFrom": 17,
       "variants": [
         { "size": "Paquete Prematuro", "range": "menos de 6 lb", "units": "50 uds",  "price": 17, "image": "/img/producto-prematuro.png" },
-        { "size": "Caja RN",  "range": "4 a 11 lb",      "units": "160 uds", "price": 45, "image": "/img/promo-nateen-familia.png" },
+        { "size": "Caja RN",  "range": "4 a 11 lb",      "units": "160 uds", "price": 50, "image": "/img/promo-nateen-familia.png" },
         { "size": "Caja S",   "range": "6 a 13 lb",      "units": "160 uds", "price": 50, "image": "/img/producto-caja-s.png" },
         { "size": "Caja M",   "range": "9 a 20 lb",      "units": "144 uds", "price": 50, "image": "/img/producto-caja-m.png" },
         { "size": "Caja L",   "range": "15 a 40 lb",     "units": "128 uds", "price": 45, "image": "/img/producto-caja-l.png" },
         { "size": "Caja XL",  "range": "26 a 55 lb",     "units": "112 uds", "price": 45, "image": "/img/producto-caja-xl.png" },
         { "size": "Caja XXL", "range": "más de 55 lb",   "units": "112 uds", "price": 45, "image": "/img/promo-nateen-familia.png" }
+      ]
+    },
+    {
+      "id": "nateen-pants",
+      "name": "Pañales Nateen Pants",
+      "description": "Tipo pantaloncito (pull-ups), con la misma protección hipoalergénica Nateen: sin cloro ni perfumes, 100% fibras de bambú. Caja de 160 para todo el mes. Solo tallas L, XL y XXL.",
+      "image": "/img/promo-nateen-familia.png",
+      "priceFrom": 55,
+      "variants": [
+        { "size": "Pants L",   "range": "19 a 31 lb",   "units": "160 uds", "price": 55, "image": "/img/promo-nateen-familia.png" },
+        { "size": "Pants XL",  "range": "26 a 37.5 lb", "units": "160 uds", "price": 55, "image": "/img/promo-nateen-familia.png" },
+        { "size": "Pants XXL", "range": "más de 33 lb", "units": "160 uds", "price": 55, "image": "/img/promo-nateen-familia.png" }
       ]
     },
     {
@@ -56,11 +68,11 @@
     {
       "id": "danybaby-aquawipes",
       "name": "Wipes de agua Dany Baby",
-      "description": "AquaWipes 100: toallitas de agua 99% pura, ideales para recién nacidos. Combo de 2 cajas para que te duren el mes completo.",
+      "description": "Toallitas de agua 99% pura, sin alcohol ni perfumes, ideales para recién nacidos. Caja de 12 paquetes de 50.",
       "image": "/img/logo-badge.png",
-      "priceFrom": 35,
+      "priceFrom": 25,
       "variants": [
-        { "size": "Combo 2 cajas", "range": "agua 99% pura", "units": "1.200 toallitas", "price": 35, "image": "/img/logo-badge.png" }
+        { "size": "Caja", "range": "12 paquetes de 50", "units": "600 toallitas", "price": 25, "image": "/img/logo-badge.png" }
       ]
     },
     {
@@ -76,10 +88,11 @@
     {
       "id": "fular-moon",
       "name": "Fulares Moon",
-      "description": "Portabebés ergonómico Moon: unitalla y ajustable, de recién nacido hasta ~25 lb. Carga a tu bebé cómoda y segura. Precio y disponibilidad por WhatsApp.",
+      "description": "Portabebés ergonómico Moon: unitalla y ajustable, de recién nacido hasta ~25 lb. Carga a tu bebé cómoda y segura. Disponibilidad y colores por WhatsApp.",
       "image": "/img/producto-fular-moon.png",
+      "priceFrom": 46,
       "variants": [
-        { "size": "Unitalla", "range": "RN a ~25 lb", "units": "ajustable", "image": "/img/producto-fular-moon.png" }
+        { "size": "Unitalla", "range": "RN a ~25 lb", "units": "ajustable", "price": 46, "image": "/img/producto-fular-moon.png" }
       ]
     }
   ],
