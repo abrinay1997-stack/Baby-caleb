@@ -13,3 +13,22 @@ La clienta sube fotos/logos/banners nuevos a `📤SUBIR-CONTENIDO/` (ver
 - Una vez organizado un archivo, quítalo de `📤SUBIR-CONTENIDO/` para dejarla
   lista para la próxima subida. Si el destino o nombre no está claro por el
   pedido de la clienta, pregunta antes de mover nada.
+
+# Sistema Baby Caleb (en construcción)
+
+Este repo es también la casa del sistema propio de Baby Caleb en Cloudflare: la
+web se queda en la raíz y el sistema (pedidos, inventario, pagos, entregas,
+contabilidad, asistente) nace en `sistema/`. Antes de programar cualquier parte
+del sistema, lee `docs/plan/README.md` y el documento de la parte que toques.
+
+- **Un dato, un solo dueño:** precio, existencias y costo viven solo en la D1
+  del sistema. Nunca escribas un precio en `content.json` ni en el código.
+- **Ninguna cifra a ojo:** montos, comisiones, impuestos y puntos salen de la
+  dueña o de una fuente citada; lo que falta queda `PENDIENTE`.
+- **El navegador no decide un pago** y los libros (inventario, asientos,
+  bitácoras) no se editan ni se borran.
+- **El diseño de la web no se toca** sin pedido explícito: lo nuevo usa los
+  bloques y los tokens que ya existen (`brand.json`, `src/styles/`).
+- **Secretos fuera del chat; datos de clientas fuera de GitHub.**
+- El CRM (`juanarrietabusiness-pixel/CRM-Baby-Caleb`) es otro repo: los cambios
+  allá siguen sus propias reglas (`CLAUDE.md` de ese repo).
