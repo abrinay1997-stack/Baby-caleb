@@ -35,8 +35,9 @@ flowchart LR
   cada llamada (rol, nivel, adjuntos, texto externo, tamaño de argumentos) antes de ejecutar.
 - **Bitácora** (`acciones`): cada ejecución con usuario, canal, argumentos, resultado, estado y si
   hubo adjuntos. No se edita ni se borra.
-- **Proveedor de IA**: SDK oficial de Anthropic por defecto, detrás de una interfaz de proveedor
-  como la del CRM (`src/llm/provider.ts`) para poder cambiar de proveedor sin tocar el bucle.
+- **Proveedor de IA**: Meta Muse Spark Contributor (decisión D-19, §6), por la puerta de Meta
+  compatible con el formato de Anthropic, detrás de una interfaz de proveedor como la del CRM
+  (`src/llm/provider.ts`) para poder cambiar de modelo o de proveedor sin tocar el bucle.
 - **Dónde corre el bucle**: en el panel y en MCP, en el sistema. En Telegram, en el CRM (es quien
   recibe el mensaje y ya tiene memoria de la conversación y herramientas propias como pausar o
   devolver al bot); pide las definiciones y ejecuta en el sistema por RPC, igual que Juan pide las
@@ -105,39 +106,46 @@ Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
 
 ## 6. Modelo, costo y caché
 
-**Costo por modelo** (precios de Anthropic consultados el 29-oct-2026; supuestos: 30 consultas al
-día, 2.5 llamadas al modelo por consulta, ~6.000 tokens fijos cacheados + ~2.000 variables por
-llamada, ~600 tokens de salida por llamada):
+**Decidido el 2026-10-29 (D-19): Meta Muse Spark Contributor** (`muse-spark-1.2-contributor`),
+sabiendo que Meta usa lo que recibe para entrenar sus modelos. La decisión es solo para el
+asistente interno: el bot de clientas del CRM sigue con el modelo que tiene.
 
-| Modelo | ID | Entrada / salida por millón | Costo estimado al mes |
-|---|---|---|---|
-| Claude Haiku 5.5 | `claude-haiku-5-5` | $0.10 / $0.50 (prompts de hasta 100K) | ≈ $2–3 |
-| Claude Sonnet 5.5 | `claude-sonnet-5-5` | $2.00 / $10.00; caché leída $0.20 | ≈ $25–30 |
-| Claude Opus 5.5 | `claude-opus-5-5` | $4.00 / $20.00; caché leída $0.20 | ≈ $45–55 |
+| Modelo | ID | Entrada / salida por millón | ¿Meta entrena con lo que recibe? | Costo estimado al mes | Papel |
+|---|---|---|---|---|---|
+| Muse Spark Contributor | `muse-spark-1.2-contributor` | ≈ $0.10 / $0.20 | Sí | ≈ $1.5–3 | El del asistente |
+| Muse Spark 1.3 | `muse-spark-1.3` | $1.25 / $4.25 | No | ≈ $25–30 | Respaldo posible (misma llave) |
+| Claude Haiku 5.5 | `claude-haiku-5-5` | $0.10 / $0.50 | — | ≈ $2–3 | Respaldo posible si Meta cae entera |
 
-El plan v1 decía «~$2–5 al mes»: eso solo vale con Haiku 5.5. **La elección es de la dueña**
-(pregunta abierta en [10](10-riesgos-y-decisiones.md)); el modelo queda en `ajustes` y se puede
-cambiar sin desplegar. Opción intermedia: Haiku 5.5 para el día a día y un modelo mayor solo en
-tareas largas (cierre de mes guiado, análisis), elegido por herramienta. El bot de clientas del CRM
-tiene su propio modelo y su propio presupuesto.
+Precios de Meta: los de `CRM-Baby-Caleb/src/pricing.ts` (sep-2026). D'Casa dejó escrito que no los
+pudo verificar en la página oficial (`JUAN_WORKER.md`): se confirman con la primera factura y, si un
+modelo no tiene precio cargado, el tope lo cuenta con la tarifa más cara conocida. Supuestos del
+costo: 30 consultas al día, 2.5 llamadas por consulta, ~8.000 tokens de entrada y ~600 de salida por
+llamada, sin caché.
 
-**Notas de la API que el código debe respetar:**
+**Cómo se habla con Meta** (lo que el CRM ya aprendió, `src/llm/provider.ts`):
 
-- `tool_choice` forzado (`any` o `tool`) devuelve 400 en Opus 5.5 y Sonnet 5.5: se usa `auto` con
-  herramientas `strict: true` y la instrucción en el prompt.
-- El pensamiento es adaptativo; la profundidad se controla con `output_config.effort` (Haiku 5.5 y
-  Opus 5.5 usan `medium` por defecto). Para consultas del día, `low`.
-- Los argumentos de herramientas se parsean como JSON, nunca con comparación de texto.
-- Siempre revisar `stop_reason` (incluido `refusal`) antes de leer el contenido.
+- La API de Meta habla el formato de mensajes de Anthropic en `https://api.meta.ai/v1/messages`:
+  mismo cliente, base explícita. Nunca `ANTHROPIC_BASE_URL` en el Worker (regla del CRM).
+- La llave es `META_API_KEY` (o `MODEL_API_KEY`). **No** es el token de Messenger ni de Instagram,
+  que jamás se manda a `api.meta.ai` (el CRM tiene una prueba que lo vigila; se copia).
+- Sin `eager_input_streaming` en las herramientas: con ese campo, Meta falla en cada mensaje
+  (`toolStreaming: false` en el CRM).
+- `max_tokens` de 16 o más: Meta rechaza menos.
+- Sin `cache_control`: no se sabe que Meta lo acepte. El costo se calcula sin caché.
+- `tool_choice` en `auto`, y los argumentos de toda herramienta se validan con zod en el servidor
+  antes de ejecutarla (no se cuenta con validación estricta del lado del modelo).
+- El modelo está en `ajustes.modelo_asistente` y el de respaldo en `ajustes.modelo_respaldo`
+  (PENDIENTE). Si el modelo falla dos veces seguidas, se usa el respaldo y queda anotado; sin
+  respaldo, el asistente dice que no puede contestar ahora. Cambiar de modelo no exige desplegar.
 
-**Caché de prompts** (la diferencia con D'Casa):
+**Herramientas en orden fijo.** Se mandan todas, siempre en el mismo orden. Con este modelo,
+~6.000 tokens de herramientas cuestan ≈ $0.0006 por llamada: preseleccionar no ahorra nada que
+importe, y una lista fija da respuestas más predecibles y deja lista la caché si un día se cambia a
+un modelo que la tenga. La fecha, la hora y la pantalla actual van en el mensaje del turno, no en
+las instrucciones.
 
-- Orden fijo: herramientas → instrucciones → mensajes. Con ~30 herramientas se mandan **todas, en
-  orden fijo**, y se cachean. La preselección por mensaje de Brian cambia la lista y rompe la caché
-  en cada turno; con un modelo barato y pocas herramientas no compensa.
-- Las instrucciones del sistema no llevan fecha, hora ni datos de la pantalla: eso va al final, en
-  el mensaje del turno o como mensaje de sistema a mitad de la conversación.
-- Se vigila `cache_read_input_tokens` en `asistente_uso`; si queda en cero, hay algo que invalida.
+**Tope mensual:** `ajustes.tope_ia_mensual_usd`, PENDIENTE. Propuesta: $10 al mes en total (unas
+cuatro veces el gasto esperado), como red ante una llave filtrada o un bucle.
 
 ## 7. Defensas
 
@@ -157,6 +165,17 @@ Copiadas de Brian, que ya pasaron auditorías:
   asistente lo dice y no llama al modelo. La consola del CRM reporta su consumo con
   `registrarUsoIA` para que el tope sea uno solo.
 - Telegram: solo los chats de `usuarios` activos; de cualquier otro, ninguna respuesta.
+- **Datos de clientas fuera de lo que ve el modelo** (D-20). Meta entrena con lo que recibe el
+  Contributor, y las clientas son terceras personas: lo que el asistente le manda al modelo no lleva
+  nombres, celulares, correos, direcciones, coordenadas ni fotos de comprobantes. Cada clienta va
+  como una referencia (`C-0042`) y el panel o Telegram ponen el nombre **después** de la respuesta
+  del modelo, al mostrarla. Si la persona escribe un nombre («¿cuánto me debe Ana?»), la
+  herramienta `buscar_cliente` lo resuelve en el servidor y al modelo le vuelve solo la referencia.
+  Las cifras del negocio (ventas, costos, márgenes, stock) sí van: el dueño del proyecto lo aceptó.
+  Es la prudencia que la auditoría de D'Casa pidió para los modelos `-contributor`
+  (`JUAN_WORKER.md`), aplicada solo a datos de terceros. Se activa con `ajustes.ia_entrena_con_datos`
+  y tiene su prueba: ningún resultado de herramienta que sale hacia el modelo contiene un celular,
+  un correo o un nombre de `clientes`.
 
 ## 8. Datos
 

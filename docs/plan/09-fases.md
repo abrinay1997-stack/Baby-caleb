@@ -36,7 +36,7 @@ que construye. F6 abre los canales y lo pule.
 |---|---|---|
 | F0.1 | Comprar `babycaleb.com` | Cloudflare Registrar, cuenta de la agencia, titular Baby Caleb. Activar Email Routing (`hola@`) |
 | F0.2 | Arrancar trámites de pago | Yappy Botón de Pago (credenciales), afiliación a Tilopay, cuenta PayPal Business. Lista en [04 §9](04-pagos.md#9-lo-que-hay-que-pedir-y-cuándo) |
-| F0.3 | Respuestas pendientes | Las preguntas de [10 §3](10-riesgos-y-decisiones.md#3-preguntas-abiertas), empezando por las que frenan pagos |
+| F0.3 | Respuestas pendientes | Las de [10 §3](10-riesgos-y-decisiones.md#3-preguntas-abiertas). Las que frenaban pagos (P1, P2) ya están respondidas: F0.2 arranca de inmediato |
 | F0.4 | Conector de Cloudflare e inventario en vivo | Workers, D1, Vectorize, colas, plan, gasto del mes; confirmar que el plan es Workers Paid |
 | F0.5 | Red de las sesiones | Permitir `tilopay.com` y `yappy.com.pa` en la configuración de red del entorno de Claude |
 | F0.6 | Documentos vivos | `CLAUDE.md` ampliado, `docs/LEEME_PRIMERO.md`, `PRIORIDADES.md`, `CONTEXTO_AGENTICO.md`, `FUENTES_DE_VERDAD.md` |
@@ -90,7 +90,7 @@ datos reales.
 | F2.4 | Seguridad | `seguridad/access.ts` (portado de `edge/src/puerta.ts` de D'Casa), roles, `pin.ts`, `sesion.ts`, `turnstile.ts` |
 | F2.5 | Outbox y colas | `eventos_salida`, publicador, consumidor de `bc-tareas`, colas muertas, `eventos_recibidos` |
 | F2.6 | Panel | React + Vite + Tailwind 4 en `sistema/panel/`, tokens de `brand.json` (copiados con una prueba de que siguen iguales), reglas de teléfono del CRM; pantallas: inicio, catálogo, existencias, bodegas, zonas de envío, ajustes, usuarios |
-| F2.7 | Registro del asistente | `registro.ts`, `politica.ts`, `acciones`, proveedor de guion fijo; primeras herramientas de lectura (`ver_stock`, `movimientos`) |
+| F2.7 | Registro del asistente | `registro.ts`, `politica.ts`, `acciones`, proveedor de guion fijo y proveedor Meta (con lo aprendido en el CRM); capa de referencias para datos de clientas; primeras herramientas de lectura (`ver_stock`, `movimientos`) |
 | F2.8 | Salud | `/salud` con versión, migración y humo |
 | F2.9 | Respaldos | `respaldo.yml` diario y simulacro semanal sobre staging |
 | F2.10 | Contrato | `sistema/src/contrato/` con esquemas y huella; `docs/CONTRATO_CRM.md` |
@@ -219,7 +219,7 @@ prorrateo; conciliación con CSV reales anonimizados; balance = 0 tras un mes si
 | F6.2 | Chat del panel | Botón flotante, contexto de pantalla, pasos en vivo por SSE, tarjetas Permitir/Rechazar |
 | F6.3 | Telegram | `cerebro.ts` del CRM suma las herramientas del sistema por RPC; confirmaciones con botones; `registrarUsoIA` |
 | F6.4 | MCP | `/mcp` con OAuth o token personal; empieza con lectura |
-| F6.5 | Modelo y tope | Modelo elegido por la dueña en `ajustes`; tope mensual global y por persona |
+| F6.5 | Modelo y tope | Muse Spark Contributor (D-19) con la capa de referencias (D-20) y su prueba; modelo de respaldo; tope mensual global y por persona |
 | F6.6 | Defensas | Las de [06 §7](06-asistente.md#7-defensas) con sus pruebas |
 | F6.7 | Evaluación | 30 preguntas reales con herramienta y cifra esperadas |
 

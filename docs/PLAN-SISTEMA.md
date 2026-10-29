@@ -17,8 +17,8 @@
   y PayPal (solo total), más el pago manual con comprobante que se usa hoy.
 - **Asistente interno:** el equivalente de Brian, en el panel, en Telegram (la consola del CRM) y
   por MCP, con herramientas por niveles y una bitácora que no se borra.
-- **Costo:** ≈ $10–15 al mes en total con Haiku 5.5 en el asistente, más las comisiones de cada
-  cobro en línea.
+- **Costo:** ≈ $10–15 al mes en total, con el asistente en Meta Muse Spark Contributor (≈ $1.5–3),
+  más las comisiones de cada cobro en línea.
 - **Plazo:** unas 17 semanas en 9 fases, cada una con algo usable al final.
 
 ## Decisiones tomadas
@@ -30,6 +30,9 @@
 | D-03 | Cuenta de Cloudflare de la agencia |
 | D-04 | Dominio `babycaleb.com` en Cloudflare Registrar |
 | D-05 | Yappy, Tilopay y PayPal |
+| D-14 | Abono solo con Yappy; total con las tres |
+| D-19 | Asistente con Meta Muse Spark Contributor |
+| D-20 | Sin datos personales de clientas hacia el modelo |
 
 Las demás (D-06 a D-18) y las preguntas abiertas están en
 [`docs/plan/10-riesgos-y-decisiones.md`](plan/10-riesgos-y-decisiones.md).

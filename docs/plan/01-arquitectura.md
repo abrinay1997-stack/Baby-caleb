@@ -202,7 +202,7 @@ flowchart LR
 | Panel | React 19 + Vite + Tailwind 4 | El stack de la web: reusa tokens y criterio visual |
 | Pruebas | Vitest + `@cloudflare/vitest-pool-workers` | D1, colas y bindings reales en local |
 | E2E | Playwright (ya instalado en estas sesiones) | Web, checkout y comparación de píxeles |
-| IA | SDK oficial de Anthropic con capa de proveedor intercambiable | Patrón de `CRM-Baby-Caleb/src/llm/provider.ts` y `dcasa_brian/models/proveedores.py` |
+| IA | Meta Muse Spark Contributor por su puerta compatible con Anthropic (`api.meta.ai/v1`), detrás de una capa de proveedor intercambiable | Decisión D-19; patrón de `CRM-Baby-Caleb/src/llm/provider.ts` y `dcasa_brian/models/proveedores.py` |
 | Node / wrangler | Node 22, wrangler 4.x (≥ 4.36 por el binding de rate limiting) | — |
 
 Durable Objects no hacen falta en el sistema: la concurrencia la resuelven las restricciones de D1

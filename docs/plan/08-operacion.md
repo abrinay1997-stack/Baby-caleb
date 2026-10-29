@@ -179,6 +179,6 @@ Límites que el diseño respeta: D1 de 10 GB por base, 1.000 consultas por invoc
 una), 100 parámetros por consulta, 30 s por consulta, filas de hasta 2 MB; 32 invocaciones
 encadenadas por solicitud a través de bindings; rate limiting con periodos de 10 o 60 s.
 
-Total mensual estimado de todo el sistema: **≈ $10–15** (plan + puente actual + IA con Haiku 5.5 +
-dominio), más las comisiones de cada cobro en línea. Con Sonnet 5.5 o Opus 5.5 en el asistente, ver
-[06 §6](06-asistente.md#6-modelo-costo-y-caché).
+Total mensual estimado de todo el sistema: **≈ $10–15** (plan + puente actual + bot del CRM +
+asistente con Muse Spark Contributor, ≈ $1.5–3 + dominio), más las comisiones de cada cobro en
+línea. Detalle del asistente en [06 §6](06-asistente.md#6-modelo-costo-y-caché).

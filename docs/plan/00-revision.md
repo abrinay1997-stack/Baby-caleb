@@ -128,8 +128,8 @@ mismo momento. → [`05-contabilidad.md` §3](05-contabilidad.md#3-asientos-auto
 | I19 | `reglas.json` en el repo obligaba a desplegar para cambiar el abono mínimo | Valores de fábrica en JSON + capa editable con versión y vigencia (patrón `dcasa.vend.reglas`) → [02 §9](02-datos.md#9-sistema) |
 | I20 | Los motorizados no siempre tienen correo para Access | Hostname aparte `ruta.babycaleb.com` con celular + PIN → [07 §3](07-seguridad.md#3-motorizados-y-clientas) |
 | I21 | El código de «Mi cuenta» por WhatsApp no puede ir por el puente QR | Plantilla de autenticación de la Cloud API, o PIN → [07 §3](07-seguridad.md#3-motorizados-y-clientas) |
-| I22 | La preselección de herramientas de Brian cambia la lista en cada mensaje y rompe la caché de prompts | Herramientas completas en orden fijo y cacheadas; fecha y pantalla al final → [06 §6](06-asistente.md#6-modelo-costo-y-caché) |
-| I23 | El costo de IA (~$2–5) solo vale para un modelo de gama Haiku | Tabla de costos por modelo; la elección es de la dueña → [06 §6](06-asistente.md#6-modelo-costo-y-caché) |
+| I22 | La preselección de herramientas de Brian cambia la lista en cada mensaje y rompe la caché de prompts | Herramientas completas en orden fijo; fecha y pantalla al final → [06 §6](06-asistente.md#6-modelo-costo-y-caché) |
+| I23 | El costo de IA (~$2–5) solo vale para un modelo barato | Decidido el 29-oct: Muse Spark Contributor, ≈ $1.5–3 al mes, sin datos personales de clientas hacia el modelo → [06 §6](06-asistente.md#6-modelo-costo-y-caché) |
 | I24 | El CRM y el sistema están en repos distintos: un cambio de contrato rompe al otro sin aviso | Esquemas zod copiados con huella y pruebas de contrato en los dos CI → [03 §6](03-contratos.md#6-versionado-y-pruebas-de-contrato) |
 | I25 | Mover el catálogo mientras la dueña registra ventas puede perder un movimiento | Ventana de congelamiento con interruptor, verificación y vuelta atrás → [08 §7](08-operacion.md#7-runbooks) |
 | I26 | Time Travel restaura toda la base encima de la actual (30 días) | Exportación diaria cifrada a R2 y simulacro semanal en una base aparte → [08 §4](08-operacion.md#4-respaldos-y-restauración) |

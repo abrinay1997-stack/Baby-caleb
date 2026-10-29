@@ -108,6 +108,7 @@ Panamá regula los datos personales con la Ley 81 de 2019 y su reglamento (Decre
 | Comprobantes de pago y recibos | Contabilidad | R2 privado | 5 años (como D'Casa por la DGI) |
 | Conversaciones | Atención | D1 del CRM | Lo que ya purga el CRM |
 | Mensajes con el asistente | Trabajo interno | D1 | 180 días sin actividad |
+| Lo que el asistente le manda al modelo | Contestar al equipo | Meta (Muse Spark Contributor, entrena con lo que recibe) | Lo que decida Meta: por eso no lleva datos personales de clientas ([06 §7](06-asistente.md#7-defensas)) |
 
 Reglas:
 
@@ -126,7 +127,9 @@ Reglas:
   nombre.
 - **Meta CAPI**: celular y correo normalizados y con hash SHA-256 antes de salir; solo de quien dio
   el consentimiento de marketing.
-- El aviso de privacidad de la web reemplaza al genérico y enlaza desde el checkout.
+- El aviso de privacidad de la web reemplaza al genérico y enlaza desde el checkout. Dice que el
+  equipo usa un asistente de IA de Meta y que a ese asistente no se le envían datos personales de
+  las clientas.
 
 ## 7. Secretos
 
@@ -140,7 +143,7 @@ por la dueña en el panel de Cloudflare. Nunca en el chat ni en el repo.
 | sistema | `PIN_PEPPER` | PIN de motorizados y clientas. No se rota |
 | sistema | `SESION_HMAC` | Firmar sesiones |
 | sistema | `TURNSTILE_SECRET` | Verificar Turnstile |
-| sistema | `ANTHROPIC_API_KEY` | Asistente |
+| sistema | `META_API_KEY` | Asistente (Muse Spark). No es el token de Messenger ni de Instagram |
 | sistema | `YAPPY_ID_COMERCIO`, `YAPPY_CLAVE_SECRETA` | Botón de Pago |
 | sistema | `TILOPAY_*` (los que pida su API) | Tilopay |
 | sistema | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | PayPal |

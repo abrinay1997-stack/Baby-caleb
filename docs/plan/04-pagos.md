@@ -24,7 +24,8 @@
 | Yappy Comercial, transferencia, Nequi, efectivo con comprobante | `manual` | Sí | Sí | El flujo de hoy; plan B si una pasarela se cae |
 | Envío al interior (Ferguson) | cualquiera | No | Sí | La KB del CRM: «se paga la totalidad antes» |
 
-Los métodos permitidos para abono viven en `ajustes.metodos_para_abono` y la dueña los confirma.
+Los métodos permitidos para abono viven en `ajustes.metodos_para_abono`. Confirmado el 2026-10-29
+(D-14): el abono, solo con Yappy (y el pago manual); el total, con las tres pasarelas.
 
 ## 3. Estados del pago
 
@@ -168,7 +169,8 @@ Los asientos de cada caso están en [05 §3](05-contabilidad.md#3-asientos-autom
 ## 9. Lo que hay que pedir, y cuándo
 
 Todo arranca en F0 porque tarda más que el código. Ninguna pasarela aprueba un comercio sin dominio
-propio y sin las páginas legales publicadas (F1).
+propio y sin las páginas legales publicadas (F1). El negocio está en regla (registro, cuenta
+bancaria y Yappy Comercial a su nombre, confirmado el 2026-10-29): los trámites pueden empezar ya.
 
 | Pasarela | Qué pedir | Quién | Bloquea |
 |---|---|---|---|

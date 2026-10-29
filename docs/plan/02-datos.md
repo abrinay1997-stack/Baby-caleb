@@ -538,12 +538,16 @@ Las tablas del asistente (`asistente_conversaciones`, `asistente_mensajes`, `acc
 | `ferguson_pago_total` | true | KB del CRM, mismo documento |
 | `checkout_activo` | false | Se enciende en F4 |
 | `pasarelas_activas` | [] | Se encienden una por una en F4 |
-| `metodos_para_abono` | ["yappy","manual"] | Recomendación del plan, la dueña confirma |
+| `metodos_para_abono` | ["yappy","manual"] | Confirmado el 2026-10-29 (D-14) |
 | `reserva_minutos_pago_en_linea` | PENDIENTE | Propuesta: 30 |
 | `reserva_horas_comprobante` | PENDIENTE | Propuesta: 2 |
 | `ventanas_entrega` | PENDIENTE | La dueña |
 | `comisiones` | PENDIENTE | Contratos de cada pasarela |
 | `cancelacion_con_abono` | PENDIENTE | ¿Reembolso o crédito? La dueña |
+| `modelo_asistente` | `muse-spark-1.2-contributor` | D-19 |
+| `modelo_respaldo` | PENDIENTE | Propuesta: `muse-spark-1.3` |
+| `ia_entrena_con_datos` | true | D-20: activa la capa de referencias |
+| `tope_ia_mensual_usd` | PENDIENTE | Propuesta: 10 |
 
 ## 10. Contabilidad
 

@@ -19,6 +19,8 @@
 | R13 | El plazo se alarga | Alta | Bajo | Margen del 20 %; fases que entregan algo usable cada una; F4b y F7 pueden correrse sin frenar a las demás |
 | R14 | Límites de D1 o de Workers | Baja | Medio | Consultas por lotes, índices, presupuesto de consultas por pantalla en CI |
 | R15 | Una migración deja el código y la base desalineados | Media | Alto | Expandir → migrar → contraer; `/salud` exige versión y migración; nunca bajar código sin revisar la base |
+| R16 | Datos de clientas terminan en el entrenamiento de Meta | Media | Alto | Capa de referencias (D-20) con su prueba; sin fotos de comprobantes; aviso de privacidad |
+| R17 | La puerta de Meta tiene diferencias con la de Anthropic (herramientas, streaming, límites) o se cae | Media | Medio | Lo aprendido en el CRM (`provider.ts`), pruebas con guion fijo, evaluación de 30 preguntas antes de encender, modelo de respaldo |
 
 ## 2. Registro de decisiones
 
@@ -37,21 +39,29 @@
 | D-11 | 2026-10-29 | `<head>` por ruta con `HTMLRewriter` en la web | SSR; prerender en el build | Cero cambios de diseño; precios del momento en el JSON-LD |
 | D-12 | 2026-10-29 | Mapa con Protomaps en R2; la zona la elige la clienta | Proveedor de teselas con plan; polígonos | Sin cuota mensual; el tarifario de la dueña es por nombre |
 | D-13 | 2026-10-29 | Panel en React + Vite servido por el sistema | Hono con HTML del servidor, como el CRM | Mismo stack y tokens de la web; pantallas ricas en el teléfono |
-| D-14 | 2026-10-29 | Abono en línea solo con Yappy (y manual); tarjeta y PayPal solo total | Cualquier método para abono | El cargo fijo de tarjeta se come el abono mínimo (pendiente de la dueña) |
+| D-14 | 2026-10-29 | Abono en línea solo con Yappy (y manual); tarjeta y PayPal solo total | Cualquier método para abono | El cargo fijo de tarjeta se come el abono mínimo. Confirmado por el dueño del proyecto el 2026-10-29 |
 | D-15 | 2026-10-29 | El bucle del asistente en Telegram corre en el CRM; en panel y MCP, en el sistema; política y bitácora siempre en el sistema | Todo el bucle en el sistema | El sistema no tiene binding al CRM; la consola ya tiene memoria y herramientas propias |
 | D-16 | 2026-10-29 | La web se publica sola al unir a `main`; el sistema, solo a mano | Todo a mano o todo automático | La web es estática y de bajo riesgo; el sistema toca dinero |
-| D-17 | 2026-10-29 | Herramientas completas en orden fijo y cacheadas | Preselección por mensaje (Brian) | La preselección rompe la caché de prompts |
+| D-17 | 2026-10-29 | Herramientas completas en orden fijo | Preselección por mensaje (Brian) | Con Muse Spark Contributor preseleccionar no ahorra nada que importe; la lista fija es más predecible y deja lista la caché si se cambia de modelo |
 | D-18 | 2026-10-29 | Motorizados por `ruta.babycaleb.com` con PIN | Access por correo | No todos tienen correo; acceso limitado a sus entregas |
+| D-19 | 2026-10-29 | El asistente usa Meta Muse Spark Contributor (`muse-spark-1.2-contributor`) | Claude Haiku/Sonnet/Opus 5.5; Muse Spark 1.3 | Decisión del dueño del proyecto, sabiendo que Meta entrena con lo que recibe. ≈ $1.5–3 al mes. Solo para el asistente interno, no para el bot de clientas |
+| D-20 | 2026-10-29 | Al modelo no le llegan datos personales de clientas: referencias en vez de nombres, celulares y direcciones | Mandar todo tal cual | Las clientas son terceras personas y no aceptaron que Meta entrene con sus datos (Ley 81); las cifras del negocio sí van |
 
 Toda decisión nueva se agrega aquí con fecha, alternativas y motivo.
+
+### Preguntas ya respondidas
+
+| # | Pregunta | Respuesta (2026-10-29) |
+|---|---|---|
+| P1 | ¿Negocio registrado, cuenta bancaria propia, titular del Yappy Comercial? | Todo en regla a nombre del negocio. Los trámites de pago arrancan ya |
+| P2 | ¿Abono solo con Yappy y total con las tres pasarelas? | Sí (D-14) |
+| P3a | ¿Qué modelo usa el asistente? | Meta Muse Spark Contributor (D-19) |
 
 ## 3. Preguntas abiertas
 
 | # | Pregunta | Frena |
 |---|---|---|
-| P1 | ¿Baby Caleb está registrado como negocio (RUC o aviso de operación) y tiene cuenta bancaria a su nombre? ¿Quién es titular del Yappy Comercial? | Trámites de pago (F0.2) |
-| P2 | ¿En línea se cobra el abono solo con Yappy y el total con las tres? | F4b |
-| P3 | ¿Qué modelo usa el asistente y cuál es su tope mensual? ¿Cómo se llama? | F6 (el tope y el modelo se pueden cambiar después) |
+| P3 | ¿Cuál es el tope mensual de IA del asistente (propuesta: $10)? ¿Qué modelo de respaldo usa si Meta falla? ¿Cómo se llama? | F6 (se pueden cambiar después) |
 | P4 | ¿Factura fiscal o electrónica? ¿Hay contadora? ¿ITBMS en pañales, wipes y fulares? ¿Qué banco y qué cuentas? | F5 |
 | P5 | ¿Motorizados propios o de terceros? ¿Cómo se les paga (viaje, zona, día)? ¿Quién lleva Ferguson? | F4.5 y F5.6 |
 | P6 | ¿A qué proveedores se les compra, cada cuánto y cuántos días tardan? | F5.4 y Reponer |

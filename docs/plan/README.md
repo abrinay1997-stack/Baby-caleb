@@ -48,6 +48,9 @@ Fuentes que se leyeron para escribirlo:
 | D-03 | 2026-10-28 | Todo vive en la cuenta de Cloudflare de la agencia, donde ya está el CRM |
 | D-04 | 2026-10-28 | Dominio `babycaleb.com` (por comprar, en Cloudflare Registrar) |
 | D-05 | 2026-10-28 | Cobro en la web con Yappy, Tilopay y PayPal |
+| D-14 | 2026-10-29 | El abono en línea, solo con Yappy (y el pago manual); el total, con las tres pasarelas |
+| D-19 | 2026-10-29 | El asistente usa Meta Muse Spark Contributor, sabiendo que Meta entrena con lo que recibe |
+| D-20 | 2026-10-29 | Al modelo del asistente no le llegan datos personales de clientas |
 
 El registro completo, con alternativas y motivos, está en
 [`10-riesgos-y-decisiones.md`](10-riesgos-y-decisiones.md).
