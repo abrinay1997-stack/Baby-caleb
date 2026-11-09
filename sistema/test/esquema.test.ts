@@ -21,14 +21,18 @@ async function sembrar() {
   const t = ahora();
   await env.DB.batch([
     env.DB.prepare(
-      "INSERT OR IGNORE INTO productos (id,familia,nombre,slug,creado_en) VALUES ('p1','panal','Pañal Nateen','panal-nateen',?)",
+      "INSERT OR IGNORE INTO productos (id,familia,nombre,slug,creado_en) VALUES ('p1','panal','Producto de pruebas','producto-de-pruebas',?)",
     ).bind(t),
     env.DB.prepare(
-      "INSERT OR IGNORE INTO variantes (codigo,producto_id,nombre,talla,unidades_por_caja,precio_cents,actualizado_en) VALUES ('NAT-M','p1','Pañal Nateen Talla M — caja de 144','M',144,5000,?)",
+      "INSERT OR IGNORE INTO variantes (codigo,producto_id,nombre,talla,unidades_por_caja,precio_cents,actualizado_en) VALUES ('PRUEBA-M','p1','Variante de pruebas del esquema','M',144,5000,?)",
     ).bind(t),
-    env.DB.prepare("INSERT OR IGNORE INTO bodegas (id,nombre) VALUES ('bod-pty','Bodega Ciudad de Panamá')"),
-    env.DB.prepare("INSERT OR IGNORE INTO existencias (codigo,bodega_id,fisico) VALUES ('NAT-M','bod-pty',10)"),
-    env.DB.prepare("UPDATE existencias SET fisico = 10, reservado = 0 WHERE codigo='NAT-M' AND bodega_id='bod-pty'"),
+    // Nombre propio de la prueba, no el de una bodega de verdad: desde la
+    // carga inicial (0003) «Bodega Ciudad de Panamá» ya existe con otro id, y
+    // como `nombre` es UNIQUE, el OR IGNORE se saltaba la fila en silencio y
+    // la llave foránea de existencias fallaba después, lejos de la causa.
+    env.DB.prepare("INSERT OR IGNORE INTO bodegas (id,nombre) VALUES ('bod-pty','Bodega de pruebas del esquema')"),
+    env.DB.prepare("INSERT OR IGNORE INTO existencias (codigo,bodega_id,fisico) VALUES ('PRUEBA-M','bod-pty',10)"),
+    env.DB.prepare("UPDATE existencias SET fisico = 10, reservado = 0 WHERE codigo='PRUEBA-M' AND bodega_id='bod-pty'"),
   ]);
   return t;
 }
@@ -99,7 +103,7 @@ describe("D1 hace cumplir las llaves foráneas", () => {
     await sembrar();
     await expect(
       env.DB.prepare(
-        "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,actor,creado_en) VALUES ('mx','NAT-M','bodega-que-no-existe',1,'compra','sistema',?)",
+        "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,actor,creado_en) VALUES ('mx','PRUEBA-M','bodega-que-no-existe',1,'compra','sistema',?)",
       ).bind(ahora()).run(),
     ).rejects.toThrow(/FOREIGN KEY/i);
   });
@@ -109,7 +113,7 @@ describe("los libros no se editan", () => {
   it("aborta UPDATE y DELETE sobre movimientos_inventario", async () => {
     const t = await sembrar();
     await env.DB.prepare(
-      "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,actor,creado_en) VALUES ('m1','NAT-M','bod-pty',10,'apertura','sistema',?)",
+      "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,actor,creado_en) VALUES ('m1','PRUEBA-M','bod-pty',10,'apertura','sistema',?)",
     ).bind(t).run();
 
     await expect(
@@ -128,12 +132,12 @@ describe("los libros no se editan", () => {
     const t = await sembrar();
     await expect(
       env.DB.prepare(
-        "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,actor,creado_en) VALUES ('m2','NAT-M','bod-pty',-1,'merma','duena',?)",
+        "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,actor,creado_en) VALUES ('m2','PRUEBA-M','bod-pty',-1,'merma','duena',?)",
       ).bind(t).run(),
     ).rejects.toThrow(/CHECK/i);
 
     await env.DB.prepare(
-      "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,motivo,actor,creado_en) VALUES ('m3','NAT-M','bod-pty',-1,'merma','caja mojada','duena',?)",
+      "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,motivo,actor,creado_en) VALUES ('m3','PRUEBA-M','bod-pty',-1,'merma','caja mojada','duena',?)",
     ).bind(t).run();
     const n = await env.DB.prepare("SELECT COUNT(*) c FROM movimientos_inventario WHERE tipo='merma'").first<{ c: number }>();
     expect(n?.c).toBe(1);
@@ -144,10 +148,10 @@ describe("restricciones de existencias", () => {
   it("no deja reservar más de lo que hay ni dejar el físico en negativo", async () => {
     await sembrar();
     await expect(
-      env.DB.prepare("UPDATE existencias SET reservado = 99 WHERE codigo='NAT-M'").run(),
+      env.DB.prepare("UPDATE existencias SET reservado = 99 WHERE codigo='PRUEBA-M'").run(),
     ).rejects.toThrow(/reservado <= fisico/);
     await expect(
-      env.DB.prepare("UPDATE existencias SET fisico = -1 WHERE codigo='NAT-M'").run(),
+      env.DB.prepare("UPDATE existencias SET fisico = -1 WHERE codigo='PRUEBA-M'").run(),
     ).rejects.toThrow(/fisico >= 0/);
   });
 });
@@ -163,14 +167,14 @@ describe("la fila de control tumba el batch entero", () => {
     await expect(
       env.DB.batch([
         // Este UPDATE no encuentra nada (la bodega no es esa): cambia 0 filas y NO falla.
-        env.DB.prepare("UPDATE existencias SET fisico = 5 WHERE codigo='NAT-M' AND bodega_id='otra'"),
+        env.DB.prepare("UPDATE existencias SET fisico = 5 WHERE codigo='PRUEBA-M' AND bodega_id='otra'"),
         // El control sí falla, porque el cambio no ocurrió.
         env.DB.prepare(
-          "INSERT INTO controles (id,regla,ok,creado_en) VALUES ('c-malo','ajuste_stock',(SELECT COUNT(*) FROM existencias WHERE codigo='NAT-M' AND bodega_id='otra' AND fisico=5),?)",
+          "INSERT INTO controles (id,regla,ok,creado_en) VALUES ('c-malo','ajuste_stock',(SELECT COUNT(*) FROM existencias WHERE codigo='PRUEBA-M' AND bodega_id='otra' AND fisico=5),?)",
         ).bind(t),
         // Y esto nunca debe quedar escrito.
         env.DB.prepare(
-          "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,actor,creado_en) VALUES ('m-malo','NAT-M','bod-pty',-5,'ajuste','sistema',?)",
+          "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,actor,creado_en) VALUES ('m-malo','PRUEBA-M','bod-pty',-5,'ajuste','sistema',?)",
         ).bind(t),
       ]),
     ).rejects.toThrow(/CHECK|ok = 1/i);
@@ -187,16 +191,16 @@ describe("la fila de control tumba el batch entero", () => {
     const t = ahora();
 
     await env.DB.batch([
-      env.DB.prepare("UPDATE existencias SET fisico = 5 WHERE codigo='NAT-M' AND bodega_id='bod-pty'"),
+      env.DB.prepare("UPDATE existencias SET fisico = 5 WHERE codigo='PRUEBA-M' AND bodega_id='bod-pty'"),
       env.DB.prepare(
-        "INSERT INTO controles (id,regla,ok,creado_en) VALUES ('c-bueno','ajuste_stock',(SELECT COUNT(*) FROM existencias WHERE codigo='NAT-M' AND bodega_id='bod-pty' AND fisico=5),?)",
+        "INSERT INTO controles (id,regla,ok,creado_en) VALUES ('c-bueno','ajuste_stock',(SELECT COUNT(*) FROM existencias WHERE codigo='PRUEBA-M' AND bodega_id='bod-pty' AND fisico=5),?)",
       ).bind(t),
       env.DB.prepare(
-        "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,motivo,actor,creado_en) VALUES ('m-bueno','NAT-M','bod-pty',-5,'ajuste','conteo del lunes','duena',?)",
+        "INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,motivo,actor,creado_en) VALUES ('m-bueno','PRUEBA-M','bod-pty',-5,'ajuste','conteo del lunes','duena',?)",
       ).bind(t),
     ]);
 
-    const e = await env.DB.prepare("SELECT fisico FROM existencias WHERE codigo='NAT-M'").first<{ fisico: number }>();
+    const e = await env.DB.prepare("SELECT fisico FROM existencias WHERE codigo='PRUEBA-M'").first<{ fisico: number }>();
     expect(e?.fisico).toBe(5);
     const m = await env.DB.prepare("SELECT COUNT(*) c FROM movimientos_inventario WHERE id='m-bueno'").first<{ c: number }>();
     expect(m?.c).toBe(1);

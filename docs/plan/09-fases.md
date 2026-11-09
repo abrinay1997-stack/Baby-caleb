@@ -115,7 +115,7 @@ de producción responde que no existe; el simulacro restaura; `/salud` sano en s
 | F3.1 | Carga inicial | Bodegas (`SUCURSALES` del CRM), productos y variantes con slug, peso y talla siguiente; zonas de envío desde `member/zonas-envio.ts` con alias |
 | F3.2 | Entrypoints | `SistemaWeb` (catálogo, zonas) y `SistemaCRM` (catálogo, stock, venta, devolución, ajuste, deshacer, movimientos, cliente por identidad, cotizar envío) |
 | F3.3 | Cambios en el CRM | `FuenteCatalogo` con interruptor `CATALOGO_FUENTE`, cliente RPC, contrato con huella; `catalogQuery`, inventario de la consola, pestaña Catálogo y `cotizarEnvio` usan la fuente; `auditar-verdad.ts` audita el sistema |
-| F3.4 | Traspaso | Runbook de [08 §7](08-operacion.md#7-runbooks); omite `DESCATALOGADOS` (`NAT-WIP`, `DANY-AW1200`) de `test/babycaleb/verdad-del-cliente.ts`; movimiento `apertura` por bodega |
+| F3.4 | Traspaso | Runbook de [08 §7](08-operacion.md#7-runbooks); omite `DESCATALOGADOS` de `test/babycaleb/verdad-del-cliente.ts` (hoy: solo `NAT-WIP` — ver nota ⚠️ abajo); movimiento `apertura` por bodega |
 | F3.5 | La web lee el catálogo | `/api/catalogo` con caché de 60 s; `content.json` gana `codigo` y pierde `price`/`priceFrom`; copia de respaldo en el build; prueba que falla si vuelve un precio |
 | F3.6 | Canal web del CRM | `CanalWeb` en el CRM; el widget de la web llama a `/api/chat` → `CRM.mensajeWeb()`; misma KB, revisor y trato de usted; se apaga Groq y se borra `netlify/functions/` |
 | F3.7 | Fichas de producto | `/productos/:slug` con los bloques existentes y JSON-LD `Product` con precio del sistema |
@@ -128,6 +128,15 @@ bot iguales antes y después (`busqueda-catalogo.test.ts`); prueba de la web con
 `pnpm auditar` del CRM pasa contra el sistema; el chat de la web habla de usted y crea tickets.
 **La dueña ve:** su catálogo en el panel; la web y el bot dicen lo mismo.
 **Riesgo:** romper la atención. Mitigación: interruptor, staging del CRM y ventana de traspaso.
+
+> ⚠️ **Corrección del 2026-11-09 (al hacer F3.1).** Esta tabla decía que
+> `DANY-AW1200` estaba descatalogado. No lo está: en
+> `test/babycaleb/verdad-del-cliente.ts` la lista `DESCATALOGADOS` tiene solo
+> `NAT-WIP`, y `DANY-AW1200` sigue en `PRODUCTOS` a $40, con su renombrado
+> desde `DANY-AW2` en el seed del CRM. Manda el archivo de la verdad, que es la
+> transcripción del documento de la dueña, así que la carga inicial lo trae
+> ACTIVO. Si de verdad salió de circulación, hay que corregirlo primero en ese
+> archivo —como dice el CLAUDE.md del CRM— y después aquí.
 
 ---
 

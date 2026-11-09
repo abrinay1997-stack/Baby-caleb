@@ -22,14 +22,19 @@ async function pedir(app: ReturnType<typeof crearPanel>, ruta: string) {
   return { estado: r.status, cuerpo: (await r.json()) as Record<string, unknown> };
 }
 
+// Estas pruebas parten de una base VACÍA para poder contar lo que siembran.
+// Desde la migración 0003 la base trae el catálogo de verdad, así que hay que
+// vaciarla, y el ORDEN importa: `zonas_envio` apunta a una bodega preferida, y
+// borrar las bodegas primero rompe la llave foránea. (Lo destapó la propia
+// carga inicial: antes de ella no había ninguna zona que apuntara a nada.)
 beforeEach(async () => {
   await real.DB.batch([
     real.DB.prepare("DELETE FROM existencias"),
     real.DB.prepare("DELETE FROM valor_inventario"),
     real.DB.prepare("DELETE FROM variantes"),
     real.DB.prepare("DELETE FROM productos"),
-    real.DB.prepare("DELETE FROM bodegas"),
     real.DB.prepare("DELETE FROM zonas_envio"),
+    real.DB.prepare("DELETE FROM bodegas"),
     real.DB.prepare("DELETE FROM usuarios"),
     real.DB.prepare("DELETE FROM ajustes"),
   ]);
