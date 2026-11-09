@@ -5,3 +5,10 @@
 # wrangler.jsonc. No se versionan: son 16 mil líneas que ensucian cada diff y
 # se rehacen en un segundo. El flujo de CI los genera antes del typecheck.
 worker-configuration.d.ts
+
+# El panel construido. Lo arma el CI con `npm run panel:build`.
+panel/dist/
+
+# Capturas de la auditoría del panel. Se rehacen con `npm run panel:auditar`
+# y en CI suben como artefacto para enseñárselas a la dueña.
+.capturas/

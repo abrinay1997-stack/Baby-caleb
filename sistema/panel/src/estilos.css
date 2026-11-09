@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+/**
+ * Los estilos del panel.
+ *
+ * Los colores salen de `brand.json` y los copia `marca.ts`, que tiene una
+ * prueba que falla si se separan. Las medidas salen del §7 del sistema de
+ * diseño del CRM, que su CLAUDE.md declara contrato — y que existe porque
+ * «desktop is the finished product; the phone is not».
+ *
+ * Aquí no se inventa ningún color: el naranja y el verde de la marca NO se leen
+ * sobre el crema (2.20 y 1.75), así que para texto y bordes se usan los tonos
+ * `-strong` y `-edge`, que son los mismos con menos luz.
+ */
+
+:root {
+  --bg: #f9f6ed;
+  --surface: #f2efe5;
+  --fg: #1b3246;
+  --muted: rgba(27, 50, 70, 0.7);
+  --line: rgba(27, 50, 70, 0.12);
+
+  /* Relleno. Nunca texto ni borde. */
+  --accent: #ee924a;
+  --sage: #91c9a2;
+
+  /* Lo que se escribe encima del naranja: 5.56. */
+  --accent-fg: #1b3246;
+  /* Texto y bordes en color de marca. */
+  --accent-strong: #985d2f; /* 4.90 / 4.60 */
+  --accent-edge: #c3783d; /* 3.20 / 3.01 */
+  --sage-strong: #53735c; /* 4.92 / 4.62 */
+  --sage-edge: #6a9376; /* 3.22 / 3.03 */
+
+  /* La escala del §7b. El piso es 12 px y no baja de ahí. */
+  --t-titulo: 17px;
+  --t-cuerpo: 15px;
+  --t-apoyo: 12px;
+  --t-cifra: 32px;
+  /* Obligatorio: por debajo de 16 px, Safari de iPhone hace zoom al enfocar. */
+  --t-campo: 16px;
+
+  --tactil: 44px;
+  --radio: 14px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-edge: var(--accent-edge);
+  --color-sage: var(--sage);
+  --color-sage-strong: var(--sage-strong);
+  --color-sage-edge: var(--sage-edge);
+
+  --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--t-cuerpo);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  /* 100dvh y nunca 100vh: la barra de direcciones del teléfono los hace
+     distintos, y con 100vh el contenido queda cortado por debajo (§7h). */
+  min-height: 100dvh;
+}
+
+/* ---------------------------------------------------------------------------
+   Lo que se toca mide 44 px. El relleno cuenta para la caja, así que un icono
+   de 16 px dentro de un botón de 44 es correcto (§7c).
+   --------------------------------------------------------------------------- */
+button,
+a[role="button"],
+.tactil {
+  min-height: var(--tactil);
+  min-width: var(--tactil);
+}
+
+/* Campos a 16 px, sin excepción. Es la diferencia entre que la dueña conteste
+   un pedido y que pelee con el viewport (§7b). */
+input,
+textarea,
+select {
+  font-size: var(--t-campo);
+  font-family: inherit;
+}
+
+/* El aro de foco se ve siempre: se navega con teclado y con lector. */
+:focus-visible {
+  outline: 2px solid var(--accent-edge);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* El enlace de saltar al contenido es el primer foco de la página (§7i). */
+.saltar {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  /* 44 px también aquí. Se activa con el teclado, pero quien navega con un
+     conmutador o un apuntador de cabeza lo APUNTA, y entonces es un blanco
+     como cualquier otro (§7a). */
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tactil);
+}
+.saltar:focus {
+  left: 8px;
+  top: 8px;
+  padding: 12px 16px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: var(--radio);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------------
+   Rejilla que en el teléfono se apila (§7f: «a grid with a pixel min-width is
+   a horizontal scrollbar with extra steps»). En escritorio el envoltorio
+   desaparece con display:contents y la rejilla no se entera; en el teléfono
+   cada celda se lee como par etiqueta/valor.
+   --------------------------------------------------------------------------- */
+/* Hasta 767 px, UNA columna: cada fila debajo de la anterior. El reparto en
+   columnas llega desde 768 con `--columnas`, que pone el componente. */
+.rejilla {
+  grid-template-columns: 1fr;
+}
+
+.celda::before {
+  content: attr(data-etiqueta);
+  display: block;
+  font-size: var(--t-apoyo);
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+/* La celda identificadora no lleva etiqueta y pesa como un titular. */
+.celda[data-etiqueta=""]::before {
+  display: none;
+}
+.celda[data-etiqueta=""] {
+  font-weight: 700;
+  font-size: var(--t-titulo);
+}
+
+@media (min-width: 768px) {
+  .rejilla {
+    grid-template-columns: var(--columnas, 1fr);
+  }
+  .filas {
+    display: contents;
+  }
+  .celda::before {
+    display: none;
+  }
+  .celda[data-etiqueta=""] {
+    font-weight: 600;
+    font-size: var(--t-cuerpo);
+  }
+}
+
+/* Un solo punto de quiebre: 767 px (§7a). */
+@media (max-width: 767px) {
+  /* <main> baja a 14 px: 26 px es el 13 % de una pantalla de 390 (§7h). */
+  .contenido {
+    padding: 14px;
+    /* Hueco para la barra inferior y para la zona segura del teléfono. */
+    padding-bottom: calc(var(--tactil) + 28px + env(safe-area-inset-bottom, 0px));
+  }
+  .solo-escritorio {
+    display: none !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .solo-telefono {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

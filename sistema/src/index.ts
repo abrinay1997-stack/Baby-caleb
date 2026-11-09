@@ -1,15 +1,9 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { Hono } from "hono";
+import { panel } from "./api/panel";
 import { type Resultado, pendienteDeFase } from "./contrato/resultado";
 import { MANEJADORES, atrasados, consumir, publicarPendientes } from "./eventos";
-import {
-  conCabecerasDeSeguridad,
-  encendido,
-  permisosDe,
-  revisarPeticion,
-  superficieDe,
-  usuarioDeCorreo,
-} from "./seguridad";
+import { conCabecerasDeSeguridad, encendido, superficieDe } from "./seguridad";
 
 
 // ---------------------------------------------------------------------------
@@ -63,45 +57,13 @@ app.get("/salud", async (c) => {
 });
 
 /**
- * Quién soy y qué puedo.
+ * Toda la API del panel, detrás de Cloudflare Access.
  *
- * Es la primera ruta detrás de la puerta, y es la que el panel llama al abrir
- * para saber qué pestañas mostrar. Vale además como prueba de vida de toda la
- * cadena: Access firma, el Worker verifica, el correo se cruza con `usuarios` y
- * sale el rol con sus permisos.
- *
- * Los dos pasos son distintos y los dos pueden fallar: Access dice que esa
- * persona es quien dice ser, y `usuarios` dice si además trabaja aquí. El
- * motivo se devuelve a propósito —«sin token», «vencido», «audiencia», «no está
- * en usuarios»— porque sin él un 403 en el panel es un callejón sin salida;
- * es la lección del incidente 4 de D'Casa.
+ * Se monta entera en vez de ruta por ruta: así es imposible agregar una
+ * pantalla nueva y olvidarse de ponerle la puerta — el middleware de
+ * `api/panel.ts` corre antes que cualquiera de sus rutas.
  */
-app.get("/api/yo", async (c) => {
-  const puerta = await revisarPeticion(c.req.raw, c.env);
-  if (!("identidad" in puerta)) {
-    return c.json(
-      { ok: false, codigo: "no_autorizado", mensaje: `Access: ${puerta.rechazo.motivo}` },
-      403,
-    );
-  }
-
-  const fila = await c.env.DB.prepare(
-    "SELECT id, correo, nombre, rol, activo FROM usuarios WHERE correo = ?",
-  )
-    .bind(puerta.identidad.correo)
-    .first<{ id: string; correo: string; nombre: string; rol: string; activo: number }>();
-
-  const usuario = usuarioDeCorreo(puerta.identidad.correo, fila);
-  if (!usuario.ok) {
-    return c.json({ ok: false, codigo: "no_autorizado", mensaje: usuario.motivo }, 403);
-  }
-
-  return c.json({
-    ok: true,
-    usuario: usuario.usuario,
-    permisos: permisosDe(usuario.usuario.rol),
-  });
-});
+app.route("/api", panel);
 
 app.all("*", (c) => c.json({ ok: false, codigo: "no_encontrado", mensaje: "ruta desconocida" }, 404));
 

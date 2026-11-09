@@ -82,8 +82,46 @@ jobs:
 
       # Las pruebas corren dentro de workerd con una D1 de verdad, y aplican
       # TODAS las migraciones desde cero en cada archivo. Aquí entra también la
-      # prueba de la huella del contrato.
+      # prueba de la huella del contrato y la de los tokens de la marca.
       - run: npm test
+
+      # Que el panel construya es una prueba más: un error de JSX o un import
+      # roto no lo ve el typecheck de los módulos del Worker.
+      - run: npm run panel:build
+
+      # Y que SE VEA bien es otra. El §7 del sistema de diseño es un contrato
+      # con números —44 px de alto táctil, 16 px en los campos, 12 px de piso,
+      # nada de `100vh`— y esos números solo se comprueban leyendo el estilo ya
+      # calculado en un navegador de verdad. Esta auditoría encontró tres
+      # pantallas que se desbordaban de lado en el teléfono cuando el typecheck
+      # y las 522 pruebas estaban verdes.
+      - name: Navegador para la auditoría
+        run: npx playwright install --with-deps chromium
+
+      - name: Auditar el panel (§7 del sistema de diseño)
+        run: |
+          npm run panel:muestra &
+          # Esperar a que conteste, sin traerse una dependencia para esperar.
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4173/api/yo > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4173/api/yo > /dev/null \
+            || { echo "El panel de muestra no levantó"; exit 1; }
+          npm run panel:auditar
+
+      # Las capturas suben como artefacto para enseñárselas a la dueña antes de
+      # publicar: son el paso de «capturas a la dueña» de la receta de arriba.
+      # No llevan ningún dato real —`panel-de-muestra.mjs` los inventa— así que
+      # se pueden subir sin problema.
+      - name: Guardar las capturas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-capturas
+          path: sistema/.capturas/
+          if-no-files-found: ignore
+          retention-days: 14
 
   staging:
     name: Desplegar a staging
@@ -100,6 +138,10 @@ jobs:
           cache-dependency-path: sistema/package-lock.json
       - run: npm ci --legacy-peer-deps
       - run: npm run tipos
+
+      # `wrangler.jsonc` sirve `panel/dist` como estáticos, y esa carpeta no se
+      # versiona: si no se construye aquí, el despliegue sube un panel vacío.
+      - run: npm run panel:build
 
       # Primero la base y después el código: el código nuevo puede necesitar
       # una columna nueva, y al revés nunca, porque las migraciones son
@@ -145,6 +187,8 @@ jobs:
           cache-dependency-path: sistema/package-lock.json
       - run: npm ci --legacy-peer-deps
       - run: npm run tipos
+
+      - run: npm run panel:build
 
       # Un respaldo de antes de la migración, por si la migración sale mal. El
       # Time Travel de D1 restaura encima de la base actual, así que es el
