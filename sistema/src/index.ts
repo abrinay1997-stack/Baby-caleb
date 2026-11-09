@@ -1,9 +1,16 @@
-import { WorkerEntrypoint } from "cloudflare:workers";
 import { Hono } from "hono";
 import { panel } from "./api/panel";
-import { type Resultado, pendienteDeFase } from "./contrato/resultado";
 import { MANEJADORES, atrasados, consumir, publicarPendientes } from "./eventos";
 import { conCabecerasDeSeguridad, encendido, superficieDe } from "./seguridad";
+
+/**
+ * Los entrypoints RPC (01-arquitectura §5). La web y el CRM los llaman por
+ * service binding: no salen a internet y no hay forma de alcanzarlos desde
+ * fuera de la cuenta, así que la puerta es el binding y lo que se vigila aquí
+ * es QUÉ devuelve cada uno.
+ */
+export { SistemaWeb } from "./rpc/web";
+export { SistemaCRM } from "./rpc/crm";
 
 
 // ---------------------------------------------------------------------------
@@ -66,30 +73,6 @@ app.get("/salud", async (c) => {
 app.route("/api", panel);
 
 app.all("*", (c) => c.json({ ok: false, codigo: "no_encontrado", mensaje: "ruta desconocida" }, 404));
-
-// ---------------------------------------------------------------------------
-// RPC · lo que la web puede pedirle al sistema
-// ---------------------------------------------------------------------------
-export class SistemaWeb extends WorkerEntrypoint<Env> {
-  async catalogo(): Promise<Resultado<{ items: never[] }>> {
-    return pendienteDeFase("El catálogo para la web", "F3.5");
-  }
-  async zonasEnvio(): Promise<Resultado<{ zonas: never[] }>> {
-    return pendienteDeFase("Las zonas de envío", "F3.2");
-  }
-}
-
-// ---------------------------------------------------------------------------
-// RPC · lo que el CRM puede pedirle al sistema
-// ---------------------------------------------------------------------------
-export class SistemaCRM extends WorkerEntrypoint<Env> {
-  async catalogo(): Promise<Resultado<{ items: never[] }>> {
-    return pendienteDeFase("El catálogo para el bot", "F3.2");
-  }
-  async stock(): Promise<Resultado<{ existencias: never[] }>> {
-    return pendienteDeFase("La consulta de existencias", "F3.2");
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Worker: fetch, cola y crons
