@@ -1,6 +1,14 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { Hono } from "hono";
 import { type Resultado, pendienteDeFase } from "./contrato/resultado";
+import {
+  conCabecerasDeSeguridad,
+  encendido,
+  permisosDe,
+  revisarPeticion,
+  superficieDe,
+  usuarioDeCorreo,
+} from "./seguridad";
 
 /** Se reemplaza en el build por el SHA del commit (sistema.yml, F2.11). */
 const VERSION = "0.1.0-dev";
@@ -50,6 +58,47 @@ app.get("/salud", async (c) => {
   );
 });
 
+/**
+ * Quién soy y qué puedo.
+ *
+ * Es la primera ruta detrás de la puerta, y es la que el panel llama al abrir
+ * para saber qué pestañas mostrar. Vale además como prueba de vida de toda la
+ * cadena: Access firma, el Worker verifica, el correo se cruza con `usuarios` y
+ * sale el rol con sus permisos.
+ *
+ * Los dos pasos son distintos y los dos pueden fallar: Access dice que esa
+ * persona es quien dice ser, y `usuarios` dice si además trabaja aquí. El
+ * motivo se devuelve a propósito —«sin token», «vencido», «audiencia», «no está
+ * en usuarios»— porque sin él un 403 en el panel es un callejón sin salida;
+ * es la lección del incidente 4 de D'Casa.
+ */
+app.get("/api/yo", async (c) => {
+  const puerta = await revisarPeticion(c.req.raw, c.env);
+  if (!("identidad" in puerta)) {
+    return c.json(
+      { ok: false, codigo: "no_autorizado", mensaje: `Access: ${puerta.rechazo.motivo}` },
+      403,
+    );
+  }
+
+  const fila = await c.env.DB.prepare(
+    "SELECT id, correo, nombre, rol, activo FROM usuarios WHERE correo = ?",
+  )
+    .bind(puerta.identidad.correo)
+    .first<{ id: string; correo: string; nombre: string; rol: string; activo: number }>();
+
+  const usuario = usuarioDeCorreo(puerta.identidad.correo, fila);
+  if (!usuario.ok) {
+    return c.json({ ok: false, codigo: "no_autorizado", mensaje: usuario.motivo }, 403);
+  }
+
+  return c.json({
+    ok: true,
+    usuario: usuario.usuario,
+    permisos: permisosDe(usuario.usuario.rol),
+  });
+});
+
 app.all("*", (c) => c.json({ ok: false, codigo: "no_encontrado", mensaje: "ruta desconocida" }, 404));
 
 // ---------------------------------------------------------------------------
@@ -80,7 +129,20 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
 // Worker: fetch, cola y crons
 // ---------------------------------------------------------------------------
 export default {
-  fetch: app.fetch,
+  /**
+   * Las cabeceras de seguridad se ponen aquí, en un solo sitio, y no en cada
+   * ruta: `public/_headers` no se aplica a lo que responde un Worker, así que
+   * una ruta nueva que se olvide de ponerlas saldría desnuda. Así no puede.
+   */
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const respuesta = await app.fetch(request, env, ctx);
+    return conCabecerasDeSeguridad(respuesta, {
+      superficie: superficieDe(new URL(request.url).hostname),
+      // HSTS espera a que esté confirmado que todo subdominio sirve HTTPS
+      // (07-seguridad.md §5). Se enciende cambiando la variable, sin tocar código.
+      hsts: encendido(env.HSTS),
+    });
+  },
 
   /**
    * Consumidor de bc-tareas. Las colas entregan AL MENOS UNA VEZ, así que lo
