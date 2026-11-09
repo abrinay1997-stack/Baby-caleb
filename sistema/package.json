@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p panel",
-    "test": "vitest run",
+    "test": "vitest run && vitest run -c vitest.node.config.ts",
+    "test:node": "vitest run -c vitest.node.config.ts",
     "test:watch": "vitest",
     "dev": "wrangler dev",
     "tipos": "wrangler types",

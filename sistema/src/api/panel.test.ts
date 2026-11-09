@@ -262,3 +262,4 @@ describe("/usuarios", () => {
     expect(d.usuarios[0]).toMatchObject({ correo: "duena@babycaleb.com", rol: "duena" });
   });
 });
+

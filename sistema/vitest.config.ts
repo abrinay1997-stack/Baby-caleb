@@ -13,7 +13,12 @@ export default defineConfig(async () => {
 
   return {
     test: {
+      name: "worker",
       setupFiles: ["./test/aplicar-migraciones.ts"],
+      // `scripts/` y `test/node/` corren en Node, no aquí: dentro de workerd
+      // no existe el disco del repositorio y sus pruebas fallarían (o, peor,
+      // se saltarían en verde). Viven en vitest.node.config.ts.
+      exclude: ["**/node_modules/**", "**/dist/**", "scripts/**", "test/node/**"],
     },
     plugins: [
       cloudflareTest({

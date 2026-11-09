@@ -34,23 +34,24 @@ const TIPOS = {
 const ok = (datos) => JSON.stringify({ ok: true, datos });
 const dia = 86_400_000;
 
-/** La matriz entera, como la devuelve `permisosDe("duena")`. */
+/**
+ * La matriz entera, EXACTAMENTE como la devuelve `permisosDe("duena")`.
+ *
+ * No se inventa: `src/api/panel.test.ts` compara estas claves con las de
+ * verdad y se pone roja si se separan. Una muestra que miente sobre los
+ * permisos hace que la auditoría apruebe una navegación que en producción
+ * sale distinta.
+ */
 const PERMISOS_DUENA = {
-  catalogo: "editar",
-  existencias: "editar",
-  costo_y_margen: "ver",
   pedidos: "editar",
-  abonos: "editar",
-  pagos: "editar",
-  envios: "editar",
+  cobros: "editar",
+  costo_y_margen: "ver",
+  precios_y_stock: "editar",
   compras: "editar",
   gastos: "editar",
-  contabilidad: "ver",
+  contabilidad: "editar",
   cierre_de_mes: "editar",
-  clientes: "editar",
-  usuarios: "editar",
   ajustes: "editar",
-  bitacora: "ver",
 };
 
 const RESPUESTAS = {
