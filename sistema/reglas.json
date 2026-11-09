@@ -1,0 +1,23 @@
+{
+  "_comentario": [
+    "Valores de fábrica de los ajustes del sistema (docs/plan/02-datos.md §9).",
+    "La tabla `ajustes` en D1 manda: esto solo se usa cuando una clave no tiene",
+    "ninguna versión vigente. 'PENDIENTE' significa que el dato NO está confirmado",
+    "por la dueña o por un contrato: el sistema no lo rellena solo y la pantalla",
+    "que lo necesite debe decir que falta. Ninguna cifra a ojo."
+  ],
+  "abono_minimo_cents": 500,
+  "ferguson_pago_total": true,
+  "checkout_activo": false,
+  "pasarelas_activas": [],
+  "metodos_para_abono": ["yappy", "manual"],
+  "reserva_minutos_pago_en_linea": "PENDIENTE",
+  "reserva_horas_comprobante": "PENDIENTE",
+  "ventanas_entrega": "PENDIENTE",
+  "comisiones": "PENDIENTE",
+  "cancelacion_con_abono": "PENDIENTE",
+  "modelo_asistente": "muse-spark-1.2-contributor",
+  "modelo_respaldo": "PENDIENTE",
+  "ia_entrena_con_datos": true,
+  "tope_ia_mensual_usd": "PENDIENTE"
+}

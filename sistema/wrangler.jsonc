@@ -1,0 +1,105 @@
+{
+  // babycaleb-sistema · pedidos, inventario, dinero, panel, asistente y crons.
+  // Ver docs/plan/01-arquitectura.md §2 (recursos) y §3 (dominios y rutas).
+  //
+  // CUIDADO con los entornos de wrangler: un entorno con nombre NO hereda los
+  // bindings del nivel raíz. Por eso cada uno repite los suyos. El nivel raíz
+  // es solo para `wrangler dev` y las pruebas locales.
+  //
+  // Los `database_id` y los `namespace_id` de abajo son PENDIENTE a propósito:
+  // los recursos en vivo todavía no existen. Se rellenan al crearlos (F2, con
+  // el visto bueno de la dueña) y hasta entonces las pruebas y el dev local
+  // funcionan igual, porque miniflare crea su propia D1 en disco.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "babycaleb-sistema",
+  "main": "src/index.ts",
+  // La del plan (01-arquitectura.md §3). El runner de pruebas usa el mismo
+  // workerd que el despliegue (@cloudflare/vitest-plugin trae miniflare
+  // 5.20261109), así que las pruebas corren la compatibilidad de producción.
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "d1_databases": [
+    { "binding": "DB", "database_name": "babycaleb-db", "database_id": "PENDIENTE", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [
+    { "binding": "PRIVADO", "bucket_name": "babycaleb-privado" }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "AVISOS", "queue": "bc-avisos" },
+      { "binding": "TAREAS", "queue": "bc-tareas" }
+    ],
+    "consumers": [
+      { "queue": "bc-tareas", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 3, "dead_letter_queue": "bc-tareas-muertos" }
+    ]
+  },
+  // 1001 checkout (crearPedido) y 1003 códigos de un solo uso de «Mi cuenta».
+  // 1002 (chat web) y 1004 (geocodificación) los declara babycaleb-web en F1:
+  // los namespaces son de la cuenta y cada Worker ata los que usa.
+  "ratelimits": [
+    { "name": "LIMITE_CHECKOUT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+    { "name": "LIMITE_CODIGOS", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+  ],
+
+  "env": {
+    "staging": {
+      "name": "babycaleb-sistema-staging",
+      "observability": { "enabled": true },
+      // workers.dev queda vivo en staging, protegido por Access.
+      "d1_databases": [
+        { "binding": "DB", "database_name": "babycaleb-db-staging", "database_id": "PENDIENTE", "migrations_dir": "migrations" }
+      ],
+      "r2_buckets": [
+        { "binding": "PRIVADO", "bucket_name": "babycaleb-privado-staging" }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "AVISOS", "queue": "bc-avisos-staging" },
+          { "binding": "TAREAS", "queue": "bc-tareas-staging" }
+        ],
+        "consumers": [
+          { "queue": "bc-tareas-staging", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 3, "dead_letter_queue": "bc-tareas-staging-muertos" }
+        ]
+      },
+      "ratelimits": [
+        { "name": "LIMITE_CHECKOUT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+        { "name": "LIMITE_CODIGOS", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+      ],
+      "vars": { "ENTORNO": "staging" }
+    },
+
+    "production": {
+      "name": "babycaleb-sistema",
+      "observability": { "enabled": true },
+      // Nada de puertas traseras en producción: solo los dominios de §3.
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        { "pattern": "panel.babycaleb.com", "custom_domain": true },
+        { "pattern": "ruta.babycaleb.com", "custom_domain": true }
+      ],
+      "d1_databases": [
+        { "binding": "DB", "database_name": "babycaleb-db", "database_id": "PENDIENTE", "migrations_dir": "migrations" }
+      ],
+      "r2_buckets": [
+        { "binding": "PRIVADO", "bucket_name": "babycaleb-privado" }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "AVISOS", "queue": "bc-avisos" },
+          { "binding": "TAREAS", "queue": "bc-tareas" }
+        ],
+        "consumers": [
+          { "queue": "bc-tareas", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 3, "dead_letter_queue": "bc-tareas-muertos" }
+        ]
+      },
+      "ratelimits": [
+        { "name": "LIMITE_CHECKOUT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+        { "name": "LIMITE_CODIGOS", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+      ],
+      "vars": { "ENTORNO": "production" }
+    }
+  }
+}
