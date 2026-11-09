@@ -49,6 +49,44 @@
 
 Toda decisión nueva se agrega aquí con fecha, alternativas y motivo.
 
+### Corrección del 2026-11-09 (al implementar F2.7)
+
+El §6 de `06-asistente.md` justificaba cinco detalles del proveedor de Meta
+—formato de mensajes de Anthropic en `/v1/messages`, `eager_input_streaming`
+que hace fallar cada mensaje, `max_tokens` mínimo de 16, nada de
+`cache_control`, y una prueba que vigila que el token de Messenger no viaje a
+`api.meta.ai`— diciendo que era «lo que el CRM ya aprendió» en
+`src/llm/provider.ts`.
+
+**En el CRM no hay nada de eso.** Su proveedor es Anthropic / OpenAI / xAI; no
+menciona a Meta en ninguna línea, no existe `META_API_KEY` ni `muse-spark` en
+ningún archivo, y `src/pricing.ts` no tiene tarifa para esos modelos. Esas
+cinco afirmaciones no están comprobadas contra código que exista.
+
+Lo que sí se verificó el 2026-11-09, en fuentes públicas:
+
+- El Model API de Meta vive en `api.meta.ai/v1` y sirve Muse Spark 1.1, 1.2 y 1.3.
+- El nivel **Contributor existe** y es real: ≈ $0.10 / $0.20 por millón contra
+  $1.25 / $4.25 del estándar, **a cambio de permiso para entrenar con los
+  prompts y las respuestas**. D-19 y D-20 se sostienen.
+- El nivel se elige por el id del modelo (`muse-spark-1.3` contra
+  `muse-spark-1.3-contributor`), como daba por hecho el plan.
+- Contributor está limitado a ~100 peticiones por minuto contra las ~3.000 del
+  estándar. Para 30 consultas al día sobra, pero conviene saberlo.
+- **No se pudo verificar la RUTA ni el formato exacto**: unas fuentes dicen
+  formato de Anthropic (`/v1/messages`), otras el de OpenAI (`/v1/responses` o
+  `/v1/chat/completions`).
+
+Qué se hizo con eso en `sistema/src/asistente/proveedor.ts`: la base y la ruta
+son **configuración**, no están escritas en el código, así que si el formato
+resulta ser el otro es un ajuste y no un despliegue; `leerRespuesta()` no
+revienta ante una forma distinta, devuelve una respuesta vacía; y la guarda del
+token de Graph —la prueba que el plan decía que existía en el CRM— se
+implementó aquí, en el código, con su prueba.
+
+**Queda pendiente** confirmar la ruta con una llamada de verdad en cuanto haya
+llave. Hasta entonces, `meta()` no se da por bueno.
+
 ### Preguntas ya respondidas
 
 | # | Pregunta | Respuesta (2026-10-29) |

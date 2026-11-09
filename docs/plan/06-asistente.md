@@ -122,7 +122,14 @@ modelo no tiene precio cargado, el tope lo cuenta con la tarifa más cara conoci
 costo: 30 consultas al día, 2.5 llamadas por consulta, ~8.000 tokens de entrada y ~600 de salida por
 llamada, sin caché.
 
-**Cómo se habla con Meta** (lo que el CRM ya aprendió, `src/llm/provider.ts`):
+**Cómo se habla con Meta.** ⚠️ Lo de abajo se escribió como «lo que el CRM ya
+aprendió en `src/llm/provider.ts`». Al implementar F2.7 (2026-11-09) se
+comprobó que **en el CRM no hay nada de Meta**: su proveedor es
+Anthropic/OpenAI/xAI. Estos cinco puntos no están verificados contra código que
+exista, y la ruta exacta tampoco está confirmada. Lo que sí se verificó —que el
+nivel Contributor existe, su precio y que se elige por el id del modelo— y qué
+se hizo al respecto está en la corrección del 2026-11-09 de
+`10-riesgos-y-decisiones.md`. Léala antes de tocar `proveedor.ts`.
 
 - La API de Meta habla el formato de mensajes de Anthropic en `https://api.meta.ai/v1/messages`:
   mismo cliente, base explícita. Nunca `ANTHROPIC_BASE_URL` en el Worker (regla del CRM).

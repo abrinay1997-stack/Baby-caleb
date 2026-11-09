@@ -1,4 +1,5 @@
 import { SELF } from "cloudflare:test";
+import { env as real } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 // Prueba el Worker completo, no una función suelta: arranca el fetch, pasa por
@@ -13,7 +14,14 @@ describe("/salud", () => {
     };
     expect(cuerpo.sano).toBe(true);
     expect(cuerpo.humo).toBe(true);
-    expect(cuerpo.migracion).toBe("0001_base.sql");
+    // Contra la base y no contra un nombre escrito a mano: así la prueba sigue
+    // diciendo algo —que /salud informa la ÚLTIMA migración aplicada— en vez de
+    // pedir que la toquen cada vez que se añade una.
+    const ultima = await real.DB.prepare(
+      "SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1",
+    ).first<{ name: string }>();
+    expect(ultima?.name).toMatch(/^\d{4}_[a-z_]+\.sql$/);
+    expect(cuerpo.migracion).toBe(ultima?.name);
     expect(cuerpo.version).toBeTruthy();
   });
 
