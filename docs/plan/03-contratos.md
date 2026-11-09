@@ -89,8 +89,9 @@ interface Actor { tipo: 'bot' | 'duena' | 'usuario'; id: string; canal: string; 
 
 interface SistemaCRM {
   // Catálogo para catalogQuery (reemplaza CatalogRepo.search/listActive del CRM)
-  buscarCatalogo(q: string, limite?: number): Promise<Resultado<VariantePublica[]>>;
-  listarCatalogo(): Promise<Resultado<VariantePublica[]>>;
+  // `cantidad` añade `pedido` a cada variante; ver la nota ⚠️ debajo del bloque.
+  buscarCatalogo(q: string, limite?: number, cantidad?: number): Promise<Resultado<VariantePublica[]>>;
+  listarCatalogo(cantidad?: number): Promise<Resultado<VariantePublica[]>>;
 
   // Solo para la consola de la dueña (actor.tipo === 'duena')
   stockDetallado(actor: Actor, codigo?: string): Promise<Resultado<{ codigo: string; nombre: string;
@@ -130,6 +131,22 @@ interface SistemaCRM {
     cacheLeida: number; cacheEscrita: number }): Promise<Resultado<{ dentroDelTope: boolean }>>;
 }
 ```
+
+> ⚠️ **Añadido el 2026-11-09 (al hacer F3.3).** `VariantePublica` no llevaba
+> ninguna cantidad, y el bot del CRM HOY contesta «¿alcanza para 30 cajas?».
+> Mudar el catálogo aquí sin esto le habría quitado una capacidad que ya tiene,
+> en silencio. Así que `buscarCatalogo` y `listarCatalogo` aceptan `cantidad`, y
+> cada variante gana entonces:
+>
+> ```ts
+> pedido?: { cantidadPedida: number; alcanza: boolean; maximoDisponible?: number }
+> ```
+>
+> `maximoDisponible` SOLO aparece cuando no alcanza. Es la única forma en que un
+> número de inventario sale hacia el bot, y es deliberada: decir «de 30 no, de
+> 25 sí» es la respuesta útil y no hay manera de darla sin el número; cuando
+> alcanza, basta un sí. La regla es del CRM (`cobertura` en
+> `src/tools/catalogQuery.ts`) y se conserva entera.
 
 **Identidad de la dueña.** El CRM ya sabe quién es la dueña (`OWNER_TELEGRAM_CHAT_ID` o el vínculo
 del panel). Pasa `actor.tipo = 'duena'` con su `chat_id`, y el sistema lo cruza con

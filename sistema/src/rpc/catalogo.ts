@@ -27,6 +27,28 @@ export interface VariantePublica {
   readonly unidadesPorCaja: number;
   readonly precioCents: number;
   readonly disponibilidad: Disponibilidad;
+  /** Solo si se preguntó por una cantidad concreta. */
+  readonly pedido?: Cobertura;
+}
+
+/**
+ * La respuesta a «¿alcanza para 30?».
+ *
+ * Es la ÚNICA forma en que un número de inventario sale hacia el bot, y solo
+ * cuando la respuesta es que NO alcanza: decir «de 30 no, de 25 sí» es la
+ * respuesta útil y no hay manera de darla sin el número. Si alcanza, basta un
+ * sí — el número sigue sin salir.
+ *
+ * La regla es del CRM, que ya la tenía pensada así (`cobertura` en
+ * `src/tools/catalogQuery.ts`), y se conserva entera al mudar el catálogo
+ * aquí. El contrato de 03-contratos §3 no la recogía: `VariantePublica` no
+ * lleva cantidad, así que sin esto el bot perdería una capacidad que hoy tiene.
+ */
+export interface Cobertura {
+  readonly cantidadPedida: number;
+  readonly alcanza: boolean;
+  /** Solo cuando NO alcanza: lo máximo que se puede prometer. */
+  readonly maximoDisponible?: number;
 }
 
 export interface CatalogoPublico {
@@ -64,8 +86,17 @@ const CONSULTA = `
   JOIN productos p ON p.id = v.producto_id
   WHERE v.activo = 1 AND v.publicado = 1 AND p.activo = 1`;
 
-function aPublica(f: Fila): VariantePublica {
+function aPublica(f: Fila, cantidad?: number): VariantePublica {
+  const libres = f.libres ?? 0;
   return {
+    ...(cantidad === undefined
+      ? {}
+      : {
+          pedido:
+            libres >= cantidad
+              ? { cantidadPedida: cantidad, alcanza: true }
+              : { cantidadPedida: cantidad, alcanza: false, maximoDisponible: libres },
+        }),
     codigo: f.codigo,
     // El slug del producto más el código: la web necesita una URL por variante
     // y dos tallas del mismo producto comparten el slug del producto.
@@ -78,7 +109,7 @@ function aPublica(f: Fila): VariantePublica {
     precioCents: f.precio_cents,
     // `libres` es NULL si la variante no tiene ninguna fila de existencias: eso
     // es agotado, no «no se sabe». `?? 0` lo dice sin rodeos.
-    disponibilidad: disponibilidad(f.libres ?? 0, UMBRAL_POCAS),
+    disponibilidad: disponibilidad(libres, UMBRAL_POCAS),
   };
 }
 
@@ -96,11 +127,11 @@ export async function catalogoPublico(db: D1Database, ahora: number): Promise<Ca
   };
 }
 
-export async function listar(db: D1Database): Promise<VariantePublica[]> {
+export async function listar(db: D1Database, cantidad?: number): Promise<VariantePublica[]> {
   const { results } = await db
     .prepare(`${CONSULTA} ORDER BY p.orden, p.nombre, v.talla, v.codigo`)
     .all<Fila>();
-  return results.map(aPublica);
+  return results.map((f) => aPublica(f, cantidad));
 }
 
 /**
@@ -110,9 +141,14 @@ export async function listar(db: D1Database): Promise<VariantePublica[]> {
  * talla. Un catálogo de doce artículos no necesita más, y lo que sí necesita
  * es ser predecible — con búsqueda por parecido, «M» puede devolver XL.
  */
-export async function buscar(db: D1Database, q: string, limite = 20): Promise<VariantePublica[]> {
+export async function buscar(
+  db: D1Database,
+  q: string,
+  limite = 20,
+  cantidad?: number,
+): Promise<VariantePublica[]> {
   const texto = q.trim();
-  if (texto === "") return await listar(db);
+  if (texto === "") return await listar(db, cantidad);
 
   const tope = Math.min(Math.max(Math.trunc(limite), 1), 100);
 
@@ -121,7 +157,7 @@ export async function buscar(db: D1Database, q: string, limite = 20): Promise<Va
   // queda nada que buscar, eso ES una búsqueda vacía —devolver todo con cara
   // de resultado sería peor que decirlo.
   const limpio = texto.replaceAll("%", "").replaceAll("_", "").trim();
-  if (limpio === "") return await listar(db);
+  if (limpio === "") return await listar(db, cantidad);
   const como = `%${limpio}%`;
 
   const { results } = await db
@@ -140,5 +176,5 @@ export async function buscar(db: D1Database, q: string, limite = 20): Promise<Va
     .bind(como, `${limpio}%`, tope)
     .all<Fila>();
 
-  return results.map(aPublica);
+  return results.map((f) => aPublica(f, cantidad));
 }

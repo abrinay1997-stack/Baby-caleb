@@ -145,6 +145,44 @@ describe("SistemaCRM · el catálogo del bot", () => {
     expect(r.datos).toEqual([]);
   });
 
+  it("«¿alcanza para 30?» se contesta sin soltar el número", async () => {
+    // Hay 20. Para 15 alcanza, y entonces el número NO sale: basta un sí.
+    const r = await crm().buscarCatalogo("NAT-M", 10, 15);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    expect(r.datos[0]?.pedido).toEqual({ cantidadPedida: 15, alcanza: true });
+    expect(JSON.stringify(r.datos[0]?.pedido)).not.toContain("20");
+  });
+
+  it("y cuando NO alcanza, sí: «de 30 no, de 20 sí» es la respuesta útil", async () => {
+    const r = await crm().buscarCatalogo("NAT-M", 10, 30);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    expect(r.datos[0]?.pedido).toEqual({
+      cantidadPedida: 30,
+      alcanza: false,
+      maximoDisponible: 20,
+    });
+  });
+
+  it("sin preguntar por cantidad, no viene ningún número", async () => {
+    const r = await crm().buscarCatalogo("NAT-M");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos[0]).not.toHaveProperty("pedido");
+  });
+
+  it("una cantidad absurda se rechaza en vez de tratarse como «ninguna»", async () => {
+    // Contestar un 0 o un -5 como si no hubieran preguntado nada esconde el
+    // error y el bot afirma que «alcanza».
+    for (const mala of [0, -5, 1.5, Number.NaN]) {
+      const r = await crm().buscarCatalogo("NAT-M", 10, mala);
+      expect(r.ok, `aceptó ${mala}`).toBe(false);
+    }
+  });
+
   it("tampoco el costo", async () => {
     const r = await crm().listarCatalogo();
     expect(r.ok).toBe(true);

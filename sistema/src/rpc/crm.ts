@@ -61,17 +61,45 @@ export interface IdentidadRef {
   readonly celular?: string;
 }
 
+/**
+ * Una cantidad que llega de fuera: o no viene, o es un entero positivo.
+ *
+ * Un 0 o un -5 no son «sin cantidad»: son una pregunta mal hecha, y
+ * contestarla como si no hubieran preguntado nada esconde el error.
+ */
+function normalizarCantidad(c: number | undefined): number | undefined | "invalida" {
+  if (c === undefined) return undefined;
+  return Number.isSafeInteger(c) && c > 0 ? c : "invalida";
+}
+
 export class SistemaCRM extends WorkerEntrypoint<Env> {
   // -------------------------------------------------------------------------
   // Catálogo · lo que reemplaza a CatalogRepo del CRM
   // -------------------------------------------------------------------------
 
-  async buscarCatalogo(q: string, limite?: number): Promise<Resultado<VariantePublica[]>> {
-    return ok(await buscar(this.env.DB, q, limite ?? 20));
+  /**
+   * `cantidad` es la única forma en que un número de inventario sale hacia el
+   * bot, y solo cuando NO alcanza: «de 30 no, de 25 sí» es la respuesta útil y
+   * no hay manera de darla sin el número. Si alcanza, basta un sí.
+   */
+  async buscarCatalogo(
+    q: string,
+    limite?: number,
+    cantidad?: number,
+  ): Promise<Resultado<VariantePublica[]>> {
+    const pedida = normalizarCantidad(cantidad);
+    if (pedida === "invalida") {
+      return fallo("entrada_invalida", "la cantidad tiene que ser un entero positivo");
+    }
+    return ok(await buscar(this.env.DB, q, limite ?? 20, pedida));
   }
 
-  async listarCatalogo(): Promise<Resultado<VariantePublica[]>> {
-    return ok(await listar(this.env.DB));
+  async listarCatalogo(cantidad?: number): Promise<Resultado<VariantePublica[]>> {
+    const pedida = normalizarCantidad(cantidad);
+    if (pedida === "invalida") {
+      return fallo("entrada_invalida", "la cantidad tiene que ser un entero positivo");
+    }
+    return ok(await listar(this.env.DB, pedida));
   }
 
   // -------------------------------------------------------------------------
