@@ -1,6 +1,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { Hono } from "hono";
 import { type Resultado, pendienteDeFase } from "./contrato/resultado";
+import { MANEJADORES, atrasados, consumir, publicarPendientes } from "./eventos";
 import {
   conCabecerasDeSeguridad,
   encendido,
@@ -12,9 +13,6 @@ import {
 
 /** Se reemplaza en el build por el SHA del commit (sistema.yml, F2.11). */
 const VERSION = "0.1.0-dev";
-
-/** Cuerpo de todo mensaje de bc-tareas. El `id` es el del outbox: con él se descarta un repetido. */
-type MensajeTarea = { id: string; tipo: string };
 
 // ---------------------------------------------------------------------------
 // Panel y app del motorizado
@@ -30,6 +28,7 @@ app.get("/salud", async (c) => {
   let migracion: string | null = null;
   let humo = false;
   let detalle: string | null = null;
+  let outbox: { cuantos: number; masViejo: number | null } = { cuantos: 0, masViejo: null };
 
   try {
     // wrangler d1 migrations guarda lo aplicado en d1_migrations.
@@ -39,10 +38,14 @@ app.get("/salud", async (c) => {
     migracion = fila?.name ?? null;
     const uno = await c.env.DB.prepare("SELECT 1 AS uno").first<{ uno: number }>();
     humo = uno?.uno === 1;
+    outbox = await atrasados(c.env.DB);
   } catch (e) {
     detalle = e instanceof Error ? e.message : String(e);
   }
 
+  // El outbox atrasado no se considera «no sano»: el cron lo va a sacar. Pero
+  // sale en la respuesta porque un número que no baja es la primera señal de
+  // que los avisos no están llegando, y eso no se ve por ningún otro lado.
   const sano = humo && migracion !== null;
   return c.json(
     {
@@ -51,6 +54,8 @@ app.get("/salud", async (c) => {
       entorno: c.env.ENTORNO ?? "local",
       migracion,
       humo,
+      outbox_sin_publicar: outbox.cuantos,
+      outbox_mas_viejo: outbox.masViejo,
       ms: Date.now() - inicio,
       ...(detalle === null ? {} : { detalle }),
     },
@@ -145,36 +150,31 @@ export default {
   },
 
   /**
-   * Consumidor de bc-tareas. Las colas entregan AL MENOS UNA VEZ, así que lo
-   * primero es la idempotencia: un evento ya procesado se reconoce y se
-   * descarta. Esa parte ya es de verdad; el trabajo por tipo llega con cada fase.
+   * Consumidor de `bc-tareas` y de las colas muertas. Toda la lógica —validar
+   * el sobre, descartar repetidos, despachar al manejador, avisar de lo que cae
+   * en la cola muerta— está en `src/eventos/consumidor.ts`, que se puede probar
+   * sin montar un Worker.
    */
-  async queue(lote: MessageBatch<MensajeTarea>, env: Env): Promise<void> {
-    for (const mensaje of lote.messages) {
-      const { id, tipo } = mensaje.body;
-      try {
-        const visto = await env.DB.prepare("SELECT 1 FROM eventos_recibidos WHERE id = ?")
-          .bind(id)
-          .first();
-        if (visto) {
-          mensaje.ack(); // repetido: ya se hizo
-          continue;
-        }
-        await env.DB.prepare(
-          "INSERT INTO eventos_recibidos (id, tipo, procesado_en) VALUES (?, ?, ?)",
-        )
-          .bind(id, tipo, Date.now())
-          .run();
-        mensaje.ack();
-      } catch {
-        // Que lo reintente la cola; a los 3 intentos cae en bc-tareas-muertos.
-        mensaje.retry();
-      }
-    }
+  async queue(lote: MessageBatch<unknown>, env: Env): Promise<void> {
+    await consumir(lote, env, Date.now(), MANEJADORES);
   },
 
-  async scheduled(_evento: ScheduledController, _env: Env): Promise<void> {
-    // Los crons se agregan en 08-operacion §6: republicar el outbox, vencer
-    // reservas, conciliar pagos, cuadrar inventario.
+  /**
+   * Crons. Por ahora uno: republicar lo que el outbox dejó sin publicar, cada
+   * 5 minutos (01-arquitectura.md §4). Los demás llegan con su fase
+   * (08-operacion §6: vencer reservas, conciliar pagos, cuadrar inventario).
+   */
+  async scheduled(_evento: ScheduledController, env: Env): Promise<void> {
+    const ahora = Date.now();
+    const r = await publicarPendientes(env, ahora);
+    if (r.publicados.length > 0 || r.pendientes.length > 0) {
+      console.log(
+        JSON.stringify({
+          evento: "cron_outbox",
+          publicados: r.publicados.length,
+          pendientes: r.pendientes.length,
+        }),
+      );
+    }
   },
-} satisfies ExportedHandler<Env, MensajeTarea>;
+} satisfies ExportedHandler<Env, unknown>;

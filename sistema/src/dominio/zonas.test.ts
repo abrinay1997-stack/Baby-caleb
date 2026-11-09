@@ -113,9 +113,9 @@ describe("cotizarEnvio", () => {
     const r = cotizarEnvio(zona({ tarifa_cents: 350 }));
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.tarifa_cents).toBe(350);
-      expect(r.zona).toBe("Tocumen");
-      expect(r.requiere_pago_total).toBe(false);
+      expect(r.datos.tarifa_cents).toBe(350);
+      expect(r.datos.zona).toBe("Tocumen");
+      expect(r.datos.requiere_pago_total).toBe(false);
     }
   });
 
@@ -140,7 +140,7 @@ describe("cotizarEnvio", () => {
     // null en vez de usar 0 como «no se sabe».
     const r = cotizarEnvio(zona({ tarifa_cents: 0 }));
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.tarifa_cents).toBe(0);
+    if (r.ok) expect(r.datos.tarifa_cents).toBe(0);
   });
 });
 

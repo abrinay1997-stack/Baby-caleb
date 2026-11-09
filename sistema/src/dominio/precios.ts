@@ -1,4 +1,4 @@
-import { type Resultado, fallo } from "../contrato/resultado";
+import { type Resultado, fallo, ok } from "../contrato/resultado";
 import { type Centavos, aplicarPuntosBasicos, multiplicar, prorratear, sumar } from "./dinero";
 
 /**
@@ -133,15 +133,14 @@ export function calcularTotales({
   const itbms_cents = sumar(detalle.map((d) => d.itbms_cents));
   const total_cents = subtotal_cents + envio_cents - descuento_cents + itbms_cents;
 
-  return {
-    ok: true,
+  return ok({
     subtotal_cents,
     descuento_cents,
     envio_cents,
     itbms_cents,
     total_cents,
     lineas: detalle,
-  };
+  });
 }
 
 /** Convierte un porcentaje en puntos básicos a un descuento en centavos. */

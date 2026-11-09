@@ -1,4 +1,4 @@
-import { type Resultado, fallo } from "../contrato/resultado";
+import { type Resultado, fallo, ok } from "../contrato/resultado";
 import type { Centavos } from "./dinero";
 
 /**
@@ -152,14 +152,13 @@ export function cotizarEnvio(zona: Zona): Resultado<Cotizacion> {
       `El envío a ${zona.nombre} se cotiza a mano: le confirmamos el costo antes de cerrar el pedido.`,
     );
   }
-  return {
-    ok: true,
+  return ok({
     zona_id: zona.id,
     zona: zona.nombre,
     tarifa_cents: zona.tarifa_cents,
     metodo: zona.metodo,
     requiere_pago_total: zona.requiere_pago_total,
-  };
+  });
 }
 
 /** ¿Este pedido admite abono, o hay que cobrarlo entero? */

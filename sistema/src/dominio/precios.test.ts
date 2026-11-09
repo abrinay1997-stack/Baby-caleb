@@ -12,7 +12,7 @@ import {
 function totales(entrada: EntradaTotales): Totales {
   const r = calcularTotales(entrada);
   if (!r.ok) throw new Error(`esperaba totales y vino un fallo: ${r.mensaje}`);
-  return r;
+  return r.datos;
 }
 
 // Dos pañales de $29.98 y un portabebé de $23.80, sin ITBMS confirmado todavía
