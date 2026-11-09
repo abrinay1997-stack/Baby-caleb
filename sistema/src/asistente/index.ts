@@ -22,6 +22,7 @@ export * from "./referencias";
 export * from "./proveedor";
 
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
+import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
 import { Registro } from "./registro";
 
 /**
@@ -32,10 +33,11 @@ import { Registro } from "./registro";
  */
 export function catalogo(): Registro {
   const r = new Registro();
-  for (const h of HERRAMIENTAS_DE_INVENTARIO) {
+  for (const h of [...HERRAMIENTAS_DE_INVENTARIO, ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK]) {
     r.registrar(h as never);
   }
   return r;
 }
 
-export { HERRAMIENTAS_DE_INVENTARIO };
+export * from "./ejecutar";
+export { HERRAMIENTAS_DE_INVENTARIO, HERRAMIENTAS_DE_PRECIOS_Y_STOCK };

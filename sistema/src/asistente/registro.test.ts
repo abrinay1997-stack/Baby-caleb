@@ -108,12 +108,33 @@ describe("el catálogo de verdad", () => {
     }
   });
 
-  it("hoy son TODAS de lectura", () => {
-    // F2.7 trae solo lectura (09-fases.md). Cuando entre la primera de
-    // construcción o sensible, esta prueba se pone roja y obliga a mirar que la
-    // política, la confirmación y la bitácora estén listas para ella —que es
-    // exactamente cuando hay que mirarlo.
-    expect(todas.filter((h) => h.nivel !== "lectura").map((h) => h.nombre)).toEqual([]);
+  it("lo que CAMBIA algo es sensible, nunca de construcción a secas", () => {
+    // Esta prueba nació en F2.7 diciendo «hoy son todas de lectura», para
+    // ponerse roja el día que entrara la primera que escribe —y obligar a
+    // mirar que la política, la confirmación y la bitácora estuvieran listas—.
+    // Se puso roja en F3.8 y eso hizo su trabajo. Ahora vigila lo siguiente:
+    // que nada que toque precios o existencias entre como «construcción», que
+    // se ejecuta directo sin que nadie lo permita.
+    const queCambian = /cambiar|ajustar|trasladar|merma|anular|reembolsar|cobro|abono|cerrar_mes/;
+    const mal = todas
+      .filter((h) => queCambian.test(h.nombre) && h.nivel !== "sensible")
+      .map((h) => h.nombre);
+    expect(mal).toEqual([]);
+  });
+
+  it("y lo sensible es SOLO de la dueña", () => {
+    for (const h of todas.filter((x) => x.nivel === "sensible")) {
+      expect(h.roles, `${h.nombre} lo puede usar alguien más`).toEqual(["duena"]);
+    }
+  });
+
+  it("toda herramienta que escribe pide un motivo", () => {
+    // Un cambio sin motivo es un descuadre sin explicación, y dentro de un mes
+    // nadie se acuerda de por qué el stock bajó.
+    for (const h of todas.filter((x) => x.nivel !== "lectura")) {
+      const forma = JSON.stringify(cerrado(z.toJSONSchema(h.parametros)));
+      expect(forma, `${h.nombre} no pide motivo`).toContain("motivo");
+    }
   });
 
   it("ninguna existe para borrar, para permisos, para secretos ni para SQL", () => {

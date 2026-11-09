@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { panel } from "./api/panel";
+import { vencerPendientes } from "./asistente/ejecutar";
 import { MANEJADORES, atrasados, consumir, publicarPendientes } from "./eventos";
 import { conCabecerasDeSeguridad, encendido, superficieDe } from "./seguridad";
 
@@ -119,6 +120,14 @@ export default {
           pendientes: r.pendientes.length,
         }),
       );
+    }
+
+    // Lo que el asistente propuso y nadie confirmó en 30 minutos se cierra.
+    // Si no, una acción sensible se quedaría esperando para siempre y alguien
+    // podría permitirla mañana creyendo que sigue siendo verdad lo que leyó.
+    const vencidas = await vencerPendientes(env.DB, ahora);
+    if (vencidas > 0) {
+      console.log(JSON.stringify({ evento: "cron_acciones_vencidas", cuantas: vencidas }));
     }
   },
 } satisfies ExportedHandler<Env, unknown>;
