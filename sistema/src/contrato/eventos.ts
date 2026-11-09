@@ -118,7 +118,7 @@ export const DatosAviso = {
   "inventario.bajo": z.object({
     codigo: z.string().min(1),
     /** La etiqueta, no la cantidad: el número exacto no sale del sistema. */
-    etiqueta: z.enum(["hay", "poco", "agotado"]),
+    etiqueta: z.enum(["disponible", "pocas", "agotado"]),
     bodega: z.string().min(1),
   }),
   "sistema.alerta": z.object({

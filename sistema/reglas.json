@@ -7,6 +7,7 @@
     "que lo necesite debe decir que falta. Ninguna cifra a ojo."
   ],
   "abono_minimo_cents": 500,
+  "stock_bajo": 5,
   "ferguson_pago_total": true,
   "checkout_activo": false,
   "pasarelas_activas": [],

@@ -28,32 +28,66 @@ export function puedeDespachar(e: Existencia, pedidas: number): boolean {
   return disponible(e) >= pedidas;
 }
 
-/** De una bodega concreta o del total: lo que se le dice a la clienta. */
-export type Nivel = "hay" | "poco" | "agotado";
-
-export function nivel(e: Existencia): Nivel {
-  const libre = disponible(e);
-  if (libre <= 0) return "agotado";
-  if (e.minimo !== null && libre <= e.minimo) return "poco";
-  return "hay";
-}
-
 /**
  * Lo ÚNICO que sale hacia el bot o hacia la web.
  *
- * La cantidad exacta de existencias no se le dice a nadie de fuera, igual que
- * el costo (regla del CRM, `docs/PLAN_CATALOGO_BABY_CALEB.md`): saber que
- * quedan tres cajas es información del negocio, no de la venta.
+ * Los tres valores y el nombre son los del CRM (`src/catalog/validation.ts`,
+ * `Disponibilidad`) y los que exige el contrato (03-contratos.md §1). No se
+ * renombran: el CRM ya los usa y el bot ya los dice.
+ *
+ * La cantidad exacta no se le dice a nadie de fuera, igual que el costo: «si
+ * nunca tiene la cifra exacta, no la puede soltar por error» (comentario del
+ * propio CRM). Saber que quedan tres cajas es información del negocio.
  */
-export function etiqueta(e: Existencia): string {
-  switch (nivel(e)) {
-    case "hay":
-      return "Disponible";
-    case "poco":
-      return "Quedan pocas";
-    case "agotado":
-      return "Agotado por ahora";
-  }
+export type Disponibilidad = "disponible" | "pocas" | "agotado";
+
+/**
+ * Valor de fábrica del umbral de «pocas». Es el `STOCK_BAJO` del CRM, que el
+ * plan manda pasar a `ajustes` para que la dueña lo pueda cambiar; esto es solo
+ * el piso cuando no hay nada configurado.
+ */
+export const UMBRAL_POCAS = 5;
+
+/**
+ * La etiqueta según las unidades libres.
+ *
+ * El `<` es estricto, igual que en el CRM: con el umbral en 5, cinco cajas son
+ * «disponible» y cuatro son «pocas». Parece un detalle y no lo es — es la
+ * diferencia entre que el bot diga lo mismo antes y después del traspaso.
+ */
+export function disponibilidad(libres: number, umbral = UMBRAL_POCAS): Disponibilidad {
+  if (libres <= 0) return "agotado";
+  if (libres < umbral) return "pocas";
+  return "disponible";
+}
+
+export function disponibilidadDe(e: Existencia, umbral = UMBRAL_POCAS): Disponibilidad {
+  return disponibilidad(disponible(e), umbral);
+}
+
+/**
+ * ¿Hay que avisarle a la dueña de esta existencia?
+ *
+ * Aquí sí manda `existencias.minimo`, y por eso es distinto de la etiqueta: el
+ * umbral de lo que se le DICE a la clienta es uno y global (`ajustes`), y el de
+ * cuándo se AVISA a la dueña es por variante y bodega, porque de unos productos
+ * conviene enterarse antes que de otros. `minimo` en NULL apaga el aviso de
+ * esta fila, no la etiqueta.
+ */
+export function debeAlertar(e: Existencia): boolean {
+  if (e.minimo === null) return false;
+  return disponible(e) <= e.minimo;
+}
+
+/** El texto que se muestra. La etiqueta no lleva números. */
+export const TEXTO_DISPONIBILIDAD: Record<Disponibilidad, string> = {
+  disponible: "Disponible",
+  pocas: "Quedan pocas",
+  agotado: "Agotado por ahora",
+};
+
+export function etiqueta(e: Existencia, umbral = UMBRAL_POCAS): string {
+  return TEXTO_DISPONIBILIDAD[disponibilidadDe(e, umbral)];
 }
 
 /** Suma varias bodegas para responder «¿hay o no hay?» sin decir dónde ni cuántas. */

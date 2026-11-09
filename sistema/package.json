@@ -14,7 +14,9 @@
     "tipos": "wrangler types",
     "migraciones:local": "wrangler d1 migrations apply babycaleb-db --local",
     "migraciones:staging": "wrangler d1 migrations apply babycaleb-db-staging --remote --env staging",
-    "migraciones:prod": "wrangler d1 migrations apply babycaleb-db --remote --env production"
+    "migraciones:prod": "wrangler d1 migrations apply babycaleb-db --remote --env production",
+    "huella": "vitest run src/contrato/huella.test.ts",
+    "contrato": "vitest run src/contrato"
   },
   "dependencies": {
     "hono": "^4.13.17",

@@ -127,7 +127,7 @@ describe("validarEvento · los datos de cada tipo", () => {
     // El número exacto de existencias no sale del sistema.
     const bueno = validarEvento({
       ...sobre({ tipo: "inventario.bajo" }),
-      datos: { codigo: "NAT-M", etiqueta: "poco", bodega: "Bodega Ciudad de Panamá" },
+      datos: { codigo: "NAT-M", etiqueta: "pocas", bodega: "Bodega Ciudad de Panamá" },
     });
     expect(bueno.ok).toBe(true);
 

@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   type Existencia,
+  UMBRAL_POCAS,
   consolidar,
+  debeAlertar,
+  disponibilidad,
+  disponibilidadDe,
   disponible,
   etiqueta,
   faltantes,
-  nivel,
   puedeDespachar,
 } from "./existencias";
 
@@ -41,21 +44,35 @@ describe("disponibilidad", () => {
   });
 });
 
-describe("nivel y etiqueta", () => {
-  it("clasifica según el umbral de la variante", () => {
-    expect(nivel(existencia({ fisico: 20 }))).toBe("hay");
-    expect(nivel(existencia({ fisico: 3 }))).toBe("poco");
-    expect(nivel(existencia({ fisico: 0 }))).toBe("agotado");
+describe("la etiqueta que sale hacia el bot y la web", () => {
+  it("usa los tres valores del CRM, no unos nuevos", () => {
+    // El CRM ya los usa y el bot ya los dice: renombrarlos sería cambiar lo que
+    // la clienta lee, sin ganar nada.
+    expect(disponibilidad(20)).toBe("disponible");
+    expect(disponibilidad(3)).toBe("pocas");
+    expect(disponibilidad(0)).toBe("agotado");
   });
 
-  it("sin umbral no avisa de poco, solo de agotado", () => {
-    expect(nivel(existencia({ fisico: 1, minimo: null }))).toBe("hay");
-    expect(nivel(existencia({ fisico: 0, minimo: null }))).toBe("agotado");
+  it("el umbral de fábrica es el STOCK_BAJO del CRM", () => {
+    expect(UMBRAL_POCAS).toBe(5);
   });
 
-  it("cuenta lo reservado para decidir el nivel", () => {
-    expect(nivel(existencia({ fisico: 10, reservado: 10 }))).toBe("agotado");
-    expect(nivel(existencia({ fisico: 10, reservado: 7 }))).toBe("poco");
+  it("compara con < estricto, igual que el CRM", () => {
+    // Con el umbral en 5: cinco son «disponible» y cuatro son «pocas». Es la
+    // diferencia entre que el bot diga lo mismo antes y después del traspaso.
+    expect(disponibilidad(5)).toBe("disponible");
+    expect(disponibilidad(4)).toBe("pocas");
+  });
+
+  it("acepta otro umbral, porque la dueña lo puede cambiar en ajustes", () => {
+    expect(disponibilidad(8, 10)).toBe("pocas");
+    expect(disponibilidad(8, 5)).toBe("disponible");
+  });
+
+  it("nunca da negativo ni se confunde con lo reservado", () => {
+    expect(disponibilidadDe(existencia({ fisico: 10, reservado: 10 }))).toBe("agotado");
+    expect(disponibilidadDe(existencia({ fisico: 10, reservado: 7 }))).toBe("pocas");
+    expect(disponibilidadDe(existencia({ fisico: 2, reservado: 5 }))).toBe("agotado");
   });
 
   it("la etiqueta no revela nunca la cantidad exacta", () => {
@@ -64,12 +81,32 @@ describe("nivel y etiqueta", () => {
       existencia({ fisico: 3 }),
       existencia({ fisico: 0 }),
     ]) {
-      const texto = etiqueta(e);
-      expect(texto).not.toMatch(/\d/);
+      expect(etiqueta(e)).not.toMatch(/\d/);
     }
     expect(etiqueta(existencia({ fisico: 500 }))).toBe("Disponible");
     expect(etiqueta(existencia({ fisico: 3 }))).toBe("Quedan pocas");
     expect(etiqueta(existencia({ fisico: 0 }))).toBe("Agotado por ahora");
+  });
+});
+
+describe("el aviso a la dueña es otra cosa que la etiqueta", () => {
+  // El umbral de lo que se le DICE a la clienta es uno y global; el de cuándo
+  // se AVISA a la dueña es por variante y bodega.
+  it("avisa cuando lo libre llega al mínimo de esa bodega", () => {
+    expect(debeAlertar(existencia({ fisico: 5, minimo: 5 }))).toBe(true);
+    expect(debeAlertar(existencia({ fisico: 6, minimo: 5 }))).toBe(false);
+    expect(debeAlertar(existencia({ fisico: 0, minimo: 5 }))).toBe(true);
+  });
+
+  it("un mínimo en NULL apaga el aviso, pero no la etiqueta", () => {
+    const sinMinimo = existencia({ fisico: 1, minimo: null });
+    expect(debeAlertar(sinMinimo)).toBe(false);
+    // Y sin embargo la clienta sigue viendo que quedan pocas.
+    expect(disponibilidadDe(sinMinimo)).toBe("pocas");
+  });
+
+  it("cuenta lo reservado, no solo el físico", () => {
+    expect(debeAlertar(existencia({ fisico: 20, reservado: 16, minimo: 5 }))).toBe(true);
   });
 });
 
