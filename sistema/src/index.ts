@@ -11,8 +11,6 @@ import {
   usuarioDeCorreo,
 } from "./seguridad";
 
-/** Se reemplaza en el build por el SHA del commit (sistema.yml, F2.11). */
-const VERSION = "0.1.0-dev";
 
 // ---------------------------------------------------------------------------
 // Panel y app del motorizado
@@ -50,7 +48,8 @@ app.get("/salud", async (c) => {
   return c.json(
     {
       sano,
-      version: VERSION,
+      // La fija el despliegue al SHA del commit (`--var VERSION:...`).
+      version: c.env.VERSION,
       entorno: c.env.ENTORNO ?? "local",
       migracion,
       humo,

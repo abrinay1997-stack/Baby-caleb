@@ -1,0 +1,85 @@
+# Pruebas y build de la web (la raíz del repositorio).
+#
+# Va aparte de `sistema.yml` a propósito: si el sistema no construye, la web
+# tiene que poder seguir publicándose, y al revés (lección del puente del CRM).
+#
+# Hoy la web sigue publicándose desde Netlify. Este flujo comprueba que lo que
+# se sube construye y no rompe nada; el despliegue a Cloudflare llega en F1,
+# cuando exista `worker/` y el dominio `babycaleb.com`. Lo que F3.5 agregará
+# aquí: la prueba de que no hay precios en `content.json` y que cada variante
+# tiene un `codigo` que existe en el catálogo.
+
+name: web
+
+on:
+  pull_request:
+    paths-ignore:
+      - "sistema/**"
+      - ".github/workflows/sistema.yml"
+      - ".github/workflows/respaldo.yml"
+      - "docs/**"
+      - "**.md"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "sistema/**"
+      - ".github/workflows/sistema.yml"
+      - ".github/workflows/respaldo.yml"
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch:
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  construye:
+    name: Lint y build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `lint` es `tsc --noEmit`: la web no tiene reglas de estilo todavía.
+      - run: npm run lint
+
+      - run: npm run build
+
+      # Presupuesto de tamaño. Lo que se vigila no es el peso en sí, sino que
+      # CREZCA sin que nadie lo note. El 2026-11-09 `dist` pesaba 3296 KB, casi
+      # todo imágenes de `public/`; el tope deja sitio para unas cuantas fotos
+      # de producto más y salta si algo se duplica. Si un cambio lo justifica,
+      # se sube el número a mano y queda en el diff, que es justo la
+      # conversación que se quiere tener.
+      - name: Presupuesto de tamaño
+        run: |
+          tope_kb=4000
+          real_kb=$(du -sk dist | cut -f1)
+          echo "dist pesa ${real_kb} KB (tope ${tope_kb} KB)"
+          {
+            echo "## Web"
+            echo ""
+            echo "\`dist\` pesa **${real_kb} KB** (tope ${tope_kb} KB)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$real_kb" -gt "$tope_kb" ]; then
+            echo "::error::dist creció por encima del tope. Si es a propósito, suba el tope en .github/workflows/web.yml"
+            exit 1
+          fi
+
+      # La carpeta de subidas de la clienta es un buzón permanente: tiene que
+      # seguir existiendo aunque esté vacía (CLAUDE.md). Un `git mv` distraído
+      # la haría desaparecer sin que nada más fallara.
+      - name: El buzón de subidas sigue ahí
+        run: |
+          if [ ! -d "📤SUBIR-CONTENIDO" ]; then
+            echo "::error::Falta la carpeta 📤SUBIR-CONTENIDO/, que nunca se borra ni se renombra."
+            exit 1
+          fi
+          echo "✓ el buzón existe"

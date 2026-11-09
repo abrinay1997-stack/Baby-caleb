@@ -54,7 +54,9 @@ export default function Chatbot() {
         throw new Error('No se pudo enviar el mensaje.');
       }
 
-      const data = await response.json();
+      // `response.json()` devuelve `unknown`: sin esta anotación `data.reply`
+      // no compila. Solo es el tipo; el comportamiento no cambia.
+      const data = (await response.json()) as { reply?: string };
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: data.reply || 'Lo siento, hubo un problema al responder.' },

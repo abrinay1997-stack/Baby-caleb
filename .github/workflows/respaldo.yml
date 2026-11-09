@@ -1,0 +1,200 @@
+# Respaldo diario de la base y simulacro semanal de restauración.
+#
+# POR QUÉ NO BASTA CON TIME TRAVEL
+#
+# D1 guarda 30 días y puede volver a cualquier minuto, pero `time-travel
+# restore` **restaura encima de la base actual**: es el último recurso, no un
+# respaldo. Y si lo que se pierde es la cuenta de Cloudflare entera, no hay
+# Time Travel que valga. Por eso hay una copia fuera de D1.
+#
+# POR QUÉ UN SIMULACRO
+#
+# Un respaldo que nadie ha restaurado no es un respaldo: es un archivo. El
+# simulacro semanal baja el último, lo descifra, lo importa y comprueba que los
+# números cuadran. Si deja de servir, se sabe el lunes y no el día que haga
+# falta.
+#
+# SECRETOS Y ARCHIVOS QUE HACEN FALTA
+#   CLOUDFLARE_API_TOKEN   token con permiso de D1 y R2
+#   CLOUDFLARE_ACCOUNT_ID  el id de la cuenta de la agencia
+#   respaldo/llave-publica.txt   la llave PÚBLICA de age, versionada en el repo
+#   RESPALDO_CLAVE         la llave PRIVADA de age, solo para el simulacro
+#
+# La llave pública va en el repo porque con ella solo se puede CIFRAR. La
+# privada la tiene la dueña fuera de Cloudflare y fuera de GitHub; la copia que
+# está en los secretos es para que el simulacro pueda abrir el archivo, y eso
+# significa que quien controle el repositorio puede leer un respaldo. Es una
+# decisión consciente: la alternativa es un simulacro que nadie corre.
+#
+# Para crear el par (una sola vez, en la computadora de la dueña):
+#   age-keygen -o llave-privada.txt
+# La línea «public key: age1...» va a respaldo/llave-publica.txt en el repo;
+# el contenido del archivo va al secreto RESPALDO_CLAVE.
+
+name: respaldo
+
+on:
+  schedule:
+    # 08:00 UTC = 03:00 en Panamá (UTC-5, sin horario de verano). A esa hora no
+    # hay nadie comprando, así que la exportación no compite con el tráfico.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+    inputs:
+      simulacro:
+        description: "Correr también el simulacro de restauración"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: respaldo
+  cancel-in-progress: false
+
+jobs:
+  exportar:
+    name: Exportar y cifrar
+    runs-on: ubuntu-latest
+    outputs:
+      nombre: ${{ steps.exportar.outputs.nombre }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sistema/package-lock.json
+
+      - name: La llave pública tiene que existir
+        run: |
+          if [ ! -s respaldo/llave-publica.txt ]; then
+            echo "::error::Falta respaldo/llave-publica.txt. Sin ella el respaldo saldría sin cifrar, y lleva datos de clientas. Ver la cabecera de este flujo."
+            exit 1
+          fi
+
+      - run: npm ci --legacy-peer-deps
+        working-directory: sistema
+
+      - name: Instalar age
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+
+      - name: Exportar babycaleb-db
+        id: exportar
+        working-directory: sistema
+        run: |
+          fecha="$(date -u +%Y-%m-%d)"
+          echo "nombre=$fecha" >> "$GITHUB_OUTPUT"
+          npx wrangler d1 export babycaleb-db --remote --output "../respaldo-$fecha.sql"
+          echo "exportado: $(wc -c < "../respaldo-$fecha.sql") bytes"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Cifrar
+        run: |
+          fecha="${{ steps.exportar.outputs.nombre }}"
+          age -R respaldo/llave-publica.txt -o "respaldo-$fecha.sql.age" "respaldo-$fecha.sql"
+          # El archivo en claro se borra en cuanto existe el cifrado: lleva
+          # nombres, celulares y direcciones de clientas.
+          shred -u "respaldo-$fecha.sql" 2>/dev/null || rm -f "respaldo-$fecha.sql"
+          echo "cifrado: $(wc -c < "respaldo-$fecha.sql.age") bytes"
+
+      - name: Subir a R2
+        working-directory: sistema
+        run: |
+          fecha="${{ steps.exportar.outputs.nombre }}"
+          npx wrangler r2 object put \
+            "babycaleb-respaldos/diario/$fecha.sql.age" \
+            --file "../respaldo-$fecha.sql.age" \
+            --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # El respaldo NUNCA se sube como artefacto del flujo: los artefactos los
+      # puede bajar cualquiera con acceso al repositorio, y esto lleva datos
+      # personales. Vive en R2, cifrado, y la retención la hacen las reglas de
+      # ciclo de vida del bucket (diarios 35 días, el del día 1 de cada mes 12
+      # meses, el del cierre de año 5 años).
+
+      - name: Resumen
+        run: |
+          {
+            echo "## Respaldo ${{ steps.exportar.outputs.nombre }}"
+            echo ""
+            echo "- Cifrado con la llave pública de \`respaldo/llave-publica.txt\`"
+            echo "- En \`babycaleb-respaldos/diario/${{ steps.exportar.outputs.nombre }}.sql.age\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  simulacro:
+    name: Simulacro de restauración
+    needs: exportar
+    # Los lunes, y a mano cuando se pida. Un respaldo que nadie ha restaurado
+    # no es un respaldo: es un archivo.
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.simulacro ||
+      github.event_name == 'schedule' && github.run_number > 0
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sistema/package-lock.json
+
+      - name: Solo los lunes cuando es automático
+        id: toca
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "corre=si" >> "$GITHUB_OUTPUT"
+          elif [ "$(date -u +%u)" = "1" ]; then
+            echo "corre=si" >> "$GITHUB_OUTPUT"
+          else
+            echo "corre=no" >> "$GITHUB_OUTPUT"
+            echo "Hoy no es lunes: el simulacro se salta."
+          fi
+
+      - name: La llave privada tiene que estar
+        if: steps.toca.outputs.corre == 'si'
+        run: |
+          if [ -z "${{ secrets.RESPALDO_CLAVE }}" ]; then
+            echo "::error::Falta el secreto RESPALDO_CLAVE. Sin él no se puede abrir el respaldo, y un respaldo que no se puede abrir no sirve de nada."
+            exit 1
+          fi
+
+      - run: npm ci --legacy-peer-deps
+        if: steps.toca.outputs.corre == 'si'
+        working-directory: sistema
+
+      - name: Instalar age
+        if: steps.toca.outputs.corre == 'si'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+
+      - name: Bajar el último respaldo
+        if: steps.toca.outputs.corre == 'si'
+        working-directory: sistema
+        run: |
+          npx wrangler r2 object get \
+            "babycaleb-respaldos/diario/${{ needs.exportar.outputs.nombre }}.sql.age" \
+            --file "../cifrado.sql.age" --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Descifrar e importar en una SQLite de simulacro
+        if: steps.toca.outputs.corre == 'si'
+        run: |
+          printf '%s' "${{ secrets.RESPALDO_CLAVE }}" > llave.txt
+          age -d -i llave.txt -o restaurado.sql cifrado.sql.age
+          shred -u llave.txt
+          echo "descifrado: $(wc -c < restaurado.sql) bytes"
+          node --experimental-sqlite .github/scripts/verificar-respaldo.mjs restaurado.sql
+
+      - name: Borrar lo que quedó en claro
+        if: always() && steps.toca.outputs.corre == 'si'
+        run: |
+          # Pase lo que pase: el runner se recicla, pero no se deja nada
+          # legible en disco más tiempo del necesario.
+          shred -u restaurado.sql llave.txt 2>/dev/null || rm -f restaurado.sql llave.txt
