@@ -6,10 +6,16 @@
   // bindings del nivel raíz. Por eso cada uno repite los suyos. El nivel raíz
   // es solo para `wrangler dev` y las pruebas locales.
   //
-  // Los `database_id` y los `namespace_id` de abajo son PENDIENTE a propósito:
-  // los recursos en vivo todavía no existen. Se rellenan al crearlos (F2, con
-  // el visto bueno de la dueña) y hasta entonces las pruebas y el dev local
-  // funcionan igual, porque miniflare crea su propia D1 en disco.
+  // Las D1 y los buckets existen desde el 2026-11-09, en la cuenta de la
+  // agencia: babycaleb-db y babycaleb-db-staging (ENAM, que es la región más
+  // cercana a Panamá de las que ofrece D1), y babycaleb-privado,
+  // babycaleb-privado-staging y babycaleb-respaldos.
+  //
+  // Los `namespace_id` de los límites NO son ids de recursos: son números que
+  // cada Worker elige y que valen dentro de la cuenta. No hay nada que crear.
+  //
+  // Las pruebas y el dev local no usan nada de esto: miniflare crea su propia
+  // D1 en disco, así que nadie necesita la cuenta para trabajar.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "babycaleb-sistema",
   "main": "src/index.ts",
@@ -24,7 +30,7 @@
   "triggers": { "crons": ["*/5 * * * *"] },
 
   "d1_databases": [
-    { "binding": "DB", "database_name": "babycaleb-db", "database_id": "PENDIENTE", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "babycaleb-db", "database_id": "3f96b1a3-8d35-4957-9a4a-48451dcbc28b", "migrations_dir": "migrations" }
   ],
   "r2_buckets": [
     { "binding": "PRIVADO", "bucket_name": "babycaleb-privado" }
@@ -86,7 +92,7 @@
       "triggers": { "crons": ["*/5 * * * *"] },
       // workers.dev queda vivo en staging, protegido por Access.
       "d1_databases": [
-        { "binding": "DB", "database_name": "babycaleb-db-staging", "database_id": "PENDIENTE", "migrations_dir": "migrations" }
+        { "binding": "DB", "database_name": "babycaleb-db-staging", "database_id": "21fa70c6-df84-463f-9543-0669fb3ea487", "migrations_dir": "migrations" }
       ],
       "r2_buckets": [
         { "binding": "PRIVADO", "bucket_name": "babycaleb-privado-staging" }
@@ -135,7 +141,7 @@
         { "pattern": "ruta.babycaleb.com", "custom_domain": true }
       ],
       "d1_databases": [
-        { "binding": "DB", "database_name": "babycaleb-db", "database_id": "PENDIENTE", "migrations_dir": "migrations" }
+        { "binding": "DB", "database_name": "babycaleb-db", "database_id": "3f96b1a3-8d35-4957-9a4a-48451dcbc28b", "migrations_dir": "migrations" }
       ],
       "r2_buckets": [
         { "binding": "PRIVADO", "bucket_name": "babycaleb-privado" }
