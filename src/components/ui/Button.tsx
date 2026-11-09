@@ -14,10 +14,10 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 export const buttonVariants = ({ variant = 'accent', size = 'md', className }: Partial<ButtonProps> & { className?: string }) => {
   return cn(
-    'inline-flex items-center justify-center font-bold rounded-pill transition-all duration-300 focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4',
+    'inline-flex items-center justify-center font-bold rounded-pill transition-all duration-300 focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4',
     {
       'bg-accent text-accent-fg hover:opacity-90 shadow-glow': variant === 'accent',
-      'bg-transparent border border-accent text-accent hover:bg-accent hover:text-accent-fg': variant === 'outline',
+      'bg-transparent border border-accent-edge text-accent-strong hover:bg-accent hover:text-accent-fg': variant === 'outline',
       'bg-transparent hover:bg-surface text-fg': variant === 'ghost',
     },
     {

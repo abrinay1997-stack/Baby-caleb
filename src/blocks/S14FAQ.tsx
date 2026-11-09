@@ -38,7 +38,7 @@ export default function S14FAQ() {
             <div key={idx} className="faq-item bg-bg border border-line rounded-xl overflow-hidden">
               <button
                 id={`faq-q-${idx}`}
-                className="w-full text-left px-6 py-6 flex items-center justify-between focus-visible:outline-accent"
+                className="w-full text-left px-6 py-6 flex items-center justify-between focus-visible:outline-accent-edge"
                 onClick={() => setOpenIndex(isOpen ? null : idx)}
                 aria-expanded={isOpen}
                 aria-controls={`faq-a-${idx}`}

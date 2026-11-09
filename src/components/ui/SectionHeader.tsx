@@ -16,7 +16,7 @@ interface SectionHeaderProps {
 export function SectionHeader({ kicker, title, description, centered = false, className }: SectionHeaderProps) {
   return (
     <div className={cn('mb-16 md:mb-24', centered ? 'text-center' : '', className)}>
-      <span className="mono text-accent mb-6 block">{kicker}</span>
+      <span className="mono text-accent-strong mb-6 block">{kicker}</span>
       <h2 className={cn('text-3xl md:text-5xl text-fg text-balance leading-tight', centered ? 'mx-auto' : 'max-w-2xl', description ? 'mb-8' : '')}>
         {title}
       </h2>

@@ -48,7 +48,7 @@ export default function S16HowToBuy() {
             {data.map((step, idx) => (
               <div key={idx} className="buy-step relative">
                 <div className="absolute -left-[33px] md:-left-[49px] top-1 w-2 h-2 bg-accent rounded-full"></div>
-                <span className="mono text-sage text-sm mb-2 block">PASO {step.step}</span>
+                <span className="mono text-sage-strong text-sm mb-2 block">PASO {step.step}</span>
                 <h3 className="text-xl md:text-2xl font-bold text-fg mb-2">{step.title}</h3>
                 <p className="text-muted text-sm md:text-base">{step.text}</p>
               </div>

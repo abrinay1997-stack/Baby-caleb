@@ -27,21 +27,21 @@ export default function S20Footer() {
           <div>
             <h4 className="font-bold text-fg mb-4">Enlaces</h4>
             <ul className="space-y-2">
-              <li><Link to="/productos" className="text-sm text-muted hover:text-accent transition-colors">Productos</Link></li>
-              <li><Link to="/beneficios" className="text-sm text-muted hover:text-accent transition-colors">Beneficios</Link></li>
-              <li><Link to="/historia" className="text-sm text-muted hover:text-accent transition-colors">Historia</Link></li>
-              <li><Link to="/tips" className="text-sm text-muted hover:text-accent transition-colors">Tips</Link></li>
-              <li><Link to="/como-comprar" className="text-sm text-muted hover:text-accent transition-colors">Cómo comprar</Link></li>
-              <li><Link to="/faq" className="text-sm text-muted hover:text-accent transition-colors">FAQ</Link></li>
+              <li><Link to="/productos" className="text-sm text-muted hover:text-accent-strong transition-colors">Productos</Link></li>
+              <li><Link to="/beneficios" className="text-sm text-muted hover:text-accent-strong transition-colors">Beneficios</Link></li>
+              <li><Link to="/historia" className="text-sm text-muted hover:text-accent-strong transition-colors">Historia</Link></li>
+              <li><Link to="/tips" className="text-sm text-muted hover:text-accent-strong transition-colors">Tips</Link></li>
+              <li><Link to="/como-comprar" className="text-sm text-muted hover:text-accent-strong transition-colors">Cómo comprar</Link></li>
+              <li><Link to="/faq" className="text-sm text-muted hover:text-accent-strong transition-colors">FAQ</Link></li>
             </ul>
           </div>
           
           <div>
             <h4 className="font-bold text-fg mb-4">Contacto</h4>
             <ul className="space-y-2">
-              <li><a href={social.whatsapp} target="_blank" rel="noopener noreferrer" className="text-sm text-muted hover:text-accent transition-colors">WhatsApp</a></li>
-              <li><a href={`https://instagram.com/${social.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="text-sm text-muted hover:text-accent transition-colors">Instagram</a></li>
-              <li><a href={`mailto:${social.email}`} className="text-sm text-muted hover:text-accent transition-colors">Email</a></li>
+              <li><a href={social.whatsapp} target="_blank" rel="noopener noreferrer" className="text-sm text-muted hover:text-accent-strong transition-colors">WhatsApp</a></li>
+              <li><a href={`https://instagram.com/${social.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="text-sm text-muted hover:text-accent-strong transition-colors">Instagram</a></li>
+              <li><a href={`mailto:${social.email}`} className="text-sm text-muted hover:text-accent-strong transition-colors">Email</a></li>
             </ul>
           </div>
         </div>

@@ -51,7 +51,7 @@ export default function S01Nav() {
           isScrolled ? 'top-4 bg-surface/80 py-3 px-6' : 'top-6 bg-surface/50 py-4 px-6 md:px-8'
         }`}
       >
-        <Link to="/" className="flex items-center gap-2 group focus-visible:outline-accent">
+        <Link to="/" className="flex items-center gap-2 group focus-visible:outline-accent-edge">
           <span className="font-display font-bold text-xl text-fg tracking-tight">Baby Caleb</span>
         </Link>
 
@@ -62,8 +62,8 @@ export default function S01Nav() {
               key={link.label}
               to={link.href}
               aria-current={location.pathname === link.href ? 'page' : undefined}
-              className={`text-sm font-medium transition-colors duration-200 focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4 rounded-sm ${
-                location.pathname === link.href ? 'text-accent' : 'text-fg hover:text-accent'
+              className={`text-sm font-medium transition-colors duration-200 focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 rounded-sm ${
+                location.pathname === link.href ? 'text-accent-strong' : 'text-fg hover:text-accent-strong'
               }`}
             >
               {link.label}
@@ -73,7 +73,7 @@ export default function S01Nav() {
             href={whatsappLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="bg-accent text-accent-fg px-5 py-2.5 rounded-pill text-sm font-bold hover:opacity-90 transition-opacity focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4 shadow-soft"
+            className="bg-accent text-accent-fg px-5 py-2.5 rounded-pill text-sm font-bold hover:opacity-90 transition-opacity focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 shadow-soft"
           >
             Pedir por WhatsApp
           </a>
@@ -81,7 +81,7 @@ export default function S01Nav() {
 
         {/* Mobile Toggle */}
         <button
-          className="lg:hidden p-3 -m-3 focus-visible:outline-accent rounded-sm"
+          className="lg:hidden p-3 -m-3 focus-visible:outline-accent-edge rounded-sm"
           onClick={() => setMobileMenuOpen(true)}
           aria-label="Abrir menú"
           aria-expanded={mobileMenuOpen}
@@ -109,7 +109,7 @@ export default function S01Nav() {
             }}
           >
             <button
-              className="absolute top-6 right-6 p-2 focus-visible:outline-accent rounded-sm"
+              className="absolute top-6 right-6 p-2 focus-visible:outline-accent-edge rounded-sm"
               onClick={() => setMobileMenuOpen(false)}
               aria-label="Cerrar menú"
             >
@@ -129,8 +129,8 @@ export default function S01Nav() {
                   to={link.href}
                   onClick={() => setMobileMenuOpen(false)}
                   aria-current={location.pathname === link.href ? 'page' : undefined}
-                  className={`font-display text-3xl font-bold focus-visible:outline-accent rounded-sm inline-block w-max ${
-                    location.pathname === link.href ? 'text-accent' : 'text-fg'
+                  className={`font-display text-3xl font-bold focus-visible:outline-accent-edge rounded-sm inline-block w-max ${
+                    location.pathname === link.href ? 'text-accent-strong' : 'text-fg'
                   }`}
                 >
                   {link.label}
@@ -141,7 +141,7 @@ export default function S01Nav() {
                   href={whatsappLink}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-block bg-accent text-accent-fg px-8 py-4 rounded-pill text-lg font-bold w-full text-center focus-visible:outline-accent"
+                  className="inline-block bg-accent text-accent-fg px-8 py-4 rounded-pill text-lg font-bold w-full text-center focus-visible:outline-accent-edge"
                 >
                   Pedir por WhatsApp
                 </a>

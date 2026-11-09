@@ -52,6 +52,20 @@ jobs:
 
       - run: npm run build
 
+      # Abre las siete páginas en un navegador de verdad y mide el contraste
+      # de cada nodo de texto contra su fondo CALCULADO. No mira las clases:
+      # caza lo que un grep no ve — un color heredado, una opacidad, un fondo
+      # que viene de tres divs más arriba.
+      #
+      # El 2026-11-09 esto encontró 55 fallos, entre ellos el titular del
+      # llamado a la acción (1.75:1) y el botón con el que se compra (2.20:1).
+      # Está aquí para que no vuelvan.
+      - name: Instalar el navegador
+        run: npx playwright install --with-deps chromium
+
+      - name: Contraste (WCAG AA)
+        run: npm run contraste
+
       # Presupuesto de tamaño. Lo que se vigila no es el peso en sí, sino que
       # CREZCA sin que nadie lo note. El 2026-11-09 `dist` pesaba 3296 KB, casi
       # todo imágenes de `public/`; el tope deja sitio para unas cuantas fotos

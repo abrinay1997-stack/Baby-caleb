@@ -65,7 +65,7 @@ export default function S02Hero() {
 
       <div className="container-normal relative z-content grid md:grid-cols-12 gap-8 items-center w-full">
         <div className="md:col-span-7 lg:col-span-6 flex flex-col items-start gap-6">
-          <div className="hero-kicker inline-block border border-line bg-bg/60 backdrop-blur px-4 py-2 rounded-pill mono text-sage">
+          <div className="hero-kicker inline-block border border-line bg-bg/60 backdrop-blur px-4 py-2 rounded-pill mono text-sage-strong">
             {data.kicker}
           </div>
 
@@ -86,13 +86,13 @@ export default function S02Hero() {
               href={data.cta.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex w-full sm:inline-flex items-center justify-center bg-accent text-accent-fg px-8 py-4 rounded-pill font-bold text-lg hover:opacity-90 transition-opacity focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4 shadow-glow"
+              className="flex w-full sm:inline-flex items-center justify-center bg-accent text-accent-fg px-8 py-4 rounded-pill font-bold text-lg hover:opacity-90 transition-opacity focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 shadow-glow"
             >
               {data.cta.label}
             </a>
             <Link
               to="/productos"
-              className="flex w-full sm:inline-flex items-center justify-center border border-line bg-bg/60 backdrop-blur text-fg px-8 py-4 rounded-pill font-bold text-lg hover:border-accent hover:text-accent transition-colors focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4"
+              className="flex w-full sm:inline-flex items-center justify-center border border-line bg-bg/60 backdrop-blur text-fg px-8 py-4 rounded-pill font-bold text-lg hover:border-accent-edge hover:text-accent-strong transition-colors focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4"
             >
               Ver catálogo
             </Link>
@@ -115,12 +115,12 @@ export default function S02Hero() {
                 className="w-16 h-16 object-contain rounded-lg bg-sage/20"
               />
               <div>
-                <span className="block mono text-[10px] text-sage">Desde talla RN</span>
+                <span className="block mono text-[10px] text-sage-strong">Desde talla RN</span>
                 <span className="block font-bold text-fg leading-tight">Pañal Nateen</span>
                 <span className="block text-xs text-muted">Desde $17</span>
               </div>
             </div>
-            <div className="hero-float absolute -top-4 right-4 md:right-8 bg-sage text-bg font-bold text-xs px-4 py-2 rounded-pill shadow-soft flex items-center gap-2">
+            <div className="hero-float absolute -top-4 right-4 md:right-8 bg-sage text-fg font-bold text-xs px-4 py-2 rounded-pill shadow-soft flex items-center gap-2">
               <span className="inline-block w-2 h-2 rounded-full bg-bg" />
               Sin cloro · Sin perfumes
             </div>

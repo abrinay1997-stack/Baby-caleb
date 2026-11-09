@@ -29,7 +29,7 @@ export default function S08Differentiators() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {data.map((item, idx) => (
           <div key={idx} className="diff-card bg-bg p-8 rounded-xl border border-line flex flex-col gap-4">
-            <span className="mono text-sage text-2xl">0{idx + 1}</span>
+            <span className="mono text-sage-strong text-2xl">0{idx + 1}</span>
             <h3 className="text-xl font-bold text-fg leading-tight">{item.title}</h3>
             <p className="text-muted text-sm leading-relaxed">{item.text}</p>
           </div>

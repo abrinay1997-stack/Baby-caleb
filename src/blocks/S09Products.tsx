@@ -68,7 +68,7 @@ export default function S09Products() {
                           <span className="font-bold text-fg">{v.size}</span>
                           <span className="text-muted"> · {v.units}</span>
                         </div>
-                        <span className="font-bold text-accent">{v.price != null ? `$${v.price}` : 'Consultar'}</span>
+                        <span className="font-bold text-accent-strong">{v.price != null ? `$${v.price}` : 'Consultar'}</span>
                       </div>
                     ))}
                   </div>

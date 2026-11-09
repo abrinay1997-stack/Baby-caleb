@@ -1,16 +1,55 @@
 /* La fuente Montserrat se carga en index.html (preconnect + preload) para
    evitar bloqueo de render y el warning de @import fuera de orden. */
 
+/* ---------------------------------------------------------------------------
+   Colores de la marca, y por qué hay más de los que trae brand.json
+   ---------------------------------------------------------------------------
+   El naranja y el verde de la marca son preciosos y NO SE LEEN sobre el crema.
+   Medido con WCAG 2.1 (la relación que exige AA es 4.5:1 para texto normal y
+   3:1 para texto grande y para bordes de controles):
+
+     --fg     #1B3246  sobre bg 12.21  ✓
+     --muted  rgba(…)  sobre bg  4.95  ✓ (justo, sin margen)
+     --accent #EE924A  sobre bg  2.20  ✗ ni para texto grande
+     --sage   #91C9A2  sobre bg  1.75  ✗
+
+   Y `--accent-fg` era crema sobre naranja: 2.20. Ese par es el de los botones
+   principales y el del chat, así que eran ilegibles. El color que sí se lee
+   encima del naranja es el propio navy: 5.56.
+
+   Así que: los colores de la marca siguen siendo los de la marca y se usan de
+   RELLENO (botones, barras, puntos). Para TEXTO y para BORDES hay versiones
+   oscurecidas del mismo tono — no son colores nuevos, es el mismo naranja y el
+   mismo verde con menos luz.
+
+   Si se cambia cualquiera de estos valores, hay que volver a medir. La prueba
+   de `sistema/panel/src/marca.test.ts` mide los del panel; esta hoja es la de
+   la web y sus números están abajo, en cada línea.
+   --------------------------------------------------------------------------- */
+
 :root {
   --bg: #F9F6ED;
   --surface: #F2EFE5;
   --fg: #1B3246;
   --muted: rgba(27, 50, 70, 0.7);
   --line: rgba(27, 50, 70, 0.12);
+
+  /* Relleno. NUNCA como color de texto ni de borde. */
   --accent: #EE924A;
-  --accent-fg: #F9F6ED;
   --sage: #91C9A2;
-  
+
+  /* Lo que se escribe ENCIMA del naranja. Era #F9F6ED (2.20); ahora 5.56. */
+  --accent-fg: #1B3246;
+
+  /* Texto en color de marca, sobre bg o surface. */
+  --accent-strong: #985D2F;  /* bg 4.90 · surface 4.60 */
+  --sage-strong:   #53735C;  /* bg 4.92 · surface 4.62 */
+
+  /* Bordes, aros de foco e iconos de marca: no es texto, AA pide 3:1. */
+  --accent-edge: #C3783D;    /* bg 3.20 · surface 3.01 */
+  --sage-edge:   #6A9376;    /* bg 3.22 · surface 3.03 */
+
+
   --font-display: 'Montserrat', sans-serif;
   --font-body: 'Montserrat', sans-serif;
   --font-mono: 'Montserrat', sans-serif;

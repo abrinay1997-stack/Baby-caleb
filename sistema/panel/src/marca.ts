@@ -27,9 +27,13 @@
  * ilegible según AA. El color correcto de texto sobre el naranja es el propio
  * `fg` navy, que da 5.56.
  *
- * De ahí las tres reglas de abajo. No cambian `brand.json` —la marca de la web
- * es la que es y no se toca— sino que dicen cómo usarla en el panel, que es
- * donde la dueña va a leer cifras en un teléfono, a veces con sol.
+ * Por eso `brand.json` se corrigió: `accent-fg` pasó a ser el navy y se le
+ * sumaron cuatro tonos —`accent-strong`, `accent-edge`, `sage-strong`,
+ * `sage-edge`— que son el mismo naranja y el mismo verde con menos luz, para
+ * texto y para bordes. No son colores nuevos: son los de la marca, usables.
+ *
+ * El plan dice que «la marca de brand.json manda en la web y en el panel», así
+ * que se arregló en la fuente y no en cada copia. La web usa los mismos.
  */
 
 /** Copiado de `brand.json`. La prueba falla si se separa del original. */
@@ -39,9 +43,20 @@ export const MARCA = {
   fg: "#1B3246",
   muted: "rgba(27, 50, 70, 0.7)",
   line: "rgba(27, 50, 70, 0.12)",
+  /** Relleno. NUNCA texto ni borde: 2.20 sobre el fondo. */
   accent: "#EE924A",
-  accentFg: "#F9F6ED",
+  /** Lo que se escribe ENCIMA del naranja. Era crema (2.20); ahora navy: 5.56. */
+  accentFg: "#1B3246",
+  /** Naranja de texto: 4.90 / 4.60. */
+  accentStrong: "#985D2F",
+  /** Naranja de bordes y aros de foco: 3.20 / 3.01 (AA pide 3:1). */
+  accentEdge: "#C3783D",
+  /** Relleno. NUNCA texto: 1.75 sobre el fondo. */
   sage: "#91C9A2",
+  /** Verde de texto: 4.92 / 4.62. */
+  sageStrong: "#53735C",
+  /** Verde de bordes: 3.22 / 3.03. */
+  sageEdge: "#6A9376",
 } as const;
 
 export const TIPOGRAFIA = {
@@ -49,22 +64,6 @@ export const TIPOGRAFIA = {
   body: "Montserrat",
   utility: "Montserrat",
   displayWeight: 700,
-} as const;
-
-/**
- * Tokens derivados, que existen solo por el contraste.
- *
- *  - `accentTexto`      el naranja de la marca, oscurecido hasta pasar AA sobre
- *                       los dos fondos (4.90 / 4.60). Mismo tono.
- *  - `accentTextoGrande` el mismo, menos oscuro, para texto de 24 px o de
- *                       18.7 px en negrita, donde AA pide 3.0 (3.20 / 3.01).
- *  - `sobreAccent`      lo que se escribe ENCIMA del naranja: el navy, no el
- *                       crema de `brand.json`.
- */
-export const DERIVADOS = {
-  accentTexto: "#985D2F",
-  accentTextoGrande: "#C3783D",
-  sobreAccent: MARCA.fg,
 } as const;
 
 /**
@@ -85,13 +84,17 @@ export const USO = {
   /** Relleno de un botón, una barra o un punto de color. NUNCA texto. */
   relleno: MARCA.accent,
   /** Texto encima de `relleno`. */
-  sobreRelleno: DERIVADOS.sobreAccent,
+  sobreRelleno: MARCA.accentFg,
   /** Texto en color de marca, sobre el fondo. */
-  textoMarca: DERIVADOS.accentTexto,
+  textoMarca: MARCA.accentStrong,
   /** Lo mismo para titulares grandes. */
-  textoMarcaGrande: DERIVADOS.accentTextoGrande,
+  textoMarcaGrande: MARCA.accentEdge,
   /** Verde de la marca. Solo relleno (1.75 sobre el fondo). */
   rellenoBien: MARCA.sage,
+  /** Texto encima del verde: el navy, 6.96. */
+  sobreRellenoBien: MARCA.fg,
+  /** Verde en texto, sobre el fondo. */
+  textoBien: MARCA.sageStrong,
 } as const;
 
 // ---------------------------------------------------------------------------

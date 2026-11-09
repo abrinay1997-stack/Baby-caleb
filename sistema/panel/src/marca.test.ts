@@ -3,7 +3,6 @@ import brand from "../../../brand.json";
 import {
   AA_GRANDE,
   AA_TEXTO,
-  DERIVADOS,
   MARCA,
   TACTIL_MIN_PX,
   TELEFONO_MAX_PX,
@@ -27,7 +26,11 @@ describe("la copia de brand.json sigue siendo la misma", () => {
     expect(MARCA.line).toBe(brand.color.line);
     expect(MARCA.accent).toBe(brand.color.accent);
     expect(MARCA.accentFg).toBe(brand.color["accent-fg"]);
+    expect(MARCA.accentStrong).toBe(brand.color["accent-strong"]);
+    expect(MARCA.accentEdge).toBe(brand.color["accent-edge"]);
     expect(MARCA.sage).toBe(brand.color.sage);
+    expect(MARCA.sageStrong).toBe(brand.color["sage-strong"]);
+    expect(MARCA.sageEdge).toBe(brand.color["sage-edge"]);
   });
 
   it("la tipografía", () => {
@@ -39,9 +42,8 @@ describe("la copia de brand.json sigue siendo la misma", () => {
 
   it("y no se copió ningún color que brand.json no tenga", () => {
     const enMarca = new Set(Object.keys(MARCA));
-    const enBrand = new Set(
-      Object.keys(brand.color).map((k) => (k === "accent-fg" ? "accentFg" : k)),
-    );
+    const aCamello = (k: string) => k.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    const enBrand = new Set(Object.keys(brand.color).map(aCamello));
     expect([...enMarca].sort()).toEqual([...enBrand].sort());
   });
 });
@@ -83,25 +85,35 @@ describe("lo que NO se puede usar como texto, y por qué", () => {
     expect(contraste(MARCA.sage, MARCA.bg)).toBeLessThan(AA_GRANDE);
   });
 
-  it("y el par que propone brand.json para los botones es ilegible", () => {
-    // `accent-fg` es crema y `accent` naranja: 2.20. Un botón así no se lee.
-    // No se cambia brand.json —la marca de la web es la que es— pero el panel
-    // escribe en navy encima del naranja.
-    expect(contraste(MARCA.accentFg, MARCA.accent)).toBeLessThan(AA_GRANDE);
-    expect(USO.sobreRelleno).not.toBe(MARCA.accentFg);
-    expect(USO.sobreRelleno).toBe(MARCA.fg);
+  it("`accent-fg` NO puede volver a ser crema", () => {
+    // Era #F9F6ED sobre el naranja: 2.20, y es el par de los botones
+    // principales y del chat. Se corrigió en brand.json al navy. Esta prueba
+    // está para que no vuelva.
+    expect(MARCA.accentFg).not.toBe(MARCA.bg);
+    expect(contraste(MARCA.accentFg, MARCA.accent)).toBeGreaterThanOrEqual(AA_TEXTO);
   });
 
-  it("los tonos derivados conservan el naranja, no son otro color", () => {
-    // Oscurecer multiplicando mantiene el tono: si alguien los cambia por un
-    // marrón cualquiera, esto lo nota.
-    const [r, g, b] = [DERIVADOS.accentTexto, DERIVADOS.accentTextoGrande].map((c) => {
+  it("el navy es legible encima del verde, que es la otra superficie de relleno", () => {
+    expect(contraste(MARCA.fg, MARCA.sage)).toBeGreaterThanOrEqual(AA_TEXTO);
+  });
+
+  it("los tonos de texto conservan el tono, no son otro color", () => {
+    // Oscurecer multiplicando mantiene el matiz. Si alguien los cambia por un
+    // marrón o un gris cualquiera, esto lo nota.
+    const canales = (c: string) => {
       const n = c.slice(1);
-      return [0, 2, 4].map((i) => Number.parseInt(n.slice(i, i + 2), 16));
-    })[0]!;
-    // El naranja de la marca va de más rojo a menos azul; el derivado también.
-    expect(r).toBeGreaterThan(g!);
-    expect(g).toBeGreaterThan(b!);
+      return [0, 2, 4].map((i) => Number.parseInt(n.slice(i, i + 2), 16)) as [number, number, number];
+    };
+    for (const naranja of [MARCA.accent, MARCA.accentStrong, MARCA.accentEdge]) {
+      const [r, g, b] = canales(naranja);
+      expect(r, naranja).toBeGreaterThan(g);
+      expect(g, naranja).toBeGreaterThan(b);
+    }
+    for (const verde of [MARCA.sage, MARCA.sageStrong, MARCA.sageEdge]) {
+      const [r, g, b] = canales(verde);
+      expect(g, verde).toBeGreaterThan(r);
+      expect(g, verde).toBeGreaterThan(b);
+    }
   });
 });
 

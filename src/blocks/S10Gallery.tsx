@@ -50,7 +50,7 @@ export default function S10Gallery() {
               href={`${WHATSAPP_BASE}${message}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="gallery-item group flex flex-col bg-bg rounded-2xl overflow-hidden border border-line hover:border-accent hover:-translate-y-1 transition-all duration-300 shadow-soft focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-4"
+              className="gallery-item group flex flex-col bg-bg rounded-2xl overflow-hidden border border-line hover:border-accent-edge hover:-translate-y-1 transition-all duration-300 shadow-soft focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4"
             >
               <div className="aspect-square bg-sage/15 overflow-hidden flex items-center justify-center">
                 <img
@@ -62,10 +62,10 @@ export default function S10Gallery() {
                 />
               </div>
               <div className="p-4 flex flex-col gap-1">
-                <span className="mono text-[10px] text-sage">{item.productName}</span>
+                <span className="mono text-[10px] text-sage-strong">{item.productName}</span>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-bold text-fg leading-tight">{item.size}</span>
-                  <span className="font-display font-bold text-accent">{priceLabel}</span>
+                  <span className="font-display font-bold text-accent-strong">{priceLabel}</span>
                 </div>
                 <span className="text-xs text-muted">{item.range}</span>
                 <span className="text-xs text-muted">{item.units}</span>
