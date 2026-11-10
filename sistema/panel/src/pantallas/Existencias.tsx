@@ -61,7 +61,7 @@ export function Existencias() {
                   <Celda etiqueta="Reservado" className="text-muted">
                     {e.reservado}
                   </Celda>
-                  <Celda etiqueta="Libres">
+                  <Celda etiqueta="Libres" papel="clave">
                     <strong>{e.libres}</strong>
                     {e.minimo !== null && e.libres <= e.minimo ? (
                       <span className="block text-[12px] font-normal text-muted">
@@ -69,7 +69,7 @@ export function Existencias() {
                       </span>
                     ) : null}
                   </Celda>
-                  <Celda etiqueta="Lo que se dice">
+                  <Celda etiqueta="Lo que se dice" papel="estado">
                     {(() => {
                       const etiqueta = disponibilidad(e.libres, UMBRAL_POCAS);
                       return etiqueta === "disponible" ? (

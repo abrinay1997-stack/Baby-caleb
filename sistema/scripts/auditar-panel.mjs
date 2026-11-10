@@ -117,6 +117,27 @@ function medir() {
     recorrer(reglas);
   }
 
+  // La barra inferior es `position: fixed`: no empuja nada, así que si el
+  // contenido no reserva su alto, la última fila queda DEBAJO de ella. Es un
+  // fallo que no se ve en una captura de página entera —ahí la barra se dibuja
+  // donde esté el viewport— y que en la mano significa que a la dueña le falta
+  // el último producto de la lista sin ninguna señal de que falta.
+  //
+  // Se mide, no se estima: el hueco se escribe una vez en el CSS y el alto de
+  // la barra cambia cada vez que alguien le toca un renglón.
+  const barra = document.querySelector("nav.solo-telefono");
+  const principal = document.querySelector("main.contenido");
+  if (barra && principal && getComputedStyle(barra).display !== "none") {
+    const alto = barra.getBoundingClientRect().height;
+    const hueco = parseFloat(getComputedStyle(principal).paddingBottom);
+    if (hueco < alto) {
+      fallas.push({
+        regla: "la barra no tapa el contenido",
+        detalle: `la barra mide ${alto}px y el hueco es de ${hueco}px: faltan ${(alto - hueco).toFixed(1)}px`,
+      });
+    }
+  }
+
   // Se desborda de lado: el síntoma de todo lo de arriba cuando se escapa.
   const desborde = document.documentElement.scrollWidth - document.documentElement.clientWidth;
   if (desborde > 1) {

@@ -26,10 +26,10 @@ export function Bodegas() {
               <Fila key={b.id}>
                 <Celda etiqueta="">{b.nombre}</Celda>
                 <Celda etiqueta="Variantes">{b.variantes}</Celda>
-                <Celda etiqueta="Unidades">
+                <Celda etiqueta="Unidades" papel="clave">
                   <strong>{b.unidades}</strong>
                 </Celda>
-                <Celda etiqueta="Estado">
+                <Celda etiqueta="Estado" papel="estado">
                   {b.activa === 1 ? (
                     <Pastilla tono="bien">En uso</Pastilla>
                   ) : (

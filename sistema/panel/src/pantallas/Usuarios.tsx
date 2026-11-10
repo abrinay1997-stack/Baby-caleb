@@ -43,14 +43,14 @@ export function Usuarios() {
                   <Celda etiqueta="Correo" className="break-all text-muted">
                     {u.correo}
                   </Celda>
-                  <Celda etiqueta="Rol">{ETIQUETAS_ROL[u.rol]}</Celda>
+                  <Celda etiqueta="Rol" papel="clave">{ETIQUETAS_ROL[u.rol]}</Celda>
                   <Celda etiqueta="Telegram" className="text-muted">
                     {u.telegram_chat_id ? "Vinculado" : "—"}
                   </Celda>
                   <Celda etiqueta="Desde" className="text-muted">
                     {fecha(u.creado_en)}
                   </Celda>
-                  <Celda etiqueta="Estado">
+                  <Celda etiqueta="Estado" papel="estado">
                     {u.activo === 1 ? (
                       <Pastilla tono="bien">Activo</Pastilla>
                     ) : (

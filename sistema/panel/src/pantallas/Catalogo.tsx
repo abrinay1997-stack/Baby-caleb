@@ -64,7 +64,7 @@ export function Catalogo() {
                   </Celda>
                   <Celda etiqueta="Talla">{v.talla ?? "—"}</Celda>
                   <Celda etiqueta="Por caja">{v.unidades_por_caja}</Celda>
-                  <Celda etiqueta="Precio">
+                  <Celda etiqueta="Precio" papel="clave">
                     <strong>{dinero(v.precio_cents)}</strong>
                   </Celda>
                   {d.muestraCosto ? (
@@ -80,7 +80,7 @@ export function Catalogo() {
                       `${v.tasa_itbms_bp / 100} %`
                     )}
                   </Celda>
-                  <Celda etiqueta="Estado">
+                  <Celda etiqueta="Estado" papel="estado">
                     {v.activo !== 1 ? (
                       <Pastilla tono="neutro">Descatalogado</Pastilla>
                     ) : v.publicado === 1 ? (

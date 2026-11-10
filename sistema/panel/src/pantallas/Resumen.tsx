@@ -75,7 +75,7 @@ export function Resumen() {
                   <Fila key={`${b.codigo}-${b.bodega}`}>
                     <Celda etiqueta="">{b.nombre}</Celda>
                     <Celda etiqueta="Bodega">{b.bodega}</Celda>
-                    <Celda etiqueta="Quedan">
+                    <Celda etiqueta="Quedan" papel="clave">
                       <strong>{b.libres}</strong>
                     </Celda>
                     <Celda etiqueta="Mínimo" className="text-muted">
