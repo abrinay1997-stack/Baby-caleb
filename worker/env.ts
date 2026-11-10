@@ -52,6 +52,18 @@ export interface Env {
 
   /** El dominio del sitio, para el canónico y Open Graph. */
   readonly SITE_URL?: string;
+  /**
+   * El sitio sale en buscadores SOLO con un sí explícito aquí.
+   *
+   * Nace apagado a propósito: `babycaleb.com` se conectó antes de que los
+   * precios estuvieran aprobados y antes de que existieran las páginas
+   * legales. Vacío, mal escrito o ausente = oculto, nunca al revés.
+   *
+   * Se enciende poniendo "si" en wrangler.jsonc. El estado sale en
+   * /api/salud y el chequeo del despliegue lo dice en cada publicación, para
+   * que nadie lo deje apagado sin querer.
+   */
+  readonly INDEXABLE?: string;
 
   /** La versión desplegada, que estampa el flujo con el SHA del commit. */
   readonly VERSION?: string;

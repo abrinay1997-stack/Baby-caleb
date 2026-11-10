@@ -4,6 +4,7 @@ import type { Env } from "./env";
 import { reescribirHead } from "./head";
 import { slugDeRuta } from "../src/seo/producto";
 import { urlDelSitio } from "./sitio";
+import { quiereIndexarse, redireccionCanonica, seIndexa } from "./visibilidad";
 
 /**
  * `babycaleb-web`: la misma web, servida desde Cloudflare.
@@ -19,11 +20,14 @@ import { urlDelSitio } from "./sitio";
  */
 
 /** Las cabeceras que `public/_headers` no puede poner: las de lo que responde el Worker. */
-function conCabeceras(respuesta: Response): Response {
+function conCabeceras(respuesta: Response, indexable = true): Response {
   const r = new Response(respuesta.body, respuesta);
   r.headers.set("x-frame-options", "DENY");
   r.headers.set("x-content-type-options", "nosniff");
   r.headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  // La cabecera, no solo la etiqueta <meta>: así también quedan fuera el
+  // sitemap, el JSON y cualquier cosa que no sea HTML.
+  if (!indexable) r.headers.set("x-robots-tag", "noindex, nofollow");
   return r;
 }
 
@@ -41,10 +45,20 @@ export default {
     // `Host`, el canónico de una vista previa apuntaría a la vista previa, y
     // Google indexaría esa en vez del sitio.
     const siteUrl = urlDelSitio(env.SITE_URL, url.origin);
+    const indexable = seIndexa(env.SITE_URL ?? "", url.hostname, env.INDEXABLE);
+
+    // `www` no sirve una copia: manda a la dirección oficial de una vez. Dos
+    // direcciones con el mismo contenido reparten entre ellas lo que debería
+    // ir a una sola. (La copia de workers.dev NO se redirige: es contra la que
+    // se compara antes de cada corte.)
+    const aDondeVa = redireccionCanonica(env.SITE_URL ?? "", url);
+    if (aDondeVa !== null) {
+      return Response.redirect(aDondeVa, 301);
+    }
 
     // ---- API -------------------------------------------------------------
     if (url.pathname === "/api/chat") {
-      return conCabeceras(await chat(peticion, env));
+      return conCabeceras(await chat(peticion, env), indexable);
     }
 
     // El catálogo: precio y disponibilidad, del sistema (F3.5). Se devuelve
@@ -60,6 +74,12 @@ export default {
           ok: true,
           version: env.VERSION ?? "dev",
           sitio: siteUrl,
+          // Que esto se vea de un vistazo es el punto: un sitio lanzado y
+          // olvidado en «oculto» no da ningún síntoma — simplemente no llega
+          // nadie, y para cuando alguien lo nota han pasado meses.
+          buscadores: quiereIndexarse(env.INDEXABLE)
+            ? "indexable"
+            : "OCULTO a buscadores (INDEXABLE no está encendido)",
           // El chat necesita su clave; decirlo aquí evita descubrirlo cuando
           // una clienta escriba.
           chat: env.GROQ_API_KEY ? "listo" : "falta GROQ_API_KEY",
@@ -72,7 +92,7 @@ export default {
     }
 
     if (url.pathname.startsWith("/api/")) {
-      return conCabeceras(json({ error: "no existe esa ruta" }, 404));
+      return conCabeceras(json({ error: "no existe esa ruta" }, 404), indexable);
     }
 
     // ---- La web ----------------------------------------------------------
@@ -91,6 +111,7 @@ export default {
 
     return conCabeceras(
       reescribirHead(estatico, url, siteUrl, env.CF_ANALYTICS_TOKEN, variantes),
+      indexable,
     );
   },
 } satisfies ExportedHandler<Env>;
