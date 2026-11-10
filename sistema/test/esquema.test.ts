@@ -56,9 +56,17 @@ describe("migración 0001 desde cero", () => {
       expect(tablas, `falta ${esperada}`).toContain(esperada);
     }
 
-    // Lo que lleva llave foránea a pedidos nace en F4a: aquí no debe estar.
-    for (const futura of ["pedidos", "pedido_lineas", "reservas", "envios", "pagos", "asientos"]) {
-      expect(tablas, `${futura} no es de esta migración`).not.toContain(futura);
+    // Pedidos y pagos llegaron en F4.1 (migración 0006), así que ya están.
+    for (const deF4 of ["pedidos", "pedido_lineas", "pedido_eventos", "pagos", "eventos_pasarela"]) {
+      expect(tablas, `falta ${deF4}, que trae la 0006`).toContain(deF4);
+    }
+
+    // Lo que todavía NO existe. Esta lista no es decorativa: es lo que impide
+    // que alguien cree media tabla de una fase futura «para ir adelantando» y
+    // la deje a medias, con llaves foráneas apuntando a columnas que nadie
+    // terminó de pensar. Cuando una de estas nazca de verdad, se mueve arriba.
+    for (const futura of ["reservas", "envios", "asientos", "cuentas", "compras", "gastos"]) {
+      expect(tablas, `${futura} no es de ninguna migración todavía`).not.toContain(futura);
     }
   });
 
