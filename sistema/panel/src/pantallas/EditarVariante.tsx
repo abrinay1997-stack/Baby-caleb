@@ -32,6 +32,14 @@ export interface VarianteEditable {
   publicado: number;
   version: number;
   imagen: string | null;
+  es_combo: number;
+}
+
+interface Ingrediente {
+  codigo: string;
+  nombre: string;
+  cantidad: number;
+  libres: number;
 }
 
 interface Veredicto {
@@ -95,6 +103,7 @@ export function EditarVariante({
   const [veredicto, setVeredicto] = useState<Veredicto | null>(null);
   const [foto, setFoto] = useState<string | null>(null);
   const [subiendo, setSubiendo] = useState(false);
+  const [receta, setReceta] = useState<Ingrediente[] | null>(null);
   const [cargado, setCargado] = useState<string | null>(null);
 
   // Los campos se llenan cuando cambia la variante, no en cada render: si no,
@@ -111,6 +120,14 @@ export function EditarVariante({
     setError(null);
     setVeredicto(null);
     setFoto(variante.imagen);
+    setReceta(null);
+    if (variante.es_combo === 1) {
+      void pedir<Ingrediente[]>(
+        `/api/catalogo/variantes/${encodeURIComponent(variante.codigo)}/receta`,
+      )
+        .then(setReceta)
+        .catch(() => setReceta([]));
+    }
   }
 
   if (variante === null) return null;
@@ -309,6 +326,48 @@ export function EditarVariante({
           {error}
         </p>
       )}
+
+      {variante.es_combo === 1 ? (
+        <Campo
+          etiqueta="Qué lleva este combo"
+          ayuda="Un combo no tiene existencias propias: caben tantos como permita la pieza que menos alcance."
+        >
+          {receta === null ? (
+            <p className="m-0 text-muted">Cargando…</p>
+          ) : receta.length === 0 ? (
+            // Un combo sin receta sale AGOTADO y no se puede vender. Decirlo
+            // aquí evita que alguien lo publique y se pregunte por qué nadie
+            // lo compra.
+            <p className="m-0 font-bold text-accent-strong">
+              Todavía no lleva nada, así que aparece agotado y no se puede vender.
+            </p>
+          ) : (
+            <ul className="m-0 list-none p-0">
+              {receta.map((i) => {
+                const caben = Math.floor(i.libres / i.cantidad);
+                return (
+                  <li
+                    key={i.codigo}
+                    className="flex items-baseline justify-between gap-3 border-b border-line py-2 last:border-0"
+                  >
+                    <span>
+                      <span className="block font-bold">{i.nombre}</span>
+                      <span className="block text-[12px] text-muted">
+                        {i.cantidad} por combo · quedan {i.libres}
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 text-[12px] font-bold ${caben === 0 ? "text-accent-strong" : "text-muted"}`}
+                    >
+                      {caben === 0 ? "frena el combo" : `da para ${caben}`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Campo>
+      ) : null}
 
       <Campo etiqueta="Foto" ayuda="JPG, PNG, WebP o AVIF, hasta 5 MB. Se cambia al momento, sin esperar a Guardar.">
         <div className="flex items-center gap-3">

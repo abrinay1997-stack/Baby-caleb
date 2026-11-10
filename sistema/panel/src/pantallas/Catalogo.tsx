@@ -18,6 +18,7 @@ interface Variante {
   activo: number;
   version: number;
   imagen: string | null;
+  es_combo: number;
   costo_unidades?: number | null;
   costo_valor_cents?: number | null;
 }
