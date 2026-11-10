@@ -81,7 +81,29 @@ interface Fila {
 const CONSULTA = `
   SELECT v.codigo, p.slug AS slug_producto, v.nombre, v.talla,
          v.peso_min_lb, v.peso_max_lb, v.unidades_por_caja, v.precio_cents, v.version,
-         (SELECT SUM(e.fisico - e.reservado) FROM existencias e WHERE e.codigo = v.codigo) AS libres
+         -- Un combo no tiene existencias propias: caben tantos como permita
+         -- el componente que menos alcance. Es la MISMA regla que
+         -- src/dominio/combos.ts, escrita aqui porque el catalogo entero sale
+         -- en una consulta y traerse las recetas para calcularlo en
+         -- JavaScript serian N+1 consultas en el camino que mas se usa.
+         --
+         -- Dos copias de una regla acaban discrepando, asi que hay una prueba
+         -- (test/combos-catalogo.test.ts) que siembra combos en D1 y exige que
+         -- esta consulta y cuantosCombos den el MISMO numero.
+         --
+         -- MIN sobre un conjunto vacio da NULL, asi que un combo sin receta
+         -- sale con libres nulo y se lee como 0, que es lo que dice la regla
+         -- pura: sin componentes no se arma ninguno. Y la division de dos
+         -- enteros en SQLite trunca, igual que el Math.floor de alla.
+         CASE WHEN v.es_combo = 1 THEN (
+           SELECT MIN(
+             (SELECT COALESCE(SUM(e.fisico - e.reservado), 0)
+                FROM existencias e WHERE e.codigo = cc.codigo) / cc.cantidad
+           )
+           FROM combo_componentes cc WHERE cc.combo_codigo = v.codigo
+         ) ELSE (
+           SELECT SUM(e.fisico - e.reservado) FROM existencias e WHERE e.codigo = v.codigo
+         ) END AS libres
   FROM variantes v
   JOIN productos p ON p.id = v.producto_id
   WHERE v.activo = 1 AND v.publicado = 1 AND p.activo = 1`;
