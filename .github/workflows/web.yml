@@ -173,4 +173,4 @@ jobs:
       # haciendo su trabajo — que es exactamente el fallo silencioso que un
       # «200 OK» no vería.
       - name: El Worker reescribe el head
-        run: .github/scripts/web-salud.sh "${{ steps.desplegar.outputs.url }}"
+        run: .github/scripts/web-salud.sh "${{ steps.desplegar.outputs.url }}" "${{ github.sha }}"
