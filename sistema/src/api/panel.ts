@@ -44,7 +44,12 @@ const porAccess: ResolverUsuario = async (request, env) => {
   }
 
   const fila = await env.DB.prepare(
-    "SELECT id, correo, nombre, rol, activo FROM usuarios WHERE correo = ?",
+    // COLLATE NOCASE: Access entrega el correo en minúsculas, pero las filas
+    // de `usuarios` se escriben a mano y un «Yarielis@Gmail.com» tecleado con
+    // mayúscula dejaría a esa persona fuera para siempre, con un «no
+    // autorizado» que no explica nada. El índice único de la migración 0005
+    // impide además que existan dos filas que solo se diferencien en eso.
+    "SELECT id, correo, nombre, rol, activo FROM usuarios WHERE correo = ? COLLATE NOCASE",
   )
     .bind(puerta.identidad.correo)
     .first<{ id: string; correo: string; nombre: string; rol: string; activo: number }>();
