@@ -69,6 +69,6 @@ export default {
     const tipo = estatico.headers.get("content-type") ?? "";
     if (!tipo.includes("text/html")) return estatico;
 
-    return conCabeceras(reescribirHead(estatico, url, siteUrl));
+    return conCabeceras(reescribirHead(estatico, url, siteUrl, env.CF_ANALYTICS_TOKEN));
   },
 } satisfies ExportedHandler<Env>;

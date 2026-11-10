@@ -22,4 +22,18 @@ export interface Env {
 
   /** La versión desplegada, que estampa el flujo con el SHA del commit. */
   readonly VERSION?: string;
+
+  /**
+   * El identificador de Cloudflare Web Analytics (F1.8).
+   *
+   * Va como variable y no como secreto a propósito: acaba escrito en el HTML
+   * de cada página, así que no es un secreto por mucho que lo parezca. Vacío o
+   * ausente, no se inyecta nada — que es lo que se quiere en las vistas
+   * previas, para no contar visitas de prueba como si fueran clientas.
+   *
+   * La inserción AUTOMÁTICA de Cloudflare no sirve aquí: solo funciona con un
+   * dominio propio detrás de su proxy, y la web todavía vive en workers.dev.
+   * Por eso se pone a mano.
+   */
+  readonly CF_ANALYTICS_TOKEN?: string;
 }

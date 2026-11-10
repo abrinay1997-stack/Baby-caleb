@@ -50,6 +50,11 @@ jobs:
       # `lint` es `tsc --noEmit`: la web no tiene reglas de estilo todavía.
       - run: npm run lint
 
+      # Las pruebas del Worker, dentro de workerd. Van ANTES del build: lo que
+      # prueban —el <head> que reescribe el borde— no depende de `dist/`, y así
+      # un fallo se ve en 20 segundos y no después de construir el sitio.
+      - run: npm test
+
       - run: npm run build
 
       # Abre las siete páginas en un navegador de verdad y mide el contraste

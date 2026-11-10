@@ -52,7 +52,40 @@ class Href {
  * `noindex`: son pantallas de una persona y no tienen nada que hacer en Google.
  * El seguimiento es el caso claro: su URL lleva un token dentro.
  */
-export function reescribirHead(respuesta: Response, url: URL, siteUrl: string): Response {
+/**
+ * El beacon de Cloudflare Web Analytics, al final del `<head>` (F1.8).
+ *
+ * El identificador se valida ANTES de escribirlo. No es paranoia de manual:
+ * este valor viene de la configuración y acaba dentro de un atributo HTML que
+ * además contiene JSON. Un valor con una comilla rompe el atributo y lo que
+ * siga se interpreta como marcado. Que hoy lo escriba una persona de
+ * confianza no cambia lo que pasa si un día se pega mal.
+ *
+ * Cloudflare entrega un token de 32 caracteres hexadecimales. Cualquier otra
+ * cosa no se escribe: se ignora y se deja dicho en el registro. Una analítica
+ * que no cuenta es un problema pequeño; un `<head>` roto se lleva la página
+ * entera por delante.
+ */
+const TOKEN_VALIDO = /^[0-9a-f]{32}$/;
+
+class Analitica {
+  constructor(private readonly token: string) {}
+
+  element(el: Element): void {
+    el.append(
+      `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" ` +
+        `data-cf-beacon='{"token": "${this.token}"}'></script>`,
+      { html: true },
+    );
+  }
+}
+
+export function reescribirHead(
+  respuesta: Response,
+  url: URL,
+  siteUrl: string,
+  tokenAnalitica?: string,
+): Response {
   const camino = url.pathname;
   const meta = metaDe(camino);
   const canonico = `${siteUrl}${camino === "/" ? "/" : camino}`;
@@ -73,6 +106,22 @@ export function reescribirHead(respuesta: Response, url: URL, siteUrl: string): 
 
   if (!seIndexa(camino)) {
     rw = rw.on('meta[name="robots"]', new Contenido("noindex, nofollow"));
+  }
+
+  const token = (tokenAnalitica ?? "").trim();
+  if (token !== "") {
+    if (TOKEN_VALIDO.test(token)) {
+      rw = rw.on("head", new Analitica(token));
+    } else {
+      // Sin `token` en el registro: aunque no sea secreto, un valor mal pegado
+      // puede ser cualquier cosa, y los registros se comparten.
+      console.warn(
+        JSON.stringify({
+          evento: "analitica_token_invalido",
+          detalle: "CF_ANALYTICS_TOKEN no son 32 caracteres hexadecimales; no se inyecta el beacon",
+        }),
+      );
+    }
   }
 
   return rw.transform(respuesta);
