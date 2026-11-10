@@ -47,8 +47,13 @@ export default function S01Nav() {
     <>
       <header
         aria-label="Navegación principal"
-        className={`fixed left-1/2 -translate-x-1/2 z-[9999] transition-all duration-500 w-[95%] max-w-6xl rounded-2xl border border-line/30 shadow-[0_8px_32px_0_rgba(27,50,70,0.1)] backdrop-blur-xl flex items-center justify-between ${
-          isScrolled ? 'top-4 bg-surface/80 py-3 px-6' : 'top-6 bg-surface/50 py-4 px-6 md:px-8'
+        // El vidrio NO se pinta aquí: va en `.bc-vidrio::before` (src/styles/tokens.css),
+        // y el tinte con él. Lo único que viaja por React es `data-scrolled`, que es un
+        // estado, no el efecto. Si el efecto dependiera de este componente, desmontarlo lo
+        // apagaría — que es exactamente el fallo que esto evita.
+        data-scrolled={isScrolled ? '' : undefined}
+        className={`bc-vidrio fixed left-1/2 -translate-x-1/2 z-[9999] transition-all duration-500 w-[95%] max-w-6xl rounded-2xl border border-line/30 shadow-[0_8px_32px_0_rgba(27,50,70,0.1)] flex items-center justify-between ${
+          isScrolled ? 'top-4 py-3 px-6' : 'top-6 py-4 px-6 md:px-8'
         }`}
       >
         <Link to="/" className="flex items-center gap-2 group focus-visible:outline-accent-edge">

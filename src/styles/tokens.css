@@ -53,3 +53,79 @@
 @media (prefers-reduced-motion: reduce) {
   :root { --d-fast:0.01s; --d-base:0.01s; --d-slow:0.01s; --d-cine:0.01s; --stagger:0s; }
 }
+
+/* ---------------------------------------------------------------------------
+ * El vidrio líquido del navbar.
+ *
+ * ## Por qué no hay JavaScript aquí
+ *
+ * Es el punto entero. El mismo efecto, instalado en otros sitios, «aparece en
+ * la primera carga y al cambiar de página vuelve a estar mate». La causa es
+ * siempre la misma: el efecto se aplica desde JavaScript —una propiedad que se
+ * pone al montar y se QUITA al desmontar— así que cualquier cosa que desmonte
+ * el componente se lo lleva por delante.
+ *
+ * Aquí el filtro está en el HTML (fuera de #root) y la referencia está en esta
+ * hoja de estilos. No hay ciclo de vida que perder: no es que se re-aplique
+ * bien, es que nunca se quita.
+ *
+ * ## Por qué el vidrio va en un ::before
+ *
+ * Lección prestada de D'CASA: un elemento con `backdrop-filter` se convierte en
+ * el bloque contenedor de sus hijos `position: fixed`. Con el vidrio en el
+ * propio <header>, un menú móvil fixed dentro de él quedaría encerrado en la
+ * píldora. Hoy ese menú es hermano del header y no le pasa — pero el día que
+ * alguien lo mueva adentro, ya está resuelto.
+ *
+ * ## Dos capas
+ *
+ * La mate es la base y está SIEMPRE. La líquida se pone encima solo donde
+ * `backdrop-filter: url()` funciona, y eso lo decide @supports, no un `if` en
+ * JavaScript: donde no hay refracción, queda el vidrio mate de antes y nadie ve
+ * un hueco.
+ * ------------------------------------------------------------------------- */
+
+.bc-filtros {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.bc-vidrio {
+  isolation: isolate;
+}
+
+.bc-vidrio::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: rgb(242 239 229 / 0.5);
+  -webkit-backdrop-filter: blur(16px) saturate(210%) brightness(1.06);
+  backdrop-filter: blur(16px) saturate(210%) brightness(1.06);
+  transition: background-color 500ms ease;
+}
+
+.bc-vidrio[data-scrolled]::before {
+  background: rgb(242 239 229 / 0.8);
+}
+
+/* La refracción: lo que pasa por detrás se ondula como a través de agua. */
+@supports (backdrop-filter: url(#bc-liquido)) {
+  .bc-vidrio::before {
+    -webkit-backdrop-filter: url(#bc-liquido) blur(3px) saturate(220%) brightness(1.06);
+    backdrop-filter: url(#bc-liquido) blur(3px) saturate(220%) brightness(1.06);
+  }
+}
+
+/* Quien pidió menos movimiento se queda con el vidrio mate, quieto. Va al final
+ * a propósito: misma especificidad que el bloque de arriba, así que gana por
+ * orden. */
+@media (prefers-reduced-motion: reduce) {
+  .bc-vidrio::before {
+    -webkit-backdrop-filter: blur(16px) saturate(210%) brightness(1.06);
+    backdrop-filter: blur(16px) saturate(210%) brightness(1.06);
+  }
+}
