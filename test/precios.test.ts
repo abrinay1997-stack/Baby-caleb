@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { dolares, precioDe, desdeDe, type Catalogo } from '../src/hooks/useCatalogo';
+import {
+  dolares,
+  precioDe,
+  desdeDe,
+  type Catalogo,
+  type VariantePublica,
+} from '../src/hooks/useCatalogo';
 
 /**
  * El dinero que se le enseña a una clienta.
@@ -10,7 +16,7 @@ import { dolares, precioDe, desdeDe, type Catalogo } from '../src/hooks/useCatal
  * hasta que alguien paga.
  */
 
-const v = (codigo: string, precioCents: number) => [
+const v = (codigo: string, precioCents: number): [string, VariantePublica] => [
   codigo,
   {
     codigo,
@@ -21,11 +27,11 @@ const v = (codigo: string, precioCents: number) => [
     pesoMaxLb: null,
     unidadesPorCaja: 1,
     precioCents,
-    disponibilidad: 'disponible' as const,
+    disponibilidad: 'disponible',
   },
 ];
 
-const CATALOGO = new Map([v('NAT-M', 5000), v('NAT-L', 4500), v('MOON-FUL', 4650)]) as Catalogo;
+const CATALOGO: Catalogo = new Map([v('NAT-M', 5000), v('NAT-L', 4500), v('MOON-FUL', 4650)]);
 
 describe('centavos a dólares', () => {
   it('un precio redondo no arrastra decimales', () => {
