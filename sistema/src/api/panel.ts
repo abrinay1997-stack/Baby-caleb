@@ -266,7 +266,7 @@ function registrarRutas(panel: Hono<Entorno>): void {
     // consulta.
     const { results } = await c.env.DB.prepare(
       `SELECT v.codigo, v.nombre, v.talla, v.unidades_por_caja, v.precio_cents,
-              v.tasa_itbms_bp, v.publicado, v.activo, p.familia, p.nombre AS producto
+              v.tasa_itbms_bp, v.publicado, v.activo, v.version, p.familia, p.nombre AS producto
               ${conCosto ? ", vi.unidades AS costo_unidades, vi.valor_cents AS costo_valor_cents" : ""}
        FROM variantes v
        JOIN productos p ON p.id = v.producto_id

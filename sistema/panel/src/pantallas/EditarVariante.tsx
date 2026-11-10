@@ -1,0 +1,351 @@
+import { useState } from "react";
+import { pedir } from "../api";
+import { Hoja } from "../armazon/Hoja";
+import { aCentavos, aPuntosBasicos, deCentavos, dePuntosBasicos } from "../dinero";
+
+/**
+ * Editar una variante del catálogo, y borrarla.
+ *
+ * Dos cosas que no son obvias y que definen esta pantalla:
+ *
+ * 1. **La versión viaja con el guardado.** Si alguien cambió el precio desde
+ *    otro sitio mientras esta hoja estaba abierta, el servidor responde 409 y
+ *    aquí se dice qué pasó y qué hacer, en vez de pisarlo en silencio. Es el
+ *    caso real: el panel abierto en el teléfono mientras alguien toca la
+ *    computadora.
+ *
+ * 2. **«Borrar» no siempre borra, y hay que decirlo ANTES.** Un producto que
+ *    ya se vendió no se puede borrar —`pedido_lineas` guarda lo que una
+ *    clienta compró— así que se oculta. La hoja le pregunta al servidor qué va
+ *    a pasar de verdad y enseña ESA frase, no una genérica. Es el único sitio
+ *    del sistema donde el botón no hace literalmente lo que dice, y por eso se
+ *    avisa en vez de sorprender.
+ */
+
+export interface VarianteEditable {
+  codigo: string;
+  nombre: string;
+  talla: string | null;
+  unidades_por_caja: number;
+  precio_cents: number;
+  tasa_itbms_bp: number | null;
+  publicado: number;
+  version: number;
+}
+
+interface Veredicto {
+  modo: "se_borra" | "se_oculta";
+  yaOculta?: boolean;
+  razones: string[];
+}
+
+function Campo({
+  etiqueta,
+  ayuda,
+  children,
+}: {
+  etiqueta: string;
+  ayuda?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="mb-4 block">
+      <span className="mb-1 block text-[14px] font-bold">{etiqueta}</span>
+      {children}
+      {ayuda === undefined ? null : (
+        <span className="mt-1 block text-[12px] text-muted">{ayuda}</span>
+      )}
+    </label>
+  );
+}
+
+// 16 px en los campos es contrato (§7b): por debajo, el teléfono hace zoom al
+// tocar y la persona termina peleando con el viewport en vez de escribiendo.
+const ENTRADA =
+  "tactil w-full rounded-[12px] border border-line bg-bg px-3 py-2.5 " +
+  "focus-visible:outline-accent-edge focus-visible:outline-2";
+
+// `rounded-[14px]` y no `rounded-pill`: esa clase NO existe en este proyecto
+// —se usa `rounded-full` o el radio de la marca— y una clase de Tailwind que no
+// existe no da ningún error, simplemente no hace nada. Salió mirando la
+// captura, no el código.
+const BOTON =
+  "tactil flex-1 rounded-[14px] px-4 py-3 font-bold focus-visible:outline-accent-edge focus-visible:outline-2";
+
+export function EditarVariante({
+  variante,
+  alCerrar,
+  alGuardar,
+}: {
+  variante: VarianteEditable | null;
+  alCerrar: () => void;
+  /** Se llama cuando algo cambió de verdad, para que la lista se recargue. */
+  alGuardar: () => void;
+}) {
+  const [nombre, setNombre] = useState("");
+  const [talla, setTalla] = useState("");
+  const [porCaja, setPorCaja] = useState("");
+  const [precio, setPrecio] = useState("");
+  const [itbms, setItbms] = useState("");
+  const [publicado, setPublicado] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const [veredicto, setVeredicto] = useState<Veredicto | null>(null);
+  const [cargado, setCargado] = useState<string | null>(null);
+
+  // Los campos se llenan cuando cambia la variante, no en cada render: si no,
+  // cada tecla se perdería al volver a pintar.
+  if (variante !== null && cargado !== variante.codigo) {
+    setCargado(variante.codigo);
+    setNombre(variante.nombre);
+    setTalla(variante.talla ?? "");
+    setPorCaja(String(variante.unidades_por_caja));
+    setPrecio(deCentavos(variante.precio_cents));
+    setItbms(variante.tasa_itbms_bp === null ? "" : dePuntosBasicos(variante.tasa_itbms_bp));
+    setPublicado(variante.publicado === 1);
+    setMotivo("");
+    setError(null);
+    setVeredicto(null);
+  }
+
+  if (variante === null) return null;
+
+  const cerrar = () => {
+    setCargado(null);
+    setVeredicto(null);
+    setError(null);
+    alCerrar();
+  };
+
+  async function guardar() {
+    if (variante === null) return;
+    const centavos = aCentavos(precio);
+    if (centavos === null || centavos <= 0) {
+      setError("El precio no se entiende. Escríbalo como 12.50");
+      return;
+    }
+    const caja = Number(porCaja);
+    if (!Number.isSafeInteger(caja) || caja <= 0) {
+      setError("Las unidades por caja tienen que ser un número mayor que cero.");
+      return;
+    }
+    const bp = itbms.trim() === "" ? null : aPuntosBasicos(itbms);
+    if (itbms.trim() !== "" && bp === null) {
+      setError("El ITBMS no se entiende. Escríbalo como 7");
+      return;
+    }
+
+    setGuardando(true);
+    setError(null);
+    try {
+      await pedir(`/api/catalogo/variantes/${encodeURIComponent(variante.codigo)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          nombre: nombre.trim(),
+          talla: talla.trim() === "" ? null : talla.trim(),
+          unidadesPorCaja: caja,
+          precioCents: centavos,
+          tasaItbmsBp: bp,
+          publicado,
+          ...(motivo.trim() === "" ? {} : { motivo: motivo.trim() }),
+          version: variante.version,
+        }),
+      });
+      alGuardar();
+      cerrar();
+    } catch (e) {
+      const err = e as Error & { codigo?: string };
+      setError(
+        err.codigo === "conflicto_version"
+          ? "Alguien cambió este producto mientras usted lo tenía abierto. Cierre y vuelva a abrirlo para ver lo que hay ahora."
+          : err.message,
+      );
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  /** Le pregunta al servidor qué va a pasar ANTES de enseñar el «¿seguro?». */
+  async function preguntarQuePasa() {
+    if (variante === null) return;
+    setError(null);
+    try {
+      const v = await pedir<Veredicto>(
+        `/api/catalogo/variantes/${encodeURIComponent(variante.codigo)}/borrado`,
+      );
+      setVeredicto(v);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function borrar() {
+    if (variante === null) return;
+    setGuardando(true);
+    try {
+      await pedir(`/api/catalogo/variantes/${encodeURIComponent(variante.codigo)}`, {
+        method: "DELETE",
+      });
+      alGuardar();
+      cerrar();
+    } catch (e) {
+      setError((e as Error).message);
+      setVeredicto(null);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  // ---- La confirmación, que dice la verdad -------------------------------
+  if (veredicto !== null) {
+    const seBorra = veredicto.modo === "se_borra";
+    return (
+      <Hoja
+        abierta
+        titulo={seBorra ? "¿Borrar este producto?" : "Este producto no se puede borrar"}
+        alCerrar={() => setVeredicto(null)}
+        pie={
+          <>
+            <button type="button" onClick={() => setVeredicto(null)} className={`${BOTON} border border-line`}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={borrar}
+              disabled={guardando || veredicto.yaOculta === true}
+              className={`${BOTON} bg-fg text-bg disabled:opacity-50`}
+            >
+              {seBorra ? "Sí, borrar" : "Ocultarlo"}
+            </button>
+          </>
+        }
+      >
+        <p className="m-0 mb-3">
+          <strong>{variante.nombre}</strong> ({variante.codigo})
+        </p>
+        {seBorra ? (
+          <p className="m-0">
+            Se va a borrar del todo, junto con sus fotos. Esto no se puede deshacer.
+          </p>
+        ) : (
+          <>
+            <p className="m-0 mb-2">
+              Ya tiene historia en el sistema, así que borrarlo destruiría el registro de lo que
+              pasó. En vez de eso se <strong>oculta</strong>: deja de aparecer en la web y el bot
+              deja de ofrecerlo, pero sigue existiendo para los pedidos que lo nombran.
+            </p>
+            <ul className="m-0 list-disc pl-5 text-muted">
+              {veredicto.razones.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+            {veredicto.yaOculta === true ? (
+              <p className="mt-3 mb-0 font-bold">Ya estaba oculto: no hay nada que hacer.</p>
+            ) : null}
+          </>
+        )}
+        {error === null ? null : <p className="mt-3 mb-0 font-bold text-accent-strong">{error}</p>}
+      </Hoja>
+    );
+  }
+
+  // ---- El formulario ------------------------------------------------------
+  return (
+    <Hoja
+      abierta
+      titulo={variante.codigo}
+      alCerrar={cerrar}
+      pie={
+        <>
+          <button type="button" onClick={preguntarQuePasa} className={`${BOTON} border border-line`}>
+            Borrar
+          </button>
+          <button
+            type="button"
+            onClick={guardar}
+            disabled={guardando}
+            className={`${BOTON} bg-accent text-accent-fg disabled:opacity-50`}
+          >
+            {guardando ? "Guardando…" : "Guardar"}
+          </button>
+        </>
+      }
+    >
+      {error === null ? null : (
+        <p role="alert" className="mt-0 mb-4 rounded-[12px] border border-line bg-bg p-3 font-bold">
+          {error}
+        </p>
+      )}
+
+      <Campo etiqueta="Nombre">
+        <input className={ENTRADA} value={nombre} onChange={(e) => setNombre(e.target.value)} />
+      </Campo>
+
+      <Campo etiqueta="Talla" ayuda="Déjelo vacío si este producto no tiene tallas.">
+        <input className={ENTRADA} value={talla} onChange={(e) => setTalla(e.target.value)} />
+      </Campo>
+
+      <Campo etiqueta="Unidades por caja">
+        <input
+          className={ENTRADA}
+          inputMode="numeric"
+          value={porCaja}
+          onChange={(e) => setPorCaja(e.target.value)}
+        />
+      </Campo>
+
+      <Campo
+        etiqueta="Precio"
+        ayuda="Este es el precio que ven la web y el bot. Cambiarlo aquí lo cambia en los tres sitios."
+      >
+        <input
+          className={ENTRADA}
+          inputMode="decimal"
+          value={precio}
+          onChange={(e) => setPrecio(e.target.value)}
+          placeholder="12.50"
+        />
+      </Campo>
+
+      <Campo etiqueta="ITBMS" ayuda="En por ciento. Vacío significa «todavía no se sabe», que no es lo mismo que 0.">
+        <input
+          className={ENTRADA}
+          inputMode="decimal"
+          value={itbms}
+          onChange={(e) => setItbms(e.target.value)}
+          placeholder="7"
+        />
+      </Campo>
+
+      {precio !== deCentavos(variante.precio_cents) ? (
+        <Campo etiqueta="¿Por qué cambia el precio?" ayuda="Queda escrito con su nombre y la fecha.">
+          <input
+            className={ENTRADA}
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Subió el proveedor"
+          />
+        </Campo>
+      ) : null}
+
+      <label className="tactil mb-2 flex items-center gap-3">
+        <input
+          type="checkbox"
+          checked={publicado}
+          onChange={(e) => setPublicado(e.target.checked)}
+          // Sin esto la casilla sale del azul de fábrica del navegador, que no
+          // es de la marca y canta al lado de todo lo demás.
+          className="h-5 w-5 accent-[var(--accent)]"
+        />
+        <span>
+          <span className="block font-bold">Mostrarlo en la web</span>
+          <span className="block text-[12px] text-muted">
+            Apagado, nadie lo ve y el bot no lo ofrece.
+          </span>
+        </span>
+      </label>
+    </Hoja>
+  );
+}

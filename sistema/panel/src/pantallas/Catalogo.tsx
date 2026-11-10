@@ -1,4 +1,7 @@
-import { dinero, useCarga } from "../api";
+import { useState } from "react";
+import { useOutletContext } from "react-router-dom";
+import { type Yo, dinero, useCarga } from "../api";
+import { EditarVariante, type VarianteEditable } from "./EditarVariante";
 import { Carga, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
 
 interface Variante {
@@ -12,6 +15,7 @@ interface Variante {
   tasa_itbms_bp: number | null;
   publicado: number;
   activo: number;
+  version: number;
   costo_unidades?: number | null;
   costo_valor_cents?: number | null;
 }
@@ -29,7 +33,16 @@ function costoPromedio(v: Variante): string {
 }
 
 export function Catalogo() {
-  const estado = useCarga<DatosCatalogo>("/api/catalogo");
+  const yo = useOutletContext<Yo>();
+  // Cambia al guardar, y eso hace que `useCarga` vuelva a pedir la lista: sin
+  // esto, la pantalla seguiría enseñando el precio viejo después de cambiarlo.
+  const [recarga, setRecarga] = useState(0);
+  const estado = useCarga<DatosCatalogo>("/api/catalogo", [recarga]);
+  const [editando, setEditando] = useState<VarianteEditable | null>(null);
+
+  // Ofrecer el botón a quien no puede no es amable, es enseñarle a ignorar los
+  // errores. Quien sí puede lo comprueba igual el servidor.
+  const puedeTocar = yo.permisos["precios_y_stock"] === "editar";
 
   return (
     <Carga estado={estado} que="el catálogo">
@@ -59,8 +72,24 @@ export function Catalogo() {
               {d.variantes.map((v) => (
                 <Fila key={v.codigo}>
                   <Celda etiqueta="">
-                    {v.nombre}
-                    <span className="block text-[12px] font-normal text-muted">{v.codigo}</span>
+                    {puedeTocar ? (
+                      // El nombre ES el botón: en un teléfono, un lápiz de
+                      // 24 px al lado de cada fila se falla con el pulgar.
+                      <button
+                        type="button"
+                        onClick={() => setEditando(v)}
+                        className="m-0 block w-full cursor-pointer border-0 bg-transparent p-0 text-left font-bold text-fg underline decoration-line underline-offset-4 focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2"
+                      >
+                        {v.nombre}
+                        <span className="block text-[12px] font-normal text-muted">{v.codigo}</span>
+                        <span className="sr-only"> — tocar para editar</span>
+                      </button>
+                    ) : (
+                      <>
+                        {v.nombre}
+                        <span className="block text-[12px] font-normal text-muted">{v.codigo}</span>
+                      </>
+                    )}
                   </Celda>
                   <Celda etiqueta="Talla">{v.talla ?? "—"}</Celda>
                   <Celda etiqueta="Por caja">{v.unidades_por_caja}</Celda>
@@ -92,6 +121,12 @@ export function Catalogo() {
                 </Fila>
               ))}
             </Rejilla>
+
+            <EditarVariante
+              variante={editando}
+              alCerrar={() => setEditando(null)}
+              alGuardar={() => setRecarga((n) => n + 1)}
+            />
           </div>
         )
       }

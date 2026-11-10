@@ -222,6 +222,50 @@ for (const [nombreVista, tamano] of VISTAS) {
         todas.push({ vista: nombreVista, pantalla: "cajon-abierto", regla: "7d accesible", detalle: mensaje });
       }
     }
+    // La hoja de editar también es una pantalla, y es la que TIENE los campos:
+    // el §7 pide 16 px en ellos y 44 px en lo que se toca, y una hoja que se
+    // mide a ojo es una hoja en la que el teléfono hace zoom al escribir el
+    // precio. Se mide con ella abierta, que es cuando existe.
+    await pagina.goto(`${BASE}/catalogo`, { waitUntil: "networkidle" });
+    const abridor = pagina.locator("dialog.hoja").first();
+    const fila = pagina.getByRole("button", { name: /Body manga larga pima/ }).first();
+    if ((await fila.count()) > 0) {
+      await fila.click();
+      await pagina.waitForTimeout(300);
+      const deLaHoja = await pagina.evaluate(medir);
+      revisadas += 1;
+      for (const f of deLaHoja) todas.push({ vista: nombreVista, pantalla: "hoja-editar", ...f });
+
+      // La hoja tiene que ser un <dialog> ABIERTO CON showModal: solo así trae
+      // la trampa de foco y el fondo inerte. Un <dialog open> puesto a mano se
+      // ve igual y no hace nada de eso.
+      const modal = await pagina.evaluate(() => {
+        const d = document.querySelector("dialog.hoja");
+        return {
+          existe: d !== null,
+          // `:modal` solo casa con un diálogo abierto con showModal().
+          modal: d !== null && d.matches(":modal"),
+          nombrado: d?.getAttribute("aria-labelledby") !== null,
+          dentro: d !== null && d.contains(document.activeElement),
+        };
+      });
+      for (const [clave, mensaje] of [
+        ["existe", "la hoja de editar no se abrió"],
+        ["modal", "la hoja no se abrió con showModal(): sin trampa de foco ni fondo inerte"],
+        ["nombrado", "la hoja no tiene nombre accesible"],
+        ["dentro", "el foco no entró en la hoja al abrirla"],
+      ]) {
+        if (!modal[clave]) {
+          todas.push({ vista: nombreVista, pantalla: "hoja-editar", regla: "7d accesible", detalle: mensaje });
+        }
+      }
+      if (!soloMedir) {
+        await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-editar.png`, fullPage: false });
+      }
+      await pagina.keyboard.press("Escape");
+      void abridor;
+    }
+
     if (aria.titulos < 2) {
       todas.push({
         vista: nombreVista,

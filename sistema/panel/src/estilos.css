@@ -282,3 +282,59 @@ select {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   La hoja de editar (`<dialog>`).
+
+   En el teléfono sube desde abajo y ocupa el ancho: es donde llega el pulgar.
+   En escritorio queda centrada y con ancho de lectura. Lo decide el CSS y no
+   JavaScript midiendo la pantalla — medir con JavaScript falla al girar el
+   teléfono y al abrir el teclado, que son justo los dos momentos en que esto
+   está en uso.
+
+   Nada de `100vh`: en el teléfono la barra del navegador se come una parte y
+   el pie de la hoja —donde están Guardar y Borrar— queda fuera de la pantalla
+   (§7h). `dvh` sí sigue a la barra.
+   --------------------------------------------------------------------------- */
+.hoja {
+  padding: 0;
+  border: none;
+  background: var(--surface);
+  color: var(--fg);
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.hoja:not([open]) {
+  display: none;
+}
+
+.hoja::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+/* El cuerpo es lo único que hace scroll: la cabecera y el pie se quedan, así
+   que Guardar está siempre a la vista por larga que sea la lista de campos. */
+.hoja-cuerpo {
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+@media (max-width: 767px) {
+  .hoja {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 0 auto;
+    position: fixed;
+    inset: auto 0 0 0;
+    border-radius: var(--radio) var(--radio) 0 0;
+  }
+}
+
+@media (min-width: 768px) {
+  .hoja {
+    width: min(560px, calc(100vw - 48px));
+    border-radius: var(--radio);
+  }
+}
