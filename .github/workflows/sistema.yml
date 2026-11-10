@@ -183,6 +183,14 @@ jobs:
 
       - name: Comprobar /salud
         run: ../.github/scripts/salud.sh "${{ steps.desplegar.outputs.url }}" "$GITHUB_SHA"
+        env:
+          # Credencial de servicio para pasar Cloudflare Access. En workers.dev
+          # Access cubre el Worker ENTERO —ese dominio no es nuestro, así que no
+          # hay recorte por ruta—, de modo que /salud no se puede dejar pública
+          # y el despliegue tiene que entrar con credencial propia. Si los
+          # secretos no están, el guion no manda cabeceras y lo dice.
+          ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
 
   produccion:
     name: Desplegar a producción
@@ -247,6 +255,14 @@ jobs:
 
       - name: Comprobar /salud
         run: ../.github/scripts/salud.sh "https://panel.babycaleb.com" "$GITHUB_SHA"
+        env:
+          # Credencial de servicio para pasar Cloudflare Access. En workers.dev
+          # Access cubre el Worker ENTERO —ese dominio no es nuestro, así que no
+          # hay recorte por ruta—, de modo que /salud no se puede dejar pública
+          # y el despliegue tiene que entrar con credencial propia. Si los
+          # secretos no están, el guion no manda cabeceras y lo dice.
+          ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
 
       - name: Resumen
         if: always()
