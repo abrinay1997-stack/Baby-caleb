@@ -34,8 +34,19 @@ for i in $(seq 1 "$intentos"); do
 
     canonico="$(curl -fsS --max-time 20 "$base/faq" | tr '\n' ' ' \
       | grep -oiE '<link rel="canonical" href="[^"]*"' | head -1)"
+    # ABSOLUTO y apuntando a /faq. Pedir solo que «contenga /faq» dejaba pasar
+    # un canónico RELATIVO, y eso ya ocurrió: con SITE_URL vacío el Worker
+    # armaba las URLs sin dominio. Mirando la página no se nota —el navegador
+    # resuelve un canónico relativo— pero `og:url` sale relativo también, y eso
+    # es lo que lee WhatsApp al pegar un enlace.
     case "$canonico" in
-      *"/faq"*) echo "  canónico: $canonico"; exit 0 ;;
+      *'href="http'*"/faq"*) echo "  canónico: $canonico"; exit 0 ;;
+      *"/faq"*)
+        echo "::error::/faq lleva un canónico RELATIVO: ${canonico}"
+        echo "  Tiene que ser absoluto (https://…/faq). Si SITE_URL está vacío,"
+        echo "  el Worker debe usar el origen de la petición — ver worker/sitio.ts."
+        exit 1
+        ;;
       *)
         echo "::error::/faq no lleva un canónico que apunte a /faq: ${canonico:-(ninguno)}"
         exit 1

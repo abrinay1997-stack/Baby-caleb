@@ -3,6 +3,7 @@ import { chat } from "./chat";
 import type { Env } from "./env";
 import { reescribirHead } from "./head";
 import { slugDeRuta } from "../src/seo/producto";
+import { urlDelSitio } from "./sitio";
 
 /**
  * `babycaleb-web`: la misma web, servida desde Cloudflare.
@@ -39,7 +40,7 @@ export default {
     // El dominio sale de una variable y no del `Host` de la petición: con el
     // `Host`, el canónico de una vista previa apuntaría a la vista previa, y
     // Google indexaría esa en vez del sitio.
-    const siteUrl = (env.SITE_URL ?? url.origin).replace(/\/+$/, "");
+    const siteUrl = urlDelSitio(env.SITE_URL, url.origin);
 
     // ---- API -------------------------------------------------------------
     if (url.pathname === "/api/chat") {
