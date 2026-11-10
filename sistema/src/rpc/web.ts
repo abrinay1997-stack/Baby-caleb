@@ -1,9 +1,10 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { ok } from "../contrato/resultado";
+import { fallo, ok } from "../contrato/resultado";
 import type { Resultado } from "../contrato/resultado";
 import { type CatalogoPublico, catalogoPublico } from "./catalogo";
 import { zonasPublicas } from "./zonas";
 import type { ZonaPublica } from "./zonas";
+import { leerPublico } from "../db/archivos";
 
 /**
  * Lo que la web puede pedirle al sistema (03-contratos §2).
@@ -34,6 +35,33 @@ export class SistemaWeb extends WorkerEntrypoint<Env> {
    * web sabe que puede pedir el catálogo. Que falle no es que el sistema esté
    * caído, es que la web tiene que servir su copia de respaldo.
    */
+  /**
+   * Una imagen del catálogo, por su clave.
+   *
+   * Existe porque el Worker del sistema está ENTERO detrás de Cloudflare
+   * Access: una URL de imagen servida desde aquí no la puede abrir nadie sin
+   * sesión, y una foto de producto tiene que verla cualquiera. Así que la
+   * sirve la web, que sí es pública, pidiéndola por este binding.
+   *
+   * Lo que decide si sale o no es `leerPublico`, no esta función ni la web:
+   * en este bucket viven también los comprobantes de pago de las clientas, y
+   * la comprobación tiene que estar en un solo sitio y del lado de los datos.
+   *
+   * Devuelve los bytes y no un `Response` porque un `Response` con cuerpo no
+   * cruza un service binding sin complicaciones; para una foto de catálogo el
+   * tamaño es pequeño y la web la cachea en el borde.
+   */
+  async archivo(
+    clave: string,
+  ): Promise<Resultado<{ bytes: ArrayBuffer; mime: string } | null>> {
+    if (typeof clave !== "string" || clave === "" || clave.length > 512) {
+      return fallo("entrada_invalida", "clave inválida");
+    }
+    const a = await leerPublico({ db: this.env.DB, r2: this.env.PRIVADO }, clave);
+    if (a === null) return ok(null);
+    return ok({ bytes: await new Response(a.cuerpo).arrayBuffer(), mime: a.mime });
+  }
+
   async salud(): Promise<Resultado<{ sano: boolean; version: string }>> {
     const uno = await this.env.DB.prepare("SELECT 1 AS uno").first<{ uno: number }>();
     return ok({ sano: uno?.uno === 1, version: this.env.VERSION });

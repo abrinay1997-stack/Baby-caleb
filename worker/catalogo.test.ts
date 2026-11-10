@@ -32,6 +32,12 @@ const sistema = (sobre: Partial<SistemaWebBinding> = {}): SistemaWebBinding => (
   async catalogo() {
     return { ok: true, datos: CATALOGO };
   },
+  // El doble implementa el binding ENTERO. Si se dejara opcional, añadir un
+  // método al contrato no rompería ninguna prueba y la web se enteraría en
+  // producción, que es lo que este doble existe para evitar.
+  async archivo() {
+    return { ok: true, datos: null };
+  },
   ...sobre,
 });
 

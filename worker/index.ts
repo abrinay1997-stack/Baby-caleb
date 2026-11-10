@@ -3,6 +3,7 @@ import { chat } from "./chat";
 import type { Env } from "./env";
 import { reescribirHead } from "./head";
 import { slugDeRuta } from "../src/seo/producto";
+import { PREFIJO, imagen } from "./imagenes";
 import { urlDelSitio } from "./sitio";
 import { quiereIndexarse, redireccionCanonica, seIndexa } from "./visibilidad";
 
@@ -89,6 +90,12 @@ export default {
           catalogo: env.SISTEMA ? "del sistema" : "copia del build (falta el binding SISTEMA)",
         }),
       );
+    }
+
+    // Las fotos del catálogo. La lógica vive en `imagenes.ts` para poder
+    // probarla; aquí solo se enruta.
+    if (url.pathname.startsWith(PREFIJO)) {
+      return conCabeceras(await imagen(peticion, env.SISTEMA), indexable);
     }
 
     if (url.pathname.startsWith("/api/")) {

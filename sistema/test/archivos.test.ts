@@ -6,6 +6,7 @@ import {
   enunciadosParaBorrar,
   GRACIA_MS,
   huerfanos,
+  leerPublico,
   marcarParaBorrar,
   recuperar,
   rotas,
@@ -356,5 +357,112 @@ describe("las claves", () => {
 
   it("normaliza la extensión en vez de confiar en ella", () => {
     expect(claveDe("catalogo", "A", ".WEBP", 1)).toMatch(/\.webp$/);
+  });
+});
+
+const ahora = () => Date.now();
+
+describe("servir en abierto: la frontera entre una foto y un comprobante", () => {
+  /**
+   * En este bucket viven las fotos del catálogo y los comprobantes de pago de
+   * las clientas. Una ruta pública que no distinga pone la foto de una cédula
+   * en Google. Estas pruebas son las que vigilan esa frontera.
+   */
+  async function guardar(sobre: Record<string, unknown> = {}): Promise<string> {
+    const k = clave();
+    await env.PRIVADO.put(k, cuerpo("imagen"));
+    await env.DB.prepare(
+      `INSERT INTO archivos (r2_key,tipo,mime,bytes,sensible,subido_por,borrar_despues_de,creado_en)
+       VALUES (?,?,?,?,?,?,?,?)`,
+    )
+      .bind(
+        k,
+        (sobre["tipo"] as string) ?? "catalogo",
+        (sobre["mime"] as string) ?? "image/webp",
+        6,
+        (sobre["sensible"] as number) ?? 0,
+        "yarielis",
+        (sobre["borrar_despues_de"] as number | null) ?? null,
+        ahora(),
+      )
+      .run();
+    return k;
+  }
+
+  it("una foto del catálogo sale", async () => {
+    const k = await guardar();
+    const r = await leerPublico(ctx, k);
+    expect(r).not.toBeNull();
+    expect(r?.mime).toBe("image/webp");
+  });
+
+  it("un archivo SENSIBLE no sale, aunque la clave sea correcta", async () => {
+    const k = await guardar({ sensible: 1, tipo: "comprobante" });
+    expect(await leerPublico(ctx, k), "un comprobante de pago NO se sirve").toBeNull();
+  });
+
+  it("lo que nadie clasificó tampoco sale", async () => {
+    // La columna es 1 por defecto. Equivocarse hacia «no se ve» es
+    // recuperable; hacia el otro lado es irreversible.
+    const k = clave();
+    await env.PRIVADO.put(k, cuerpo());
+    await env.DB.prepare(
+      `INSERT INTO archivos (r2_key,tipo,mime,bytes,subido_por,creado_en)
+       VALUES (?,'catalogo','image/webp',4,?,?)`,
+    )
+      .bind(k, "yarielis", ahora())
+      .run();
+    expect(await leerPublico(ctx, k)).toBeNull();
+  });
+
+  it("lo marcado para borrar deja de servirse YA, no cuando pase el barrido", async () => {
+    const k = await guardar({ borrar_despues_de: ahora() + GRACIA_MS });
+    expect(await leerPublico(ctx, k)).toBeNull();
+    // Y el archivo todavía está en R2: lo que cambió es que no se sirve.
+    expect(await env.PRIVADO.head(k)).not.toBeNull();
+  });
+
+  it("un HTML marcado como no sensible NO se sirve", async () => {
+    // Servido desde aquí correría con el origen del panel. Que alguien lo
+    // marque «no sensible» por error no puede bastar.
+    const k = await guardar({ mime: "text/html" });
+    expect(await leerPublico(ctx, k)).toBeNull();
+  });
+
+  it("un PDF tampoco, aunque sea inofensivo", async () => {
+    const k = await guardar({ mime: "application/pdf" });
+    expect(await leerPublico(ctx, k)).toBeNull();
+  });
+
+  it("el tipo sale de la FILA, no de lo que R2 tenga guardado", async () => {
+    // El caso: alguien escribe en R2 por fuera (una migración, un arreglo a
+    // mano) y deja ahí un contentType distinto del que se validó al subir. La
+    // fila es el registro de lo que SE COMPROBÓ; los metadatos de R2 no los
+    // comprobó nadie. Servir con el tipo de R2 es cómo un HTML sale con la
+    // bendición de una imagen.
+    const k = clave();
+    await env.PRIVADO.put(k, cuerpo("<h1>hola</h1>"), {
+      httpMetadata: { contentType: "text/html" },
+    });
+    await env.DB.prepare(
+      `INSERT INTO archivos (r2_key,tipo,mime,bytes,sensible,subido_por,creado_en)
+       VALUES (?,'catalogo','image/webp',13,0,?,?)`,
+    )
+      .bind(k, "yarielis", ahora())
+      .run();
+
+    const r = await leerPublico(ctx, k);
+    expect(r).not.toBeNull();
+    expect(r?.mime, "el tipo es el de la fila, el que se validó").toBe("image/webp");
+  });
+
+  it("una fila sin archivo en R2 no revienta: devuelve nada", async () => {
+    const k = await guardar();
+    await env.PRIVADO.delete(k);
+    expect(await leerPublico(ctx, k)).toBeNull();
+  });
+
+  it("una clave que no existe devuelve nada", async () => {
+    expect(await leerPublico(ctx, "no/existe.webp")).toBeNull();
   });
 });

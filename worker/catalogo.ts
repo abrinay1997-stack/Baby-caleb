@@ -34,6 +34,17 @@ export interface SistemaWebBinding {
     | { ok: true; datos: { version: number; generadoEn: number; variantes: unknown[] } }
     | { ok: false; codigo: string; mensaje: string }
   >;
+  /**
+   * Una imagen del catálogo. `datos: null` significa «no existe o no se sirve
+   * en abierto» — y son el mismo caso a propósito: distinguirlos le contaría a
+   * quien prueba claves al azar cuáles existen.
+   */
+  archivo(
+    clave: string,
+  ): Promise<
+    | { ok: true; datos: { bytes: ArrayBuffer; mime: string } | null }
+    | { ok: false; codigo: string; mensaje: string }
+  >;
 }
 
 function respuesta(cuerpo: unknown, desdeRespaldo: boolean): Response {

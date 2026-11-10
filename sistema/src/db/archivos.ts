@@ -296,3 +296,59 @@ export async function rotas(
 
   return ok({ claves: sueltas });
 }
+
+// ---------------------------------------------------------------------------
+// Servir
+// ---------------------------------------------------------------------------
+
+/** Lo único que se sirve sin pedir permiso: imágenes del catálogo. */
+const MIMES_PUBLICOS = new Set(["image/webp", "image/jpeg", "image/png", "image/avif"]);
+
+export interface ArchivoParaServir {
+  readonly cuerpo: ReadableStream;
+  readonly mime: string;
+  readonly bytes: number;
+}
+
+/**
+ * Lee un archivo para servirlo en abierto.
+ *
+ * **Esta función es la frontera entre la foto de un pañal y el comprobante de
+ * pago de una clienta**, porque los dos viven en el mismo bucket. Por eso no
+ * se fía del prefijo de la clave ni de quién llama: mira la fila.
+ *
+ * Tres condiciones, y las tres hacen falta:
+ *
+ *   1. `sensible = 0`. Es el único permiso que existe para salir sin sesión.
+ *      Por defecto la columna es 1, así que un archivo que nadie clasificó NO
+ *      sale — equivocarse hacia «no se ve» es recuperable; hacia el otro lado
+ *      es una foto de una cédula en Google.
+ *   2. No está marcado para borrar. Lo que alguien mandó borrar deja de
+ *      servirse en ese momento, no 24 horas después cuando pase el barrido.
+ *   3. El tipo es una imagen de las que se publican. Un PDF o un HTML
+ *      guardados como «no sensibles» por error no se sirven igual: un HTML
+ *      servido desde aquí correría con el origen del panel.
+ */
+export async function leerPublico(
+  ctx: Pick<ContextoArchivo, "db" | "r2">,
+  clave: string,
+): Promise<ArchivoParaServir | null> {
+  const fila = await ctx.db
+    .prepare(
+      `SELECT mime, bytes FROM archivos
+        WHERE r2_key = ? AND sensible = 0 AND borrar_despues_de IS NULL`,
+    )
+    .bind(clave)
+    .first<{ mime: string; bytes: number }>();
+
+  if (fila === null) return null;
+  if (!MIMES_PUBLICOS.has(fila.mime)) return null;
+
+  const objeto = await ctx.r2.get(clave);
+  if (objeto === null) return null;
+
+  // El `mime` que se devuelve sale de la FILA, no de lo que R2 tenga guardado
+  // en sus metadatos: la fila es lo que se comprobó arriba, y servir con un
+  // tipo distinto del que se validó es cómo se cuela un HTML disfrazado.
+  return { cuerpo: objeto.body, mime: fila.mime, bytes: fila.bytes };
+}

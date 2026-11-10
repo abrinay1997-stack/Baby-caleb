@@ -30,6 +30,12 @@
     // JavaScript, hojas de estilo— sale directo del borde sin pagar un Worker.
     "run_worker_first": [
       "/api/*",
+      // Sin esto, `/img/...` lo atiende primero el servidor de archivos
+      // estáticos: no encuentra nada, cae en `single-page-application` y
+      // devuelve el index.html de la web. O sea: la ruta de las fotos no se
+      // ejecutaría NUNCA y cada imagen llegaría como una página HTML, con un
+      // 200 y todo. No se ve en ninguna prueba del Worker.
+      "/img/*",
       "/",
       "/productos",
       "/productos/*",
