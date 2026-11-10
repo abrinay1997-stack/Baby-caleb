@@ -118,6 +118,20 @@ describe("la cadena de tallas", () => {
     expect(rotas.results).toEqual([]);
   });
 
+  it("lo que NO tiene tallas no encadena nada", async () => {
+    // «La siguiente» es la talla de después. Las toallitas y el fular no
+    // tienen tallas: encadenar la caja de 1.200 con la de 600 haría que la
+    // recompra le ofreciera a la clienta MENOS de lo que ya compraba.
+    //
+    // Esta prueba nació de ese error: la de abajo solo compara pesos, así que
+    // se saltaba justo las filas que no los tienen.
+    const { results } = await env.DB.prepare(
+      `SELECT codigo FROM variantes
+       WHERE siguiente_codigo IS NOT NULL AND (talla IS NULL OR peso_min_lb IS NULL)`,
+    ).all<{ codigo: string }>();
+    expect(results.map((v) => v.codigo)).toEqual([]);
+  });
+
   it("sube de talla, nunca baja ni se queda igual", async () => {
     // Si NAT-L apuntara a NAT-M, la recompra le ofrecería a la clienta la
     // talla que ya se le quedó chica.
