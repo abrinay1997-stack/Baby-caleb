@@ -1,3 +1,5 @@
+import type { SistemaWebBinding } from "./catalogo";
+
 /**
  * Lo que el Worker de la web tiene a mano.
  *
@@ -5,14 +7,22 @@
  * es el sitio ya construido (`dist/`). El Worker lo pide con `fetch` y después
  * reescribe el `<head>` antes de devolverlo.
  *
- * Los bindings al sistema y al CRM NO están todavía y es a propósito: el
- * ejemplo de 01-arquitectura §3 los incluye, pero `babycaleb-sistema` aún no
- * se despliega a producción y `CanalWeb` del CRM no existe hasta F3.6. Un
- * binding a un entrypoint que no existe NO deja desplegar, así que entran con
- * la fase que los crea (SISTEMA en F3.5, CRM en F3.6).
+ * `SISTEMA` llegó en F3.5. `CRM` todavía no: `CanalWeb` no existe hasta F3.6,
+ * y un binding a un entrypoint que no existe NO deja desplegar, así que cada
+ * uno entra con la fase que lo crea.
  */
 export interface Env {
   readonly ASSETS: Fetcher;
+
+  /**
+   * El sistema, por service binding (F3.5).
+   *
+   * No sale a internet: es una llamada dentro de la cuenta, sin token y sin
+   * red pública. Y la superficie es la de `SistemaWeb` —catálogo, zonas,
+   * salud—, no la del CRM: desde aquí no se puede tocar el inventario ni ver
+   * un costo, aunque alguien se equivoque escribiendo código.
+   */
+  readonly SISTEMA?: SistemaWebBinding;
 
   /** Clave de Groq para `/api/chat`. Secreto: `wrangler secret put GROQ_API_KEY`. */
   readonly GROQ_API_KEY?: string;

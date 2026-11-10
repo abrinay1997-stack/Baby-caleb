@@ -1,0 +1,12 @@
+{
+  "_comentario": [
+    "Copia de respaldo del catálogo, para cuando el sistema no contesta.",
+    "NO se edita a mano: se regenera con `npm run catalogo:respaldo`, que la",
+    "descarga de /api/catalogo del sitio ya desplegado. Editarla a mano es",
+    "crear un segundo dueño del precio, que es justo lo que F3 vino a eliminar.",
+    "Arranca vacía: se llena en cuanto el Worker esté desplegado con el binding."
+  ],
+  "version": 0,
+  "generadoEn": 0,
+  "variantes": []
+}

@@ -1,0 +1,88 @@
+import respaldo from "../src/data/catalogo.respaldo.json";
+
+/**
+ * `/api/catalogo`: el precio y la disponibilidad, desde el sistema (F3.5).
+ *
+ * Hasta hoy los precios vivían en `content.json`, dentro del paquete del
+ * sitio. Eso quería decir que cambiar un precio era editar un archivo,
+ * construir y desplegar — y que mientras tanto la web decía una cosa y el bot
+ * otra. Ahora hay un solo dueño del dato: la D1 del sistema.
+ *
+ * Tres capas, en este orden:
+ *
+ *  1. **La caché del borde, 60 segundos.** Un precio recién cambiado tarda
+ *     como mucho un minuto en verse. A cambio, mil visitas en ese minuto son
+ *     UNA consulta a la base.
+ *  2. **El sistema**, por el service binding. No sale a internet: es una
+ *     llamada dentro de la cuenta, sin token y sin red pública.
+ *  3. **La copia de respaldo del build**, si el sistema no contesta. La web
+ *     sigue enseñando el catálogo y el sitio no se cae por una base caída
+ *     (08-operacion.md §Qué hacer cuando). La respuesta dice `desdeRespaldo`
+ *     para que la pantalla pueda avisar de que confirma con una persona.
+ *
+ * Lo que NUNCA sale por aquí es lo mismo que no sale por el RPC: el costo y la
+ * cantidad exacta. Eso lo decide `SistemaWeb`, no esta función, y así hay un
+ * solo sitio donde equivocarse.
+ */
+
+/** 60 s: el compromiso entre «el precio nuevo ya se ve» y «no una consulta por visita». */
+const SEGUNDOS = 60;
+
+export interface SistemaWebBinding {
+  catalogo(): Promise<
+    | { ok: true; datos: { version: number; generadoEn: number; variantes: unknown[] } }
+    | { ok: false; codigo: string; mensaje: string }
+  >;
+}
+
+function respuesta(cuerpo: unknown, desdeRespaldo: boolean): Response {
+  return new Response(JSON.stringify({ ...(cuerpo as object), desdeRespaldo }), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      // `s-maxage` es para el borde; `max-age` para el navegador. El navegador
+      // guarda menos porque una pestaña abierta toda la tarde no debería
+      // quedarse con el precio de la mañana.
+      "cache-control": `public, max-age=30, s-maxage=${SEGUNDOS}`,
+      // Que se note de un vistazo en las herramientas del navegador si lo que
+      // se está viendo salió del sistema o de la copia de emergencia.
+      "x-catalogo-origen": desdeRespaldo ? "respaldo" : "sistema",
+    },
+  });
+}
+
+export async function catalogo(peticion: Request, sistema?: SistemaWebBinding): Promise<Response> {
+  const cache = caches.default;
+  const guardada = await cache.match(peticion);
+  if (guardada) return guardada;
+
+  let salida: Response;
+
+  if (sistema === undefined) {
+    // Sin binding no hay sistema al que preguntar. Pasa en las vistas previas
+    // y pasaría si alguien despliega la web sin el binding puesto: la web
+    // tiene que seguir en pie, y decir de dónde salió lo que enseña.
+    salida = respuesta(respaldo, true);
+  } else {
+    try {
+      const r = await sistema.catalogo();
+      salida = r.ok ? respuesta(r.datos, false) : respuesta(respaldo, true);
+      if (!r.ok) {
+        console.warn(JSON.stringify({ evento: "catalogo_sistema_fallo", codigo: r.codigo }));
+      }
+    } catch (error) {
+      console.warn(
+        JSON.stringify({ evento: "catalogo_sistema_caido", error: String(error) }),
+      );
+      salida = respuesta(respaldo, true);
+    }
+  }
+
+  // La copia de respaldo NO se guarda en la caché del borde: si se guardara,
+  // un minuto de base caída dejaría a la web enseñando el respaldo durante ese
+  // minuto aunque el sistema volviera al segundo siguiente.
+  if (salida.headers.get("x-catalogo-origen") === "sistema") {
+    await cache.put(peticion, salida.clone());
+  }
+
+  return salida;
+}

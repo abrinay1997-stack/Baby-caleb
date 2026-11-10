@@ -1,3 +1,4 @@
+import { catalogo } from "./catalogo";
 import { chat } from "./chat";
 import type { Env } from "./env";
 import { reescribirHead } from "./head";
@@ -44,6 +45,13 @@ export default {
       return conCabeceras(await chat(peticion, env));
     }
 
+    // El catálogo: precio y disponibilidad, del sistema (F3.5). Se devuelve
+    // SIN pasar por `conCabeceras` porque esta respuesta se guarda en la caché
+    // del borde y ya trae las suyas propias.
+    if (url.pathname === "/api/catalogo") {
+      return await catalogo(peticion, env.SISTEMA);
+    }
+
     if (url.pathname === "/api/salud") {
       return conCabeceras(
         json({
@@ -53,6 +61,10 @@ export default {
           // El chat necesita su clave; decirlo aquí evita descubrirlo cuando
           // una clienta escriba.
           chat: env.GROQ_API_KEY ? "listo" : "falta GROQ_API_KEY",
+          // Sin el binding, /api/catalogo sirve la copia del build y la web
+          // sigue en pie — pero con precios de la fecha del despliegue. Vale
+          // más verlo aquí que descubrirlo por un precio viejo.
+          catalogo: env.SISTEMA ? "del sistema" : "copia del build (falta el binding SISTEMA)",
         }),
       );
     }

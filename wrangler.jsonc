@@ -1,16 +1,24 @@
 {
   // `babycaleb-web`: la web servida desde Cloudflare (F1 del plan).
   //
-  // Los `services` del ejemplo de 01-arquitectura §3 NO están todavía, y es a
-  // propósito: un binding a un Worker o a un entrypoint que no existe impide
-  // desplegar. `SISTEMA` entra en F3.5 (cuando la web lea el catálogo) y `CRM`
-  // en F3.6 (cuando el chat pase a `CanalWeb`).
+  // `SISTEMA` entra aquí en F3.5: es por donde la web pide el catálogo. `CRM`
+  // sigue sin estar y entra en F3.6, cuando el chat pase a `CanalWeb`: un
+  // binding a un entrypoint que no existe impide desplegar, así que cada uno
+  // llega con la fase que lo crea.
+  //
+  // Apunta a `babycaleb-sistema-staging` A PROPÓSITO: `babycaleb-sistema` (el
+  // de producción) todavía no existe, y esta web vive en workers.dev como
+  // copia de prueba. Se cambia en el traspaso (F3.4), junto con el DNS.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "babycaleb-web",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+
+  "services": [
+    { "binding": "SISTEMA", "service": "babycaleb-sistema-staging", "entrypoint": "SistemaWeb" }
+  ],
 
   "assets": {
     "directory": "./dist",
