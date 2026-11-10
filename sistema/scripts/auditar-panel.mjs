@@ -240,7 +240,13 @@ for (const [nombreVista, tamano] of VISTAS) {
       // la trampa de foco y el fondo inerte. Un <dialog open> puesto a mano se
       // ve igual y no hace nada de eso.
       const modal = await pagina.evaluate(() => {
-        const d = document.querySelector("dialog.hoja");
+        // EL QUE ESTÁ ABIERTO, no el primero del documento. En la página hay
+        // más de una hoja montada a la vez —la de «producto nuevo» vive
+        // cerrada esperando su botón— y `querySelector("dialog.hoja")` cogía
+        // esa, dando por rota una hoja que estaba perfecta. Lo destapó añadir
+        // la segunda hoja: hasta entonces solo había una y el selector
+        // alcanzaba.
+        const d = document.querySelector("dialog.hoja[open]");
         return {
           existe: d !== null,
           // `:modal` solo casa con un diálogo abierto con showModal().
