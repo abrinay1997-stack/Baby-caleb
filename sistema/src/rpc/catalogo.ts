@@ -87,6 +87,16 @@ const CONSULTA = `
   WHERE v.activo = 1 AND v.publicado = 1 AND p.activo = 1`;
 
 function aPublica(f: Fila, cantidad?: number): VariantePublica {
+  // Aguas arriba `normalizarCantidad` ya rechaza un 0, un negativo o un
+  // decimal: si algo así llega hasta aquí es un error de programación, no una
+  // entrada mala. Y el error de programación que ya pasó una vez fue
+  // `results.map(aPublica)`, que cuela el índice del array como cantidad y
+  // hace que la cantidad exacta de inventario salga hacia fuera. Reventar
+  // aquí convierte esa fuga silenciosa en una prueba roja.
+  if (cantidad !== undefined && (!Number.isSafeInteger(cantidad) || cantidad < 1)) {
+    throw new Error(`aPublica: cantidad inválida (${cantidad}) — ¿se pasó aPublica a .map()?`);
+  }
+
   const libres = f.libres ?? 0;
   return {
     ...(cantidad === undefined
@@ -123,7 +133,11 @@ export async function catalogoPublico(db: D1Database, ahora: number): Promise<Ca
     // saber si su copia sirve todavía sin comparar el catálogo entero.
     version: results.reduce((maxima, f) => Math.max(maxima, f.version), 0),
     generadoEn: ahora,
-    variantes: results.map(aPublica),
+    // `results.map(aPublica)` NO: `Array.prototype.map` pasa
+    // `(elemento, indice, array)`, así que el índice se colaba como
+    // `cantidad` y la variante de la posición i con menos de i libres salía
+    // con `maximoDisponible` —la cantidad exacta— hacia el navegador.
+    variantes: results.map((f) => aPublica(f)),
   };
 }
 
