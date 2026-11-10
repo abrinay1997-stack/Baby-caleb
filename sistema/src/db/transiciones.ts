@@ -216,23 +216,54 @@ export function enunciadosDeCobro(
   pedidoId: string,
   totalCents: number,
   pagadoDespuesCents: number,
+  /**
+   * La `version` del pedido que se leyó para calcular `pagadoDespuesCents`.
+   *
+   * Es lo que cierra la ACTUALIZACIÓN PERDIDA, que es el fallo caro de aquí y
+   * que no es el que parece. No es confirmar dos veces el mismo pago —eso
+   * escribe el mismo valor absoluto dos veces y queda bien— es confirmar DOS
+   * PAGOS DISTINTOS a la vez: los dos leen `pagado_cents = 0`, uno calcula
+   * $5 y el otro $3, el último que escribe gana, y uno de los dos cobros
+   * desaparece del pedido aunque el dinero esté en la cuenta.
+   *
+   * **Lo que lo cierra es el CONTROL, no el WHERE.** Probándolo con el WHERE
+   * quitado, el batch se sigue cayendo: el control exige `version =
+   * versionLeida + 1`, y si otro escribió en medio la versión ya no cuadra.
+   * El WHERE está igualmente, y vale la pena: evita escribir un valor que
+   * después hay que revertir, y deja dicha la intención en el sitio donde se
+   * lee el UPDATE.
+   *
+   * Quien llama reintenta con el pedido ya releído.
+   */
+  versionLeida: number,
 ): D1PreparedStatement[] {
   const estadoPago = estadoDePagoSegunSaldo(totalCents, pagadoDespuesCents);
   return [
     ctx.db
       .prepare(
-        "UPDATE pedidos SET pagado_cents = ?, estado_pago = ?, actualizado_en = ?, version = version + 1 WHERE id = ?",
+        `UPDATE pedidos SET pagado_cents = ?, estado_pago = ?, actualizado_en = ?, version = version + 1
+          WHERE id = ? AND version = ?`,
       )
-      .bind(pagadoDespuesCents, estadoPago, ctx.ahora, pedidoId),
-    // `pagado_cents <= total_cents` ya lo vigila la tabla. Esto vigila lo
-    // otro: que el estado de pago guardado SEA el que corresponde al saldo.
-    // Un pedido que dice «pagado» con saldo pendiente es una entrega que nadie
-    // va a cobrar.
+      .bind(pagadoDespuesCents, estadoPago, ctx.ahora, pedidoId, versionLeida),
+    // El control mira el estado YA CAMBIADO, y mira las TRES cosas a la vez:
+    // la versión nueva (que nadie se metió en medio), el monto exacto, y que
+    // el estado de pago sea el que corresponde a ese saldo. Mirar solo el
+    // estado de pago no bastaba: «abonado» es verdad tanto si el cobro lo hizo
+    // este batch como si lo hizo otro.
     ctx.db
       .prepare(
         `INSERT INTO controles (id, regla, ok, creado_en)
-         VALUES (?, ?, (SELECT COUNT(*) FROM pedidos WHERE id = ? AND estado_pago = ?), ?)`,
+         VALUES (?, ?, (SELECT COUNT(*) FROM pedidos
+                        WHERE id = ? AND version = ? AND pagado_cents = ? AND estado_pago = ?), ?)`,
       )
-      .bind(ulid(ctx.ahora), `cobro:${estadoPago}`, pedidoId, estadoPago, ctx.ahora),
+      .bind(
+        ulid(ctx.ahora),
+        `cobro:${estadoPago}`,
+        pedidoId,
+        versionLeida + 1,
+        pagadoDespuesCents,
+        estadoPago,
+        ctx.ahora,
+      ),
   ];
 }

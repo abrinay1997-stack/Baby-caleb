@@ -59,7 +59,14 @@ async function unPedido(sobre: Partial<ContextoPedido> = {}) {
 }
 
 const cobrar = async (pedidoId: string, totalCents: number, pagado: number) => {
-  await env.DB.batch(enunciadosDeCobro(ctxT(), pedidoId, totalCents, pagado));
+  // La versión se LEE justo antes: es lo que `enunciadosDeCobro` usa para
+  // detectar que nadie se metió en medio.
+  const v = await env.DB.prepare("SELECT version FROM pedidos WHERE id = ?")
+    .bind(pedidoId)
+    .first<{ version: number }>();
+  await env.DB.batch(
+    enunciadosDeCobro(ctxT(), pedidoId, totalCents, pagado, v?.version ?? 0),
+  );
 };
 
 const estadoDe = async (id: string) =>
