@@ -669,3 +669,108 @@ export async function crearProductoConVariante(
 
   return ok({ id, codigo: variante.codigo });
 }
+
+// ---------------------------------------------------------------------------
+// La receta de un combo
+// ---------------------------------------------------------------------------
+
+export interface Ingrediente {
+  readonly codigo: string;
+  readonly cantidad: number;
+}
+
+/**
+ * Reemplaza la receta ENTERA de un combo.
+ *
+ * Entera y no por partes: editar ingrediente a ingrediente deja estados
+ * intermedios —una receta sin uno de sus componentes— que, si alguien vende
+ * justo ahí, apartan de menos. Un batch borra lo que había y pone lo nuevo, o
+ * no hace nada.
+ *
+ * Cambiar la receta NO toca los pedidos que ya existen: lo que se apartó al
+ * vender quedó escrito en `pedido_linea_componentes` y es de ahí de donde se
+ * devuelve al cancelar.
+ */
+export async function ponerReceta(
+  ctx: ContextoCatalogo,
+  comboCodigo: string,
+  receta: readonly Ingrediente[],
+): Promise<Resultado<{ ingredientes: number }>> {
+  const v = await ctx.db
+    .prepare("SELECT codigo, es_combo FROM variantes WHERE codigo = ?")
+    .bind(comboCodigo)
+    .first<{ codigo: string; es_combo: number }>();
+  if (v === null) return fallo("no_encontrado", "no existe esa variante");
+  // Lo que de verdad lo impide es el trigger `combo_duenno_es_combo` del
+  // esquema: quitando esta línea, la base lo rechaza igual. Se queda porque
+  // evita un viaje a la base para algo que ya se sabe, y porque el mensaje sale
+  // sin la coletilla del trigger. Quien lo lea no debe creer que es la defensa.
+  if (v.es_combo !== 1) return fallo("entrada_invalida", "esta variante no es un combo");
+
+  for (const i of receta) {
+    if (!Number.isSafeInteger(i.cantidad) || i.cantidad <= 0) {
+      return fallo("entrada_invalida", `la cantidad de ${i.codigo} tiene que ser mayor que cero`);
+    }
+    if (i.codigo === comboCodigo) {
+      return fallo("entrada_invalida", "un combo no puede llevarse a sí mismo");
+    }
+  }
+
+  // Repetir un ingrediente serían dos cantidades para lo mismo, y cuál manda
+  // dependería de cuál se lea primero. Se avisa en vez de quedarse con una.
+  const vistos = new Set<string>();
+  for (const i of receta) {
+    if (vistos.has(i.codigo)) {
+      return fallo("entrada_invalida", `${i.codigo} está dos veces en la receta`);
+    }
+    vistos.add(i.codigo);
+  }
+
+  const enunciados: D1PreparedStatement[] = [
+    ctx.db.prepare("DELETE FROM combo_componentes WHERE combo_codigo = ?").bind(comboCodigo),
+    ...receta.map((i) =>
+      ctx.db
+        .prepare(
+          "INSERT INTO combo_componentes (combo_codigo,codigo,cantidad) VALUES (?,?,?)",
+        )
+        .bind(comboCodigo, i.codigo, i.cantidad),
+    ),
+    // La versión sube para que quien tuviera el combo abierto se entere.
+    ctx.db
+      .prepare("UPDATE variantes SET version = version + 1, actualizado_en = ? WHERE codigo = ?")
+      .bind(ctx.ahora, comboCodigo),
+  ];
+
+  try {
+    await ctx.db.batch(enunciados);
+  } catch (e) {
+    const t = e instanceof Error ? e.message : String(e);
+    // Los triggers del esquema hablan en español y dicen exactamente qué pasó:
+    // se pasa su mensaje en vez de uno genérico, que mandaría a adivinar.
+    if (/combo/i.test(t)) return fallo("entrada_invalida", t.replace(/^.*?: /, ""));
+    if (/FOREIGN KEY/i.test(t)) return fallo("no_encontrado", "algún componente no existe");
+    return fallo("interno", t);
+  }
+
+  return ok({ ingredientes: receta.length });
+}
+
+/** La receta de un combo, con lo que hay de cada pieza. */
+export async function leerReceta(
+  ctx: ContextoCatalogo,
+  comboCodigo: string,
+): Promise<Resultado<{ codigo: string; nombre: string; cantidad: number; libres: number }[]>> {
+  const { results } = await ctx.db
+    .prepare(
+      `SELECT cc.codigo, v.nombre, cc.cantidad,
+              COALESCE((SELECT SUM(e.fisico - e.reservado) FROM existencias e
+                         WHERE e.codigo = cc.codigo), 0) AS libres
+         FROM combo_componentes cc
+         JOIN variantes v ON v.codigo = cc.codigo
+        WHERE cc.combo_codigo = ?
+        ORDER BY v.nombre`,
+    )
+    .bind(comboCodigo)
+    .all<{ codigo: string; nombre: string; cantidad: number; libres: number }>();
+  return ok(results);
+}

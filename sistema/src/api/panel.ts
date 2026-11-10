@@ -19,6 +19,8 @@ import {
   crearProductoConVariante,
   crearVariante,
   editarVariante,
+  leerReceta,
+  ponerReceta,
   explicar,
 } from "../db/catalogo-admin";
 
@@ -479,6 +481,34 @@ function registrarRutas(panel: Hono<Entorno>): void {
     await c.env.DB.batch(enunciados);
 
     return c.json(ok({ imagen: `/img/${clave}`, mime: tipo, bytes: cuerpoBruto.byteLength }), 201);
+  });
+
+  /** La receta de un combo, con lo que hay de cada pieza. */
+  panel.get("/catalogo/variantes/:codigo/receta", exige("pedidos"), async (c) => {
+    const r = await leerReceta(contextoCatalogo(c), c.req.param("codigo"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Reemplaza la receta ENTERA.
+   *
+   * Entera y no por partes: editar ingrediente a ingrediente deja recetas a
+   * medias, y quien venda justo en ese momento aparta de menos.
+   */
+  panel.put("/catalogo/variantes/:codigo/receta", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    const bruta = b === null ? null : b["receta"];
+    if (!Array.isArray(bruta)) {
+      return c.json(fallo("entrada_invalida", "falta la receta"), 400);
+    }
+
+    const receta = bruta.map((x) => {
+      const o = (typeof x === "object" && x !== null ? x : {}) as Record<string, unknown>;
+      return { codigo: texto(o["codigo"]) ?? "", cantidad: entero(o["cantidad"]) ?? 0 };
+    });
+
+    const r = await ponerReceta(contextoCatalogo(c), c.req.param("codigo"), receta);
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   panel.delete("/catalogo/variantes/:codigo", exigeEditar("precios_y_stock"), async (c) => {
