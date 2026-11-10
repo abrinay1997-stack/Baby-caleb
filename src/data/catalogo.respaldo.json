@@ -6,7 +6,140 @@
     "crear un segundo dueño del precio, que es justo lo que F3 vino a eliminar.",
     "Arranca vacía: se llena en cuanto el Worker esté desplegado con el binding."
   ],
-  "version": 0,
-  "generadoEn": 0,
-  "variantes": []
+  "version": 1,
+  "generadoEn": 1794291951650,
+  "variantes": [
+    {
+      "codigo": "NAT-L",
+      "slug": "panales-nateen-cierre-nat-l",
+      "nombre": "Pañal Nateen Talla L de cierre — caja de 128 (15–39 lbs / 7–18 kg)",
+      "talla": "L",
+      "pesoMinLb": 15,
+      "pesoMaxLb": 39,
+      "unidadesPorCaja": 128,
+      "precioCents": 4500,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "NAT-M",
+      "slug": "panales-nateen-cierre-nat-m",
+      "nombre": "Pañal Nateen Talla M de cierre — caja de 144 (8–19 lbs / 4–9 kg)",
+      "talla": "M",
+      "pesoMinLb": 8,
+      "pesoMaxLb": 19,
+      "unidadesPorCaja": 144,
+      "precioCents": 5000,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "NAT-RN",
+      "slug": "panales-nateen-cierre-nat-rn",
+      "nombre": "Pañal Nateen Talla RN de cierre — caja de 160 (4–11 lbs / 2–5 kg)",
+      "talla": "RN",
+      "pesoMinLb": 4,
+      "pesoMaxLb": 11,
+      "unidadesPorCaja": 160,
+      "precioCents": 5000,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "NAT-S",
+      "slug": "panales-nateen-cierre-nat-s",
+      "nombre": "Pañal Nateen Talla S de cierre — caja de 160 (6–13 lbs / 3–6 kg)",
+      "talla": "S",
+      "pesoMinLb": 6,
+      "pesoMaxLb": 13,
+      "unidadesPorCaja": 160,
+      "precioCents": 5000,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "NAT-XL",
+      "slug": "panales-nateen-cierre-nat-xl",
+      "nombre": "Pañal Nateen Talla XL de cierre — caja de 112 (26–55 lbs / 12–25 kg)",
+      "talla": "XL",
+      "pesoMinLb": 26,
+      "pesoMaxLb": 55,
+      "unidadesPorCaja": 112,
+      "precioCents": 4500,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "NAT-XXL",
+      "slug": "panales-nateen-cierre-nat-xxl",
+      "nombre": "Pañal Nateen Talla XXL de cierre — caja de 112 (+55 lbs / +25 kg)",
+      "talla": "XXL",
+      "pesoMinLb": 55,
+      "pesoMaxLb": null,
+      "unidadesPorCaja": 112,
+      "precioCents": 4500,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "NAT-P-L",
+      "slug": "panales-nateen-pants-nat-p-l",
+      "nombre": "Pañal Nateen Talla L de pants — caja de 160 (15–39 lbs / 7–18 kg)",
+      "talla": "L",
+      "pesoMinLb": 15,
+      "pesoMaxLb": 39,
+      "unidadesPorCaja": 160,
+      "precioCents": 5500,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "NAT-P-XL",
+      "slug": "panales-nateen-pants-nat-p-xl",
+      "nombre": "Pañal Nateen Talla XL de pants — caja de 160 (26–55 lbs / 12–25 kg)",
+      "talla": "XL",
+      "pesoMinLb": 26,
+      "pesoMaxLb": 55,
+      "unidadesPorCaja": 160,
+      "precioCents": 5500,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "NAT-P-XXL",
+      "slug": "panales-nateen-pants-nat-p-xxl",
+      "nombre": "Pañal Nateen Talla XXL de pants — caja de 160 (+55 lbs / +25 kg)",
+      "talla": "XXL",
+      "pesoMinLb": 55,
+      "pesoMaxLb": null,
+      "unidadesPorCaja": 160,
+      "precioCents": 5500,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "DANY-AW1200",
+      "slug": "water-wipes-dany-baby-dany-aw1200",
+      "nombre": "Water wipes hipoalergénicas Dany Baby — 1,200 toallitas (24 paquetes de 50)",
+      "talla": null,
+      "pesoMinLb": null,
+      "pesoMaxLb": null,
+      "unidadesPorCaja": 1200,
+      "precioCents": 4000,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "DANY-AW600",
+      "slug": "water-wipes-dany-baby-dany-aw600",
+      "nombre": "Water wipes hipoalergénicas Dany Baby — caja de 600 toallitas (12 paquetes de 50)",
+      "talla": null,
+      "pesoMinLb": null,
+      "pesoMaxLb": null,
+      "unidadesPorCaja": 600,
+      "precioCents": 2500,
+      "disponibilidad": "agotado"
+    },
+    {
+      "codigo": "MOON-FUL",
+      "slug": "fular-prearmado-moon-moon-ful",
+      "nombre": "Fular prearmado Moon de bambú — unitalla ajustable XS a 3XL (RN hasta ~25 lbs)",
+      "talla": "Unitalla",
+      "pesoMinLb": null,
+      "pesoMaxLb": null,
+      "unidadesPorCaja": 1,
+      "precioCents": 4600,
+      "disponibilidad": "agotado"
+    }
+  ]
 }

@@ -1,5 +1,27 @@
 import type { Env } from "./env";
-import { PROMPT_DEL_SISTEMA } from "./prompt";
+import { promptDelSistema } from "./prompt";
+
+/**
+ * Los precios que el chat puede decir, del catálogo del sistema (F3.5).
+ *
+ * Si el sistema no contesta, se devuelve un mapa VACÍO a propósito y el prompt
+ * se queda sin su lista de precios: el chat dirá que confirma con el equipo.
+ * La alternativa —tirar de la copia del build— sería cotizar con precios de la
+ * fecha del último despliegue sin que nadie lo sepa, y en un chat eso es una
+ * cifra dicha a una clienta, no un número en una pantalla.
+ */
+async function preciosDelCatalogo(env: Env): Promise<ReadonlyMap<string, number>> {
+  if (env.SISTEMA === undefined) return new Map();
+  try {
+    const r = await env.SISTEMA.catalogo();
+    if (!r.ok) return new Map();
+    const vs = r.datos.variantes as { codigo: string; precioCents: number }[];
+    return new Map(vs.map((v) => [v.codigo, v.precioCents]));
+  } catch (error) {
+    console.warn(JSON.stringify({ evento: "chat_sin_catalogo", error: String(error) }));
+    return new Map();
+  }
+}
 
 /**
  * El chat de la web, dentro del Worker.
@@ -53,7 +75,7 @@ export async function chat(peticion: Request, env: Env): Promise<Response> {
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
         messages: [
-          { role: "system", content: PROMPT_DEL_SISTEMA },
+          { role: "system", content: promptDelSistema(await preciosDelCatalogo(env)) },
           ...(messages as MensajeDelChat[]).map((m) => ({
             role: m.role === "assistant" ? "assistant" : "user",
             content: m.content,

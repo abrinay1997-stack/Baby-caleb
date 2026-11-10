@@ -33,8 +33,15 @@ export interface ProductVariant {
   size: string;
   range: string;
   units: string;
-  /** Precio en USD. Ausente cuando se cotiza por WhatsApp (ej. Fulares Moon). */
-  price?: number;
+  /**
+   * El código de la variante en el catálogo del sistema (F3.5).
+   *
+   * El PRECIO ya no vive aquí: vive en la D1 del sistema y la web lo pide a
+   * `/api/catalogo`. Lo que queda en este archivo es a qué fila del catálogo
+   * corresponde esta tarjeta. Sin código, la web dice «Consultar» en vez de
+   * inventar un número.
+   */
+  codigo?: string;
   image: string;
 }
 
@@ -43,8 +50,14 @@ export interface ProductData {
   name: string;
   description: string;
   image: string;
-  /** Precio "desde". Ausente cuando el producto se cotiza por WhatsApp. */
-  priceFrom?: number;
+  /**
+   * Fuera de circulación según el documento de la dueña.
+   *
+   * No se borra del archivo —el contenido es suyo— pero no se pinta: vender lo
+   * que no existe acaba en un pedido que nadie puede cumplir, y en un bot que
+   * le dice a la clienta lo contrario que la web.
+   */
+  descatalogado?: boolean;
   variants: ProductVariant[];
 }
 

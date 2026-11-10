@@ -10,7 +10,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit && tsc --noEmit -p worker",
     "contraste": "node scripts/auditar-contraste.mjs",
-    "test": "vitest run"
+    "test": "vitest run && vitest run --config vitest.node.config.ts",
+    "catalogo:respaldo": "node scripts/catalogo-respaldo.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
