@@ -1,0 +1,236 @@
+# Pruebas y despliegue de `sistema/` (el Worker babycaleb-sistema).
+#
+# Tres flujos separados —este, `web.yml` y `respaldo.yml`— para que si uno no
+# construye los otros sigan publicando (lección del puente del CRM).
+#
+# PRODUCCIÓN NUNCA SE PUBLICA SOLA. La receta que se adopta de D'Casa es:
+# cambio en una rama `claude/...` con su prueba → staging → capturas a la dueña
+# → su visto bueno → PR → `main` → producción a mano desde la pestaña Actions.
+#
+# SECRETOS QUE HACEN FALTA (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN   token con permiso de editar Workers, D1 y colas
+#   CLOUDFLARE_ACCOUNT_ID  el id de la cuenta de la agencia
+# Mientras no estén, las pruebas corren igual: solo los despliegues necesitan
+# la cuenta.
+#
+# NOTA SOBRE ACCESS: la comprobación de `/salud` after de desplegar necesita que
+# esa ruta quede FUERA de la aplicación de Cloudflare Access. No lleva ningún
+# dato del negocio —versión, migración y una consulta de humo— y por eso el
+# código no le exige token. Si se deja dentro de Access, el paso de salud
+# recibirá un 403 y el despliegue se marcará como fallido aunque haya salido
+# bien.
+
+name: sistema
+
+on:
+  pull_request:
+    paths:
+      - "sistema/**"
+      - ".github/workflows/sistema.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sistema/**"
+      - ".github/workflows/sistema.yml"
+  workflow_dispatch:
+    inputs:
+      entorno:
+        description: "A dónde desplegar"
+        required: true
+        type: choice
+        options: [staging, produccion]
+        default: staging
+      respaldo_previo:
+        description: "Exportar un respaldo antes de tocar producción"
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  # Dos despliegues al mismo entorno a la vez dejan la base y el código
+  # desparejados. Las pruebas de ramas distintas sí pueden convivir.
+  group: sistema-${{ github.event_name == 'workflow_dispatch' && inputs.entorno || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    working-directory: sistema
+
+jobs:
+  pruebas:
+    name: Pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sistema/package-lock.json
+
+      # --legacy-peer-deps: npm 10 revienta resolviendo los peers de vitest
+      # («Cannot read properties of null (reading 'edgesOut')»), que es un bug
+      # suyo y no un conflicto real de versiones.
+      - run: npm ci --legacy-peer-deps
+
+      # `worker-configuration.d.ts` no se versiona: son 16 mil líneas
+      # generadas. Se rehace aquí antes del typecheck.
+      - run: npm run tipos
+
+      - run: npm run typecheck
+
+      # Las pruebas corren dentro de workerd con una D1 de verdad, y aplican
+      # TODAS las migraciones desde cero en cada archivo. Aquí entra también la
+      # prueba de la huella del contrato y la de los tokens de la marca.
+      - run: npm test
+
+      # Que el panel construya es una prueba más: un error de JSX o un import
+      # roto no lo ve el typecheck de los módulos del Worker.
+      - run: npm run panel:build
+
+      # Y que SE VEA bien es otra. El §7 del sistema de diseño es un contrato
+      # con números —44 px de alto táctil, 16 px en los campos, 12 px de piso,
+      # nada de `100vh`— y esos números solo se comprueban leyendo el estilo ya
+      # calculado en un navegador de verdad. Esta auditoría encontró tres
+      # pantallas que se desbordaban de lado en el teléfono cuando el typecheck
+      # y las 522 pruebas estaban verdes.
+      - name: Navegador para la auditoría
+        run: npx playwright install --with-deps chromium
+
+      - name: Auditar el panel (§7 del sistema de diseño)
+        run: |
+          npm run panel:muestra &
+          # Esperar a que conteste, sin traerse una dependencia para esperar.
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4173/api/yo > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4173/api/yo > /dev/null \
+            || { echo "El panel de muestra no levantó"; exit 1; }
+          npm run panel:auditar
+
+      # Las capturas suben como artefacto para enseñárselas a la dueña antes de
+      # publicar: son el paso de «capturas a la dueña» de la receta de arriba.
+      # No llevan ningún dato real —`panel-de-muestra.mjs` los inventa— así que
+      # se pueden subir sin problema.
+      - name: Guardar las capturas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-capturas
+          path: sistema/.capturas/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  staging:
+    name: Desplegar a staging
+    needs: pruebas
+    if: github.event_name == 'workflow_dispatch' && inputs.entorno == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sistema/package-lock.json
+      - run: npm ci --legacy-peer-deps
+      - run: npm run tipos
+
+      # `wrangler.jsonc` sirve `panel/dist` como estáticos, y esa carpeta no se
+      # versiona: si no se construye aquí, el despliegue sube un panel vacío.
+      - run: npm run panel:build
+
+      # Primero la base y después el código: el código nuevo puede necesitar
+      # una columna nueva, y al revés nunca, porque las migraciones son
+      # compatibles hacia atrás (08-operacion.md §3).
+      - name: Migraciones en babycaleb-db-staging
+        run: npx wrangler d1 migrations apply babycaleb-db-staging --remote --env staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Desplegar
+        id: desplegar
+        run: |
+          npx wrangler deploy --env staging \
+            --var VERSION:"$GITHUB_SHA" | tee salida.txt
+          url="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' salida.txt | head -1)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Comprobar /salud
+        run: ../.github/scripts/salud.sh "${{ steps.desplegar.outputs.url }}" "$GITHUB_SHA"
+
+  produccion:
+    name: Desplegar a producción
+    needs: pruebas
+    # Solo a mano, y solo desde main. Lo segundo importa tanto como lo primero:
+    # un despliegue a producción desde una rama es exactamente la forma de
+    # publicar algo que nadie revisó.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.entorno == 'produccion' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: produccion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sistema/package-lock.json
+      - run: npm ci --legacy-peer-deps
+      - run: npm run tipos
+
+      - run: npm run panel:build
+
+      # Un respaldo de antes de la migración, por si la migración sale mal. El
+      # Time Travel de D1 restaura encima de la base actual, así que es el
+      # último recurso: esto es la red de seguridad de verdad.
+      - name: Respaldo previo
+        if: inputs.respaldo_previo
+        run: |
+          mkdir -p ../respaldo
+          npx wrangler d1 export babycaleb-db --remote \
+            --output ../respaldo/antes-del-despliegue.sql
+          echo "Exportado: $(wc -c < ../respaldo/antes-del-despliegue.sql) bytes"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # El respaldo NO se sube como artefacto: lleva datos de clientas y los
+      # artefactos de un repositorio los puede bajar cualquiera con acceso.
+      # Vive el tiempo del runner y se va con él. El respaldo que se guarda es
+      # el de `respaldo.yml`, cifrado y en R2.
+
+      - name: Migraciones en babycaleb-db
+        run: npx wrangler d1 migrations apply babycaleb-db --remote --env production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Desplegar
+        run: npx wrangler deploy --env production --var VERSION:"$GITHUB_SHA"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Comprobar /salud
+        run: ../.github/scripts/salud.sh "https://panel.babycaleb.com" "$GITHUB_SHA"
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "## Despliegue a producción"
+            echo ""
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Respaldo previo: ${{ inputs.respaldo_previo }}"
+            echo "- Panel: https://panel.babycaleb.com"
+          } >> "$GITHUB_STEP_SUMMARY"

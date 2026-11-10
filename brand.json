@@ -1,6 +1,27 @@
 {
   "brand": "baby-caleb",
   "family": "E",
+  "_contraste": {
+    "nota": "Medido con WCAG 2.1 el 2026-11-09. AA pide 4.5:1 para texto normal, 3:1 para texto grande (24px, o 18.66px en negrita) y 3:1 para bordes y aros de foco. Si se cambia un color, hay que volver a medir: `npm run contraste` lo hace sobre la web ya construida.",
+    "accent y sage son RELLENO": "Sobre el fondo crema dan 2.20 y 1.75. No se leen. Nunca como color de texto ni de borde.",
+    "accent-fg era crema": "Crema sobre naranja daba 2.20, y es el par de los botones principales y del chat. Ahora es el navy: 5.56.",
+    "medidas": {
+      "fg sobre bg": 12.21,
+      "fg sobre surface": 11.47,
+      "muted sobre bg": 4.95,
+      "muted sobre surface": 4.8,
+      "accent-fg sobre accent": 5.56,
+      "accent-strong sobre bg": 4.9,
+      "accent-strong sobre surface": 4.6,
+      "accent-edge sobre bg": 3.2,
+      "accent-edge sobre surface": 3.01,
+      "sage-strong sobre bg": 4.92,
+      "sage-strong sobre surface": 4.62,
+      "sage-edge sobre bg": 3.22,
+      "sage-edge sobre surface": 3.03,
+      "fg sobre sage": 6.96
+    }
+  },
   "color": {
     "bg": "#F9F6ED",
     "surface": "#F2EFE5",
@@ -8,8 +29,12 @@
     "muted": "rgba(27, 50, 70, 0.7)",
     "line": "rgba(27, 50, 70, 0.12)",
     "accent": "#EE924A",
-    "accent-fg": "#F9F6ED",
-    "sage": "#91C9A2"
+    "accent-fg": "#1B3246",
+    "accent-strong": "#985D2F",
+    "accent-edge": "#C3783D",
+    "sage": "#91C9A2",
+    "sage-strong": "#53735C",
+    "sage-edge": "#6A9376"
   },
   "type": {
     "display": "Montserrat",

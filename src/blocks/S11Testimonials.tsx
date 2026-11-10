@@ -39,7 +39,7 @@ export default function S11Testimonials() {
                 <p className="text-sm text-muted">{item.role}</p>
               </div>
               <div className="text-right">
-                <span className="inline-block px-3 py-1 bg-sage/20 text-sage rounded-pill text-xs font-bold mono">
+                <span className="inline-block px-3 py-1 bg-sage/20 text-sage-strong rounded-pill text-xs font-bold mono">
                   {item.result}
                 </span>
               </div>

@@ -29,7 +29,7 @@ export default function S13Tips() {
         {data.map((tip, idx) => (
           <article
             key={tip.id}
-            className="tip-card group flex flex-col bg-surface rounded-2xl overflow-hidden border border-line hover:border-sage hover:-translate-y-1 transition-all duration-300 shadow-soft"
+            className="tip-card group flex flex-col bg-surface rounded-2xl overflow-hidden border border-line hover:border-sage-edge hover:-translate-y-1 transition-all duration-300 shadow-soft"
           >
             <div className="aspect-[4/5] overflow-hidden bg-bg">
               <img
@@ -41,7 +41,7 @@ export default function S13Tips() {
               />
             </div>
             <div className="p-6 flex flex-col gap-3 flex-grow">
-              <span className="mono text-xs text-sage">Tip 0{idx + 1}</span>
+              <span className="mono text-xs text-sage-strong">Tip 0{idx + 1}</span>
               <h3 className="font-bold text-lg text-fg leading-snug">{tip.title}</h3>
               <p className="text-sm text-muted leading-relaxed flex-grow">{tip.excerpt}</p>
             </div>

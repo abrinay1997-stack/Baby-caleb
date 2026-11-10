@@ -20,7 +20,7 @@ export const Section = forwardRef<HTMLElement, SectionProps>(
     const bgClasses = {
       'bg': 'bg-bg',
       'surface': 'bg-surface',
-      'sage': 'bg-sage text-bg',
+      'sage': 'bg-sage text-fg',
     };
 
     const containerClasses = {

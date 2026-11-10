@@ -54,7 +54,9 @@ export default function Chatbot() {
         throw new Error('No se pudo enviar el mensaje.');
       }
 
-      const data = await response.json();
+      // `response.json()` devuelve `unknown`: sin esta anotación `data.reply`
+      // no compila. Solo es el tipo; el comportamiento no cambia.
+      const data = (await response.json()) as { reply?: string };
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: data.reply || 'Lo siento, hubo un problema al responder.' },
@@ -88,7 +90,7 @@ export default function Chatbot() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-accent text-accent-fg">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-bg flex items-center justify-center text-accent">
+              <div className="w-8 h-8 rounded-full bg-bg flex items-center justify-center text-accent-strong">
                 <Heart size={16} fill="currentColor" />
               </div>
               <div>
@@ -141,7 +143,7 @@ export default function Chatbot() {
               href="https://wa.me/50767575065"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 font-bold text-accent hover:underline"
+              className="flex items-center gap-1 font-bold text-accent-strong hover:underline"
             >
               <MessageSquare size={12} />
               Hablar por WhatsApp
@@ -156,7 +158,7 @@ export default function Chatbot() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Escribe tu mensaje..."
               maxLength={250}
-              className="flex-1 bg-bg border border-line rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-accent text-fg"
+              className="flex-1 bg-bg border border-line rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-accent-edge text-fg"
             />
             <button
               type="submit"

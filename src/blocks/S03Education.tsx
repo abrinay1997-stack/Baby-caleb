@@ -43,7 +43,7 @@ export default function S03Education() {
         <h2 ref={qRef} className="text-3xl md:text-5xl lg:text-6xl text-balance mb-12 leading-tight">
           {data.question}
         </h2>
-        <p className="edu-ans text-lg md:text-2xl text-bg/90 max-w-3xl mx-auto font-medium leading-relaxed">
+        <p className="edu-ans text-lg md:text-2xl text-fg/90 max-w-3xl mx-auto font-medium leading-relaxed">
           {data.answer}
         </p>
       </div>

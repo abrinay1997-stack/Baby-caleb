@@ -8,9 +8,16 @@
   --color-fg: var(--fg);
   --color-muted: var(--muted);
   --color-line: var(--line);
+  /* Relleno (bg-accent, bg-sage) y lo que se escribe encima (text-accent-fg). */
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
   --color-sage: var(--sage);
+  /* Texto en color de marca: text-accent-strong, text-sage-strong. */
+  --color-accent-strong: var(--accent-strong);
+  --color-sage-strong: var(--sage-strong);
+  /* Bordes y aros de foco: border-accent-edge, outline-accent-edge. */
+  --color-accent-edge: var(--accent-edge);
+  --color-sage-edge: var(--sage-edge);
   
   --font-display: var(--font-display);
   --font-body: var(--font-body);

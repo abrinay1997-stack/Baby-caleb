@@ -22,5 +22,15 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    // `sistema/` tiene su propio tsconfig, sus propios tipos (los de Workers y
+    // los de `cloudflare:test`) y reglas más estrictas. Revisarlo desde aquí
+    // falla con errores que no existen: su typecheck es `npm --prefix sistema
+    // run typecheck`, y lo corre `sistema.yml`.
+    "sistema"
+  ]
 }

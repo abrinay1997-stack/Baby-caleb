@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "contraste": "node scripts/auditar-contraste.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -41,6 +42,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "playwright": "^1.65.0"
   }
 }

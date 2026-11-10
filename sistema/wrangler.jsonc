@@ -1,0 +1,167 @@
+{
+  // babycaleb-sistema · pedidos, inventario, dinero, panel, asistente y crons.
+  // Ver docs/plan/01-arquitectura.md §2 (recursos) y §3 (dominios y rutas).
+  //
+  // CUIDADO con los entornos de wrangler: un entorno con nombre NO hereda los
+  // bindings del nivel raíz. Por eso cada uno repite los suyos. El nivel raíz
+  // es solo para `wrangler dev` y las pruebas locales.
+  //
+  // Las D1 y los buckets existen desde el 2026-11-09, en la cuenta de la
+  // agencia: babycaleb-db y babycaleb-db-staging (ENAM, que es la región más
+  // cercana a Panamá de las que ofrece D1), y babycaleb-privado,
+  // babycaleb-privado-staging y babycaleb-respaldos.
+  //
+  // Los `namespace_id` de los límites NO son ids de recursos: son números que
+  // cada Worker elige y que valen dentro de la cuenta. No hay nada que crear.
+  //
+  // Las pruebas y el dev local no usan nada de esto: miniflare crea su propia
+  // D1 en disco, así que nadie necesita la cuenta para trabajar.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "babycaleb-sistema",
+  "main": "src/index.ts",
+  // La del plan (01-arquitectura.md §3). El runner de pruebas usa el mismo
+  // workerd que el despliegue (@cloudflare/vitest-plugin trae miniflare
+  // 5.20261109), así que las pruebas corren la compatibilidad de producción.
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // Cada 5 minutos se republica lo que el outbox dejó sin publicar
+  // (01-arquitectura.md §4). Los demás crons llegan con su fase.
+  "triggers": { "crons": ["*/5 * * * *"] },
+
+  "d1_databases": [
+    { "binding": "DB", "database_name": "babycaleb-db", "database_id": "3f96b1a3-8d35-4957-9a4a-48451dcbc28b", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [
+    { "binding": "PRIVADO", "bucket_name": "babycaleb-privado" }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "AVISOS", "queue": "bc-avisos" },
+      { "binding": "TAREAS", "queue": "bc-tareas" }
+    ],
+    "consumers": [
+      { "queue": "bc-tareas", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 5, "dead_letter_queue": "bc-tareas-muertos" },
+      // Las colas muertas también las consume el sistema: lo que cae ahí ya se
+      // intentó cinco veces y lo único que queda es avisar (03-contratos §4).
+      // No llevan dead_letter_queue propia: una cola muerta de una cola muerta
+      // no tiene a dónde ir.
+      { "queue": "bc-tareas-muertos", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 1 },
+      { "queue": "bc-avisos-muertos", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 1 }
+    ]
+  },
+  // 1001 checkout (crearPedido) y 1003 códigos de un solo uso de «Mi cuenta».
+  // 1002 (chat web) y 1004 (geocodificación) los declara babycaleb-web en F1:
+  // los namespaces son de la cuenta y cada Worker ata los que usa.
+  "ratelimits": [
+    { "name": "LIMITE_CHECKOUT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+    { "name": "LIMITE_CODIGOS", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+  ],
+  // HSTS apagado hasta que esté confirmado que TODO subdominio de
+  // babycaleb.com sirve HTTPS (07-seguridad.md §5): encenderlo antes, con
+  // includeSubDomains, deja inaccesible durante un año al que no lo tenga.
+  // ACCESS_EQUIPO y ACCESS_AUD se quedan vacíos hasta que exista la aplicación
+  // de Access (F2.11). Vacíos, el panel NO abre, y eso es lo que se quiere:
+  // no hay otra puerta detrás. No son secretos, son identificadores.
+  "vars": { "VERSION": "dev", "HSTS": "no", "ACCESS_EQUIPO": "", "ACCESS_AUD": "" },
+
+  "env": {
+    "staging": {
+      "name": "babycaleb-sistema-staging",
+      "observability": { "enabled": true },
+      // El panel construido. Va solo en los entornos que se despliegan: en
+      // local lo sirve `vite dev` con proxy al Worker, y las pruebas no deben
+      // depender de que alguien haya corrido `panel:build`.
+      //
+      // `run_worker_first` es la lista de lo que NO es un archivo: sin ella,
+      // una ruta de la API que coincidiera con un archivo del panel se serviría
+      // como estático. `single-page-application` hace que cualquier otra ruta
+      // devuelva index.html, que es lo que necesita el enrutador del panel.
+      "assets": {
+        "directory": "./panel/dist",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*", "/salud", "/mcp"]
+      },
+      // `routes` se HEREDA en los entornos con nombre: sin este [] vacío,
+      // staging se llevaría panel.babycaleb.com y ruta.babycaleb.com
+      // (08-operacion.md §1, trampa que ya costó en D'Casa). Y workers_dev se
+      // declara explícito porque con routes y sin él, wrangler lo apaga.
+      "routes": [],
+      "workers_dev": true,
+      // Los entornos con nombre no heredan los triggers del nivel raíz.
+      "triggers": { "crons": ["*/5 * * * *"] },
+      // workers.dev queda vivo en staging, protegido por Access.
+      "d1_databases": [
+        { "binding": "DB", "database_name": "babycaleb-db-staging", "database_id": "21fa70c6-df84-463f-9543-0669fb3ea487", "migrations_dir": "migrations" }
+      ],
+      "r2_buckets": [
+        { "binding": "PRIVADO", "bucket_name": "babycaleb-privado-staging" }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "AVISOS", "queue": "bc-avisos-staging" },
+          { "binding": "TAREAS", "queue": "bc-tareas-staging" }
+        ],
+        "consumers": [
+          { "queue": "bc-tareas-staging", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 5, "dead_letter_queue": "bc-tareas-staging-muertos" },
+          { "queue": "bc-tareas-staging-muertos", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 1 },
+          { "queue": "bc-avisos-staging-muertos", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 1 }
+        ]
+      },
+      "ratelimits": [
+        { "name": "LIMITE_CHECKOUT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+        { "name": "LIMITE_CODIGOS", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+      ],
+      "vars": { "ENTORNO": "staging", "VERSION": "dev", "HSTS": "no", "ACCESS_EQUIPO": "", "ACCESS_AUD": "" }
+    },
+
+    "production": {
+      "name": "babycaleb-sistema",
+      "observability": { "enabled": true },
+      // El panel construido. Va solo en los entornos que se despliegan: en
+      // local lo sirve `vite dev` con proxy al Worker, y las pruebas no deben
+      // depender de que alguien haya corrido `panel:build`.
+      //
+      // `run_worker_first` es la lista de lo que NO es un archivo: sin ella,
+      // una ruta de la API que coincidiera con un archivo del panel se serviría
+      // como estático. `single-page-application` hace que cualquier otra ruta
+      // devuelva index.html, que es lo que necesita el enrutador del panel.
+      "assets": {
+        "directory": "./panel/dist",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*", "/salud", "/mcp"]
+      },
+      // Los entornos con nombre no heredan los triggers del nivel raíz.
+      "triggers": { "crons": ["*/5 * * * *"] },
+      // Nada de puertas traseras en producción: solo los dominios de §3.
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        { "pattern": "panel.babycaleb.com", "custom_domain": true },
+        { "pattern": "ruta.babycaleb.com", "custom_domain": true }
+      ],
+      "d1_databases": [
+        { "binding": "DB", "database_name": "babycaleb-db", "database_id": "3f96b1a3-8d35-4957-9a4a-48451dcbc28b", "migrations_dir": "migrations" }
+      ],
+      "r2_buckets": [
+        { "binding": "PRIVADO", "bucket_name": "babycaleb-privado" }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "AVISOS", "queue": "bc-avisos" },
+          { "binding": "TAREAS", "queue": "bc-tareas" }
+        ],
+        "consumers": [
+          { "queue": "bc-tareas", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 5, "dead_letter_queue": "bc-tareas-muertos" },
+          { "queue": "bc-tareas-muertos", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 1 },
+          { "queue": "bc-avisos-muertos", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 1 }
+        ]
+      },
+      "ratelimits": [
+        { "name": "LIMITE_CHECKOUT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+        { "name": "LIMITE_CODIGOS", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+      ],
+      "vars": { "ENTORNO": "production", "VERSION": "dev", "HSTS": "no", "ACCESS_EQUIPO": "", "ACCESS_AUD": "" }
+    }
+  }
+}

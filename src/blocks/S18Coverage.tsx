@@ -42,12 +42,12 @@ export default function S18Coverage() {
 
           <div className="space-y-6">
             <div className="flex gap-4">
-              <Phone className="w-6 h-6 text-sage flex-shrink-0" />
+              <Phone className="w-6 h-6 text-sage-strong flex-shrink-0" />
               <div>
                 <h4 className="font-bold text-fg mb-1">Teléfono / WhatsApp</h4>
                 <a
                   href={`tel:${nap.phone.replace(/ /g, '')}`}
-                  className="text-muted hover:text-accent transition-colors"
+                  className="text-muted hover:text-accent-strong transition-colors"
                 >
                   {nap.phone}
                 </a>
@@ -55,7 +55,7 @@ export default function S18Coverage() {
             </div>
 
             <div className="flex gap-4">
-              <Clock className="w-6 h-6 text-sage flex-shrink-0" />
+              <Clock className="w-6 h-6 text-sage-strong flex-shrink-0" />
               <div>
                 <h4 className="font-bold text-fg mb-1">Horario</h4>
                 {nap.hours.map((h, i) => (
@@ -67,7 +67,7 @@ export default function S18Coverage() {
             </div>
 
             <div className="flex gap-4">
-              <MapPin className="w-6 h-6 text-sage flex-shrink-0" />
+              <MapPin className="w-6 h-6 text-sage-strong flex-shrink-0" />
               <div>
                 <h4 className="font-bold text-fg mb-1">Cobertura</h4>
                 <p className="text-muted">{nap.address}</p>
@@ -79,7 +79,7 @@ export default function S18Coverage() {
         <div className="grid gap-6">
           <div className="cov-block bg-surface border border-line rounded-2xl p-6 md:p-8">
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center text-sage">
+              <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center text-sage-strong">
                 <Truck size={20} />
               </div>
               <h3 className="font-bold text-lg text-fg">Delivery</h3>
@@ -88,7 +88,7 @@ export default function S18Coverage() {
               {coverage.delivery.map((d, i) => (
                 <li key={i} className="flex items-start justify-between gap-4 text-sm border-b border-line last:border-b-0 pb-3 last:pb-0">
                   <span className="text-fg">{d.zona}</span>
-                  <span className="mono text-xs text-accent whitespace-nowrap">{d.costo}</span>
+                  <span className="mono text-xs text-accent-strong whitespace-nowrap">{d.costo}</span>
                 </li>
               ))}
             </ul>
@@ -96,7 +96,7 @@ export default function S18Coverage() {
 
           <div className="cov-block bg-surface border border-line rounded-2xl p-6 md:p-8">
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center text-sage">
+              <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center text-sage-strong">
                 <MessageCircle size={20} />
               </div>
               <h3 className="font-bold text-lg text-fg">Cómo pedir</h3>

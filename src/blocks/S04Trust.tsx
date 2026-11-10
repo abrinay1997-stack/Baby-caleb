@@ -33,7 +33,7 @@ export default function S04Trust() {
           const Icon = iconMap[item.icon] || Heart;
           return (
             <div key={idx} className="trust-item flex flex-col items-center text-center gap-4">
-              <div className="w-16 h-16 rounded-full bg-bg flex items-center justify-center text-sage shadow-soft">
+              <div className="w-16 h-16 rounded-full bg-bg flex items-center justify-center text-sage-strong shadow-soft">
                 <Icon size={32} strokeWidth={1.5} />
               </div>
               <span className="font-display font-bold text-fg text-sm md:text-base">
