@@ -44,7 +44,6 @@ PRODUCTOS Y PRECIOS (verificados; confirma disponibilidad y promos vigentes con 
   Pañales NATEEN PANTS (tipo pantaloncito), solo tallas L a XXL, caja de 160u a $55:
   Pants L 9–14 kg (19–31 lb) · Pants XL 12–17 kg (26–37.5 lb) · Pants XXL más de 15 kg (más de 33 lb)
   Para prematuros y recién nacidos es la talla RN. Solo se venden cajas completas: no hay paquetes sueltos ni presentaciones pequeñas.
-- Wipes Nateen: hipoalergénicos, en caja grande (12 paquetes de 80 = 960 toallitas) por $45.
 - Wipes de agua Dany Baby (agua 99% pura): caja de 12 paquetes de 50 = 600 toallitas por $25. Ya no hay combo de 2 cajas.
 - Fulares/portabebés Moon: unitalla ajustable, de recién nacido hasta ~25 lbs. $46.
 
