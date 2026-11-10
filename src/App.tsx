@@ -13,6 +13,7 @@ import Chatbot from './components/Chatbot';
 
 import Home from './pages/Home';
 import Productos from './pages/Productos';
+import FichaProducto from './pages/FichaProducto';
 import Beneficios from './pages/Beneficios';
 import ComoComprar from './pages/ComoComprar';
 import FAQ from './pages/FAQ';
@@ -46,6 +47,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/productos" element={<Productos />} />
+          {/* La ficha de una variante (F3.7). Va DESPUÉS de /productos para que
+              la lista no se la coma. */}
+          <Route path="/productos/:slug" element={<FichaProducto />} />
           <Route path="/beneficios" element={<Beneficios />} />
           <Route path="/historia" element={<Historia />} />
           <Route path="/tips" element={<Tips />} />

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { catalogo, type SistemaWebBinding } from "./catalogo";
 
 /**
@@ -35,11 +35,23 @@ const sistema = (sobre: Partial<SistemaWebBinding> = {}): SistemaWebBinding => (
   ...sobre,
 });
 
-// Cada prueba con su propia URL: la caché del borde es de verdad y es
-// compartida, así que dos pruebas con la misma URL se contaminarían.
-let n = 0;
+// La caché del borde es DE VERDAD, y desde F3.7 la llave es fija —
+// `/api/catalogo`, sin el query— para que `/api/catalogo` y el <head> de cada
+// ficha de producto compartan la misma entrada. Eso es lo que se quiere en
+// producción, y es exactamente lo que hace que dos pruebas se contaminen: la
+// primera deja su respuesta guardada y la segunda la recibe sin tocar el
+// binding que acaba de inyectar.
+//
+// Así que se borra a mano antes de cada prueba. Poner una URL distinta por
+// prueba ya NO aísla: la llave las colapsa todas en una.
+const LLAVE = new Request("https://babycaleb.com/api/catalogo");
+
+beforeEach(async () => {
+  await caches.default.delete(LLAVE);
+});
+
 const pedir = (s?: SistemaWebBinding) =>
-  catalogo(new Request(`https://babycaleb.com/api/catalogo?p=${n++}`), s);
+  catalogo(new Request("https://babycaleb.com/api/catalogo"), s);
 
 describe("el camino normal", () => {
   it("devuelve el catálogo del sistema y lo dice", async () => {
@@ -106,7 +118,7 @@ describe("cuando el sistema no contesta, la web sigue en pie", () => {
     // copia durante ese minuto aunque el sistema volviera al segundo
     // siguiente. El respaldo es para el momento malo, no para el minuto
     // siguiente al momento malo.
-    const url = `https://babycaleb.com/api/catalogo?nocache=${n++}`;
+    const url = "https://babycaleb.com/api/catalogo";
     const caido = sistema({
       async catalogo() {
         throw new Error("sin red");

@@ -1,7 +1,8 @@
-import { catalogo } from "./catalogo";
+import { catalogo, variantesDelCatalogo } from "./catalogo";
 import { chat } from "./chat";
 import type { Env } from "./env";
 import { reescribirHead } from "./head";
+import { slugDeRuta } from "../src/seo/producto";
 
 /**
  * `babycaleb-web`: la misma web, servida desde Cloudflare.
@@ -81,6 +82,14 @@ export default {
     const tipo = estatico.headers.get("content-type") ?? "";
     if (!tipo.includes("text/html")) return estatico;
 
-    return conCabeceras(reescribirHead(estatico, url, siteUrl, env.CF_ANALYTICS_TOKEN));
+    // El catálogo solo se pide para las fichas de producto: las otras seis
+    // páginas no lo necesitan y no tienen por qué pagar la consulta.
+    const variantes = slugDeRuta(url.pathname)
+      ? await variantesDelCatalogo(peticion, env.SISTEMA)
+      : [];
+
+    return conCabeceras(
+      reescribirHead(estatico, url, siteUrl, env.CF_ANALYTICS_TOKEN, variantes),
+    );
   },
 } satisfies ExportedHandler<Env>;

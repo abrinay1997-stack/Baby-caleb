@@ -3,10 +3,26 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig, type Plugin} from 'vite';
 
+import { RUTAS } from './src/seo/rutas';
+import respaldo from './src/data/catalogo.respaldo.json';
+
 // Reemplaza el token %SITE_URL% en index.html con la URL absoluta del sitio.
 // Netlify inyecta `URL` (dominio de producción) en el build; en local queda
 // vacío → las URLs relativas siguen funcionando para dev/preview.
-const ROUTES = ['/', '/productos', '/beneficios', '/historia', '/tips', '/como-comprar', '/faq'];
+//
+// Las rutas salen de `src/seo/rutas.ts`, que es el mismo archivo que leen el
+// Worker y el componente Seo. Antes había aquí una lista escrita a mano: dos
+// listas de rutas es que alguien añada una página, la vea funcionar, y Google
+// no se entere nunca porque el sitemap se quedó con la lista vieja.
+//
+// Las fichas de producto (F3.7) se sacan de la copia del catálogo. Es la única
+// forma de que Google las encuentre: no hay enlaces hacia ellas todavía.
+const ROUTES: string[] = [
+  ...Object.keys(RUTAS),
+  ...((respaldo as { variantes?: { slug: string }[] }).variantes ?? []).map(
+    (v) => `/productos/${v.slug}`
+  ),
+];
 
 function siteUrlHtml(): Plugin {
   const siteUrl = (process.env.SITE_URL || process.env.URL || '').replace(/\/$/, '');

@@ -16,9 +16,18 @@ import { RUTAS, SITE_NAME, metaDe } from '../seo/rutas';
  */
 interface SeoProps {
   /** La ruta, ej. "/productos". Sus textos salen de `seo/rutas.ts`. */
-  ruta: keyof typeof RUTAS;
-  /** JSON-LD específico de la página (ej. FAQPage). */
+  ruta: keyof typeof RUTAS | string;
+  /** JSON-LD específico de la página (ej. FAQPage, Product). */
   jsonLd?: Record<string, unknown>;
+  /**
+   * Título y descripción ya resueltos, para las páginas que NO están en la
+   * lista fija: las fichas de producto, cuyos textos salen del catálogo
+   * (F3.7). Si viene, manda sobre `rutas.ts`.
+   *
+   * Es la única forma de que la ficha diga lo mismo aquí que en el HTML que
+   * manda el Worker: los dos arman el texto con `metaDeProducto`.
+   */
+  meta?: { title: string; description: string };
 }
 const JSONLD_ID = 'route-jsonld';
 
@@ -42,9 +51,9 @@ function upsertCanonical(href: string) {
   el.setAttribute('href', href);
 }
 
-export default function Seo({ ruta, jsonLd }: SeoProps) {
+export default function Seo({ ruta, jsonLd, meta: metaDada }: SeoProps) {
   useEffect(() => {
-    const meta = metaDe(ruta);
+    const meta = metaDada ?? metaDe(ruta);
     if (!meta) return;
     const { title, description } = meta;
     const url = `${window.location.origin}${ruta}`;
@@ -70,7 +79,7 @@ export default function Seo({ ruta, jsonLd }: SeoProps) {
     return () => {
       script?.remove();
     };
-  }, [ruta, jsonLd]);
+  }, [ruta, jsonLd, metaDada]);
 
   return null;
 }

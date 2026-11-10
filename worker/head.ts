@@ -1,4 +1,10 @@
-import { metaDe, seIndexa } from "../src/seo/rutas";
+import { metaDe, seIndexa, type MetaDeRuta } from "../src/seo/rutas";
+import {
+  jsonLdProducto,
+  metaDeProducto,
+  slugDeRuta,
+  type VarianteParaFicha,
+} from "../src/seo/producto";
 
 /**
  * El `<head>` correcto ANTES de que el navegador ejecute nada.
@@ -80,17 +86,55 @@ class Analitica {
   }
 }
 
+/** Cuelga un `<script type="application/ld+json">` al final del `<head>`. */
+class DatosEstructurados {
+  constructor(private readonly datos: Record<string, unknown>) {}
+  element(el: Element): void {
+    // `</` se escapa porque un `</script>` dentro del JSON cerraría la etiqueta
+    // antes de tiempo y el resto se interpretaría como marcado. Hoy ningún
+    // nombre del catálogo lleva eso, pero los nombres los escribe una persona
+    // en un panel y esta es la frontera donde ese texto se vuelve HTML.
+    const json = JSON.stringify(this.datos).replace(/<\//g, "<\\/");
+    el.append(`<script type="application/ld+json">${json}</script>`, { html: true });
+  }
+}
+
 export function reescribirHead(
   respuesta: Response,
   url: URL,
   siteUrl: string,
   tokenAnalitica?: string,
+  /**
+   * El catálogo, solo para las fichas de producto (F3.7).
+   *
+   * Llega por parámetro y no se pide aquí dentro para que esta función siga
+   * sin efectos: recibe datos, devuelve HTML. Quien la llama decide si le
+   * cuesta una consulta —solo en `/productos/<slug>`— o no.
+   */
+  variantes: readonly VarianteParaFicha[] = [],
 ): Response {
   const camino = url.pathname;
-  const meta = metaDe(camino);
   const canonico = `${siteUrl}${camino === "/" ? "/" : camino}`;
 
+  // La ficha de un producto: su `<head>` sale del CATÁLOGO, no de una lista
+  // escrita a mano. Si el slug no existe —un enlace viejo, un producto
+  // retirado— no se inventa una ficha: se deja el <head> de fábrica y se marca
+  // noindex más abajo, para que Google no guarde una página que no hay.
+  const slug = slugDeRuta(camino);
+  const variante = slug === null ? undefined : variantes.find((v) => v.slug === slug);
+
+  let meta: MetaDeRuta | null;
+  if (slug !== null) {
+    meta = variante === undefined ? null : metaDeProducto(variante);
+  } else {
+    meta = metaDe(camino);
+  }
+
   let rw = new HTMLRewriter();
+
+  if (variante !== undefined) {
+    rw = rw.on("head", new DatosEstructurados(jsonLdProducto(variante, canonico)));
+  }
 
   if (meta !== null) {
     rw = rw
@@ -104,7 +148,9 @@ export function reescribirHead(
       .on('link[rel="canonical"]', new Href(canonico));
   }
 
-  if (!seIndexa(camino)) {
+  // Una ficha cuyo slug no está en el catálogo tampoco se indexa: es una URL
+  // que no corresponde a nada que se pueda comprar.
+  if (!seIndexa(camino) || (slug !== null && variante === undefined)) {
     rw = rw.on('meta[name="robots"]', new Contenido("noindex, nofollow"));
   }
 

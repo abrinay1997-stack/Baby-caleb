@@ -1,4 +1,5 @@
 import respaldo from "../src/data/catalogo.respaldo.json";
+import type { VarianteParaFicha } from "../src/seo/producto";
 
 /**
  * `/api/catalogo`: el precio y la disponibilidad, desde el sistema (F3.5).
@@ -50,9 +51,20 @@ function respuesta(cuerpo: unknown, desdeRespaldo: boolean): Response {
   });
 }
 
+/**
+ * La llave de la caché, SIEMPRE la misma.
+ *
+ * El catálogo lo piden dos sitios: `/api/catalogo` y el reescritor del `<head>`
+ * cuando sirve una ficha de producto. Si cada uno guardara con la URL de SU
+ * petición, cada ficha sería una consulta aparte y la caché no serviría para
+ * nada justo donde más visitas hay. Con una llave fija, los dos comparten la
+ * misma entrada y un minuto de tráfico sigue siendo UNA consulta.
+ */
+const llave = (peticion: Request) => new Request(new URL("/api/catalogo", peticion.url));
+
 export async function catalogo(peticion: Request, sistema?: SistemaWebBinding): Promise<Response> {
   const cache = caches.default;
-  const guardada = await cache.match(peticion);
+  const guardada = await cache.match(llave(peticion));
   if (guardada) return guardada;
 
   let salida: Response;
@@ -81,8 +93,26 @@ export async function catalogo(peticion: Request, sistema?: SistemaWebBinding): 
   // un minuto de base caída dejaría a la web enseñando el respaldo durante ese
   // minuto aunque el sistema volviera al segundo siguiente.
   if (salida.headers.get("x-catalogo-origen") === "sistema") {
-    await cache.put(peticion, salida.clone());
+    await cache.put(llave(peticion), salida.clone());
   }
 
   return salida;
+}
+
+/**
+ * Las variantes, para quien no quiere una respuesta HTTP sino los datos.
+ *
+ * Lo usa el reescritor del `<head>` para armar la ficha de un producto. Pasa
+ * por `catalogo()` a propósito y no por el binding directo: así comparte la
+ * caché del borde, el repliegue a la copia del build y la decisión de no
+ * guardar esa copia. Un segundo camino hacia los mismos datos es un segundo
+ * sitio donde las reglas se olvidan.
+ */
+export async function variantesDelCatalogo(
+  peticion: Request,
+  sistema?: SistemaWebBinding,
+): Promise<VarianteParaFicha[]> {
+  const r = await catalogo(peticion, sistema);
+  const d = (await r.json()) as { variantes?: VarianteParaFicha[] };
+  return d.variantes ?? [];
 }
