@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { type Yo, dinero, useCarga } from "../api";
 import { EditarVariante, type VarianteEditable } from "./EditarVariante";
+import { NuevoProducto } from "./NuevoProducto";
 import { Carga, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
 
 interface Variante {
@@ -39,6 +40,7 @@ export function Catalogo() {
   const [recarga, setRecarga] = useState(0);
   const estado = useCarga<DatosCatalogo>("/api/catalogo", [recarga]);
   const [editando, setEditando] = useState<VarianteEditable | null>(null);
+  const [creando, setCreando] = useState(false);
 
   // Ofrecer el botón a quien no puede no es amable, es enseñarle a ignorar los
   // errores. Quien sí puede lo comprueba igual el servidor.
@@ -61,6 +63,16 @@ export function Catalogo() {
                 {d.muestraCosto ? null : " Su rol no ve el costo ni el margen."}
               </p>
             </Tarjeta>
+
+            {puedeTocar ? (
+              <button
+                type="button"
+                onClick={() => setCreando(true)}
+                className="tactil w-full rounded-[14px] bg-accent px-4 py-3 font-bold text-accent-fg focus-visible:outline-accent-edge focus-visible:outline-2 md:w-auto md:justify-self-start"
+              >
+                + Producto nuevo
+              </button>
+            ) : null}
 
             <Rejilla
               columnas={
@@ -121,6 +133,12 @@ export function Catalogo() {
                 </Fila>
               ))}
             </Rejilla>
+
+            <NuevoProducto
+              abierta={creando}
+              alCerrar={() => setCreando(false)}
+              alCrear={() => setRecarga((n) => n + 1)}
+            />
 
             <EditarVariante
               variante={editando}

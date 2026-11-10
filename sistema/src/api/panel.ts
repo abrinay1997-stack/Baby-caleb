@@ -14,6 +14,7 @@ import {
   borrarVariante,
   comoSeBorra,
   crearProducto,
+  crearProductoConVariante,
   crearVariante,
   editarVariante,
   explicar,
@@ -294,6 +295,38 @@ function registrarRutas(panel: Hono<Entorno>): void {
       slug: texto(b["slug"]) ?? "",
       ...(texto(b["marca"]) === undefined ? {} : { marca: texto(b["marca"]) as string }),
     });
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Producto y su primera presentación, de una sola vez.
+   *
+   * En dos llamadas, si la segunda falla queda un producto sin variantes — y
+   * ese no se puede ver ni arreglar desde el panel, porque la lista sale de
+   * `variantes JOIN productos`. Un batch de D1 es una transacción.
+   */
+  panel.post("/catalogo/altas", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await crearProductoConVariante(
+      contextoCatalogo(c),
+      {
+        familia: texto(b["familia"]) ?? "",
+        nombre: texto(b["nombre"]) ?? "",
+        slug: texto(b["slug"]) ?? "",
+      },
+      {
+        codigo: (texto(b["codigo"]) ?? "").trim().toUpperCase(),
+        nombre: texto(b["nombre"]) ?? "",
+        ...(texto(b["talla"]) === undefined ? {} : { talla: texto(b["talla"]) as string }),
+        unidadesPorCaja: entero(b["unidadesPorCaja"]) ?? 0,
+        precioCents: entero(b["precioCents"]) ?? 0,
+        ...(entero(b["tasaItbmsBp"]) === undefined
+          ? {}
+          : { tasaItbmsBp: entero(b["tasaItbmsBp"]) as number }),
+      },
+    );
     return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
   });
 

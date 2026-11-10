@@ -440,3 +440,48 @@ describe("el catálogo se puede cambiar, y solo por quien debe", () => {
     expect(v?.nombre).toBe("Pañal Nateen M");
   });
 });
+
+describe("dar de alta un producto no deja huérfanos", () => {
+  /**
+   * El hueco: en dos llamadas —producto, luego variante— si la segunda falla
+   * queda un producto SIN NINGUNA VARIANTE. Y ese no se ve ni se arregla desde
+   * el panel, porque la lista del catálogo sale de `variantes JOIN productos`:
+   * lo que no tiene variantes no aparece en ninguna parte. Es un registro
+   * fantasma con otro nombre.
+   */
+  it("si el código ya existe, NO queda un producto suelto", async () => {
+    await sembrarCatalogo();
+    const antes = await real.DB.prepare("SELECT COUNT(*) AS n FROM productos").first<{ n: number }>();
+
+    const r = await mandar(entrandoComo("duena"), "POST", "/catalogo/altas", {
+      familia: "panal",
+      nombre: "Producto que no debería quedar",
+      codigo: "NAT-M", // ya existe
+      unidadesPorCaja: 10,
+      precioCents: 1000,
+    });
+    expect(r.estado).toBe(409);
+
+    const despues = await real.DB.prepare("SELECT COUNT(*) AS n FROM productos").first<{ n: number }>();
+    expect(despues?.n, "el producto no se quedó a medias").toBe(antes?.n);
+  });
+
+  it("cuando sale bien, quedan los dos y sin publicar", async () => {
+    await sembrarCatalogo();
+    const r = await mandar(entrandoComo("duena"), "POST", "/catalogo/altas", {
+      familia: "wipes",
+      nombre: "Wipes de agua",
+      codigo: "AGUA-600",
+      unidadesPorCaja: 12,
+      precioCents: 2500,
+    });
+    expect(r.estado).toBe(201);
+
+    const v = await real.DB.prepare(
+      `SELECT v.publicado, p.nombre AS producto FROM variantes v
+         JOIN productos p ON p.id = v.producto_id WHERE v.codigo = 'AGUA-600'`,
+    ).first<{ publicado: number; producto: string }>();
+    expect(v?.producto).toBe("Wipes de agua");
+    expect(v?.publicado).toBe(0);
+  });
+});

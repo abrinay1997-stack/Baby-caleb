@@ -585,3 +585,87 @@ export function enunciadosDeBorradoReal(
 
   return enunciados;
 }
+
+/**
+ * Dar de alta un producto con su primera presentación, de una sola vez.
+ *
+ * Son dos tablas, y hacerlo en dos llamadas deja un hueco: si la segunda falla
+ * —un código repetido, por ejemplo— queda un producto SIN NINGUNA VARIANTE. Y
+ * ese producto no se puede ver ni arreglar desde el panel, porque la lista del
+ * catálogo sale de `variantes JOIN productos`: lo que no tiene variantes no
+ * aparece en ninguna parte. Es un registro fantasma con otro nombre, y en una
+ * base que nadie mira crece sin que nada falle.
+ *
+ * Un batch de D1 es una transacción: entran los dos o no entra ninguno.
+ */
+export async function crearProductoConVariante(
+  ctx: ContextoCatalogo,
+  producto: ProductoNuevo,
+  variante: Omit<VarianteNueva, "productoId">,
+): Promise<Resultado<{ id: string; codigo: string }>> {
+  const nombre = producto.nombre.trim();
+  if (nombre === "") return fallo("entrada_invalida", "el producto necesita un nombre");
+
+  const slug = producto.slug.trim() === "" ? slugDe(nombre) : slugDe(producto.slug);
+  if (slug === "") return fallo("entrada_invalida", "ese nombre no da una dirección web usable");
+
+  const malCodigo = revisarCodigo(variante.codigo);
+  if (malCodigo !== null) return fallo("entrada_invalida", malCodigo);
+
+  const nombreVariante = variante.nombre.trim();
+  if (nombreVariante === "") return fallo("entrada_invalida", "la variante necesita un nombre");
+  if (!Number.isSafeInteger(variante.precioCents) || variante.precioCents <= 0) {
+    return fallo("entrada_invalida", "el precio tiene que ser mayor que cero");
+  }
+  if (!Number.isSafeInteger(variante.unidadesPorCaja) || variante.unidadesPorCaja <= 0) {
+    return fallo("entrada_invalida", "las unidades por caja tienen que ser mayor que cero");
+  }
+
+  const id = ulid(ctx.ahora);
+  try {
+    await ctx.db.batch([
+      ctx.db
+        .prepare(
+          `INSERT INTO productos (id,familia,nombre,slug,marca,activo,orden,creado_en)
+           VALUES (?,?,?,?,?,1,0,?)`,
+        )
+        .bind(id, producto.familia, nombre, slug, producto.marca ?? null, ctx.ahora),
+      ctx.db
+        .prepare(
+          `INSERT INTO variantes (codigo,producto_id,nombre,talla,unidades_por_caja,
+             precio_cents,tasa_itbms_bp,publicado,activo,version,actualizado_en)
+           VALUES (?,?,?,?,?,?,?,0,1,1,?)`,
+        )
+        .bind(
+          variante.codigo,
+          id,
+          nombreVariante,
+          variante.talla ?? null,
+          variante.unidadesPorCaja,
+          variante.precioCents,
+          variante.tasaItbmsBp ?? null,
+          ctx.ahora,
+        ),
+      ctx.db
+        .prepare(
+          `INSERT INTO precios_historial (id,codigo,precio_cents,vigente_desde,cambiado_por,motivo)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .bind(ulid(ctx.ahora), variante.codigo, variante.precioCents, ctx.ahora, ctx.actor, "alta"),
+    ]);
+  } catch (e) {
+    const t = e instanceof Error ? e.message : String(e);
+    if (/UNIQUE|PRIMARY/i.test(t)) {
+      // Puede ser el slug del producto o el código de la variante. Se dicen
+      // los dos: decir «ya existe» sin decir qué manda a mirar al sitio
+      // equivocado.
+      return fallo(
+        "repetido",
+        `Ya existe un producto con ese nombre, o una presentación con el código «${variante.codigo}».`,
+      );
+    }
+    return fallo("interno", t);
+  }
+
+  return ok({ id, codigo: variante.codigo });
+}
