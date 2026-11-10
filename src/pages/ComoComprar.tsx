@@ -6,11 +6,7 @@ import Seo from '../components/Seo';
 export default function ComoComprar() {
   return (
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
-      <Seo
-        title="Cómo comprar | Baby Caleb Panamá"
-        description="Haz tu pedido por WhatsApp en 3 pasos. Vendemos 100% online con entrega a domicilio en Ciudad de Panamá."
-        path="/como-comprar"
-      />
+      <Seo ruta="/como-comprar" />
       <h1 className="sr-only">Cómo comprar en Baby Caleb</h1>
       <div className="flex-grow">
         <S16HowToBuy />

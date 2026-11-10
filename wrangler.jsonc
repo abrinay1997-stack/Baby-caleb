@@ -1,0 +1,47 @@
+{
+  // `babycaleb-web`: la web servida desde Cloudflare (F1 del plan).
+  //
+  // Los `services` del ejemplo de 01-arquitectura §3 NO están todavía, y es a
+  // propósito: un binding a un Worker o a un entrypoint que no existe impide
+  // desplegar. `SISTEMA` entra en F3.5 (cuando la web lea el catálogo) y `CRM`
+  // en F3.6 (cuando el chat pase a `CanalWeb`).
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "babycaleb-web",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // La web es una SPA: cualquier ruta que no sea un archivo devuelve
+    // index.html y el enrutador del navegador decide qué pintar.
+    "not_found_handling": "single-page-application",
+    // El Worker corre primero SOLO donde hace falta. Todo lo demás —imágenes,
+    // JavaScript, hojas de estilo— sale directo del borde sin pagar un Worker.
+    "run_worker_first": [
+      "/api/*",
+      "/",
+      "/productos",
+      "/productos/*",
+      "/beneficios",
+      "/historia",
+      "/tips",
+      "/como-comprar",
+      "/faq",
+      "/seguimiento/*",
+      "/carrito",
+      "/mi-cuenta/*",
+      "/pedido/*"
+    ]
+  },
+
+  // SITE_URL manda sobre el `Host` de la petición: con el Host, el canónico de
+  // una vista previa apuntaría a la vista previa y Google indexaría esa.
+  // Se queda vacío hasta que exista babycaleb.com (F0.1); vacío, se usa el
+  // origen de la petición, que es lo correcto mientras se prueba en workers.dev.
+  "vars": { "VERSION": "dev", "SITE_URL": "" }
+
+  // Secretos: GROQ_API_KEY (wrangler secret put GROQ_API_KEY)
+}

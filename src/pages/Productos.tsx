@@ -7,11 +7,7 @@ import Seo from '../components/Seo';
 export default function Productos() {
   return (
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
-      <Seo
-        title="Catálogo | Pañales y Wipes Nateen — Baby Caleb Panamá"
-        description="Pañales Nateen de talla RN a XXL, wipes hipoalergénicos y fulares Moon. Precios por presentación y pedido directo por WhatsApp con entrega en Ciudad de Panamá."
-        path="/productos"
-      />
+      <Seo ruta="/productos" />
       <h1 className="sr-only">Catálogo de pañales y wipes hipoalergénicos Nateen</h1>
       <div className="flex-grow">
         <S09Products />

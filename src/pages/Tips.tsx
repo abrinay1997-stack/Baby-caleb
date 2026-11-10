@@ -6,11 +6,7 @@ import Seo from '../components/Seo';
 export default function Tips() {
   return (
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
-      <Seo
-        title="Tips y cuidado de la piel del bebé | Baby Caleb Panamá"
-        description="Consejos prácticos para evitar la pañalitis, entender qué significa 'sin cloro' y reconocer señales de irritación en la piel de tu bebé."
-        path="/tips"
-      />
+      <Seo ruta="/tips" />
       <h1 className="sr-only">Tips para cuidar la piel de tu bebé</h1>
       <div className="flex-grow">
         <S13Tips />

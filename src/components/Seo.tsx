@@ -1,15 +1,25 @@
 import { useEffect } from 'react';
+import { RUTAS, SITE_NAME, metaDe } from '../seo/rutas';
 
+/**
+ * El `<head>` al navegar DENTRO de la SPA.
+ *
+ * El Worker ya pone el `<head>` correcto en el HTML que manda (worker/head.ts),
+ * que es lo que leen WhatsApp y Meta. Pero al moverse entre páginas sin
+ * recargar no hay petición al servidor, así que el título lo tiene que cambiar
+ * el navegador: eso es esto.
+ *
+ * Los textos NO se pasan por propiedades: se piden por RUTA a `seo/rutas.ts`,
+ * que es el mismo archivo que lee el Worker. Antes vivían escritos en cada
+ * página, y eso significaba que el día que alguien cambiara uno, el enlace
+ * compartido por WhatsApp diría una cosa y la pestaña del navegador otra.
+ */
 interface SeoProps {
-  title: string;
-  description: string;
-  /** Ruta canónica, ej. "/productos". Por defecto la actual. */
-  path?: string;
-  /** JSON-LD adicional específico de la página (ej. FAQPage). */
+  /** La ruta, ej. "/productos". Sus textos salen de `seo/rutas.ts`. */
+  ruta: keyof typeof RUTAS;
+  /** JSON-LD específico de la página (ej. FAQPage). */
   jsonLd?: Record<string, unknown>;
 }
-
-const SITE_NAME = 'Baby Caleb Panamá';
 const JSONLD_ID = 'route-jsonld';
 
 function upsertMeta(attr: 'name' | 'property', key: string, content: string) {
@@ -32,11 +42,12 @@ function upsertCanonical(href: string) {
   el.setAttribute('href', href);
 }
 
-export default function Seo({ title, description, path, jsonLd }: SeoProps) {
+export default function Seo({ ruta, jsonLd }: SeoProps) {
   useEffect(() => {
-    const origin = window.location.origin;
-    const routePath = path ?? window.location.pathname;
-    const url = `${origin}${routePath}`;
+    const meta = metaDe(ruta);
+    if (!meta) return;
+    const { title, description } = meta;
+    const url = `${window.location.origin}${ruta}`;
 
     document.title = title;
     upsertMeta('name', 'description', description);
@@ -59,7 +70,7 @@ export default function Seo({ title, description, path, jsonLd }: SeoProps) {
     return () => {
       script?.remove();
     };
-  }, [title, description, path, jsonLd]);
+  }, [ruta, jsonLd]);
 
   return null;
 }
