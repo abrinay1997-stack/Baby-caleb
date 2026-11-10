@@ -9,9 +9,15 @@
 # «alguien» a mano es exactamente lo que se olvida. Pasó: el primer despliegue
 # a staging murió en «Queue bc-tareas-staging-muertos does not exist».
 #
-# Crear una cola es idempotente desde fuera: si ya existe, wrangler se queja y
-# seguimos. Lo que NO se tolera es cualquier otro error, porque entonces el
-# despliegue de después fallaría igual y más lejos de la causa.
+# CÓMO SE SABE QUE UNA COLA YA ESTÁ
+#
+# NO leyendo el mensaje de error. La primera versión de este guion toleraba
+# «already exists»... y Cloudflare dice «is already taken». Resultado: el
+# segundo despliegue falló por una cola que SÍ existía. Adivinar la redacción
+# de un error ajeno es apostar a que nadie la cambie ni la traduzca.
+#
+# Así que: si crear falla, se PREGUNTA qué colas hay. Si la cola está en la
+# lista, ya estaba y seguimos; si no está, el fallo es de verdad.
 #
 #   .github/scripts/colas.sh staging|production
 set -euo pipefail
@@ -27,19 +33,24 @@ colas=(
   "bc-tareas${sufijo}-muertos"
 )
 
+existe() {
+  # `queues list` imprime una tabla. Se busca el nombre como palabra completa
+  # para que «bc-avisos» no case con «bc-avisos-muertos».
+  npx wrangler queues list 2>/dev/null | grep -qE "(^|[^a-z0-9-])$1([^a-z0-9-]|$)"
+}
+
 for cola in "${colas[@]}"; do
-  salida="$(npx wrangler queues create "$cola" 2>&1)" && {
+  if salida="$(npx wrangler queues create "$cola" 2>&1)"; then
     echo "creada: $cola"
     continue
-  }
+  fi
 
-  # «ya existe» no es un fallo: es el estado que queremos.
-  if grep -qiE "already exists|ya existe|queue with this name" <<<"$salida"; then
+  if existe "$cola"; then
     echo "ya estaba: $cola"
     continue
   fi
 
-  echo "::error::no se pudo crear la cola $cola"
+  echo "::error::no se pudo crear la cola $cola y tampoco existe"
   echo "$salida"
   exit 1
 done
