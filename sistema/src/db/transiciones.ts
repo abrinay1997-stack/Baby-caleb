@@ -162,8 +162,26 @@ export async function cancelar(
     );
   }
 
+  /**
+   * Lo que se APARTÓ, no lo que dice la línea.
+   *
+   * Una línea de combo nombra el combo, y un combo no tiene existencias: hay
+   * que devolver sus piezas. Y no se vuelve a leer la receta para saber
+   * cuáles — la receta puede haber cambiado desde la venta, y entonces se
+   * liberaría una cantidad distinta de la apartada, dejando la diferencia
+   * bloqueada para siempre sin que nada fallara.
+   *
+   * `pedido_linea_componentes` guarda exactamente lo que se quitó. Para una
+   * variante normal lleva una fila con ella misma, así que aquí no hay dos
+   * caminos: hay uno.
+   */
   const { results: lineas } = await ctx.db
-    .prepare("SELECT codigo, cantidad, bodega_id FROM pedido_lineas WHERE pedido_id = ?")
+    .prepare(
+      `SELECT plc.codigo, plc.cantidad, plc.bodega_id
+         FROM pedido_linea_componentes plc
+         JOIN pedido_lineas pl ON pl.id = plc.linea_id
+        WHERE pl.pedido_id = ?`,
+    )
     .bind(pedidoId)
     .all<{ codigo: string; cantidad: number; bodega_id: string }>();
 

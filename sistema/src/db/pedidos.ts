@@ -67,6 +67,7 @@ export interface ContextoPedido {
 }
 
 interface FilaVariante {
+  es_combo: number;
   codigo: string;
   nombre: string;
   precio_cents: number;
@@ -118,6 +119,15 @@ export async function crearPedido(
     precioUnitCents: number;
     itbmsBp: number;
     bodegaId: string;
+    /**
+     * Lo que hay que apartar de verdad.
+     *
+     * Para una variante normal es ella misma. Para un COMBO son sus piezas,
+     * con la receta YA MULTIPLICADA por lo pedido: lo que se guarda es lo
+     * apartado, no la receta de donde salió, porque la receta puede cambiar y
+     * al cancelar hay que devolver exactamente lo que se quitó.
+     */
+    componentes: { codigo: string; cantidad: number }[];
   }[] = [];
 
   for (const l of entrada.lineas) {
@@ -126,12 +136,38 @@ export async function crearPedido(
     }
 
     const v = await ctx.db
-      .prepare("SELECT codigo, nombre, precio_cents, tasa_itbms_bp, activo FROM variantes WHERE codigo = ?")
+      .prepare(
+        "SELECT codigo, nombre, precio_cents, tasa_itbms_bp, activo, es_combo FROM variantes WHERE codigo = ?",
+      )
       .bind(l.codigo)
       .first<FilaVariante>();
 
     if (v === null) return fallo("no_encontrado", `no existe la variante ${l.codigo}`);
     if (v.activo !== 1) return fallo("entrada_invalida", `${l.codigo} no está activo`);
+
+    // Un combo no tiene existencias propias: lo que se aparta son sus piezas.
+    // La receta se lee AQUÍ y se congela en `componentes`; de ahí sale lo que
+    // se guarda, y es lo que se devolverá al cancelar.
+    let componentes: { codigo: string; cantidad: number }[] = [];
+    if (v.es_combo === 1) {
+      const { results } = await ctx.db
+        .prepare("SELECT codigo, cantidad FROM combo_componentes WHERE combo_codigo = ?")
+        .bind(l.codigo)
+        .all<{ codigo: string; cantidad: number }>();
+
+      // Un combo sin receta no se vende. Es el mismo caso que en el catálogo,
+      // donde sale agotado: aquí, si se dejara pasar, se crearía un pedido que
+      // no aparta NADA y la mercancía se vendería dos veces.
+      if (results.length === 0) {
+        return fallo("sin_stock", `el combo ${l.codigo} no tiene componentes: no se puede armar`);
+      }
+      componentes = results.map((r) => ({
+        codigo: r.codigo,
+        cantidad: r.cantidad * l.cantidad,
+      }));
+    } else {
+      componentes = [{ codigo: v.codigo, cantidad: l.cantidad }];
+    }
 
     // La bodega: la que digan, o la que tenga con qué. Se elige MIRANDO lo
     // libre, pero esa lectura no garantiza nada —entre leer y escribir cabe
@@ -145,17 +181,29 @@ export async function crearPedido(
       if (b === null) return fallo("no_encontrado", `no existe la bodega «${l.bodega}»`);
       bodegaId = b.id;
     } else {
+      // La bodega tiene que poder con TODOS los componentes. Para una
+      // variante normal eso es ella sola; para un combo son sus piezas, y
+      // repartirlo entre dos bodegas sería una entrega que alguien tendría
+      // que armar a mano sin que el sistema lo dijera.
+      const faltanEn = componentes
+        .map(() => "(SELECT COALESCE(SUM(e.fisico - e.reservado), 0) FROM existencias e WHERE e.codigo = ? AND e.bodega_id = b.id) < ?")
+        .join(" OR ");
+      const valores = componentes.flatMap((c) => [c.codigo, c.cantidad]);
+
       const e = await ctx.db
         .prepare(
-          `SELECT e.bodega_id AS id FROM existencias e
-             JOIN bodegas b ON b.id = e.bodega_id
-            WHERE e.codigo = ? AND b.activa = 1 AND e.fisico - e.reservado >= ?
-            ORDER BY e.fisico - e.reservado DESC
-            LIMIT 1`,
+          `SELECT b.id AS id FROM bodegas b WHERE b.activa = 1 AND NOT (${faltanEn}) LIMIT 1`,
         )
-        .bind(l.codigo, l.cantidad)
+        .bind(...valores)
         .first<{ id: string }>();
-      if (e === null) return fallo("sin_stock", `no hay ${l.cantidad} de ${l.codigo} en ninguna bodega`);
+      if (e === null) {
+        return fallo(
+          "sin_stock",
+          v.es_combo === 1
+            ? `no hay con qué armar ${l.cantidad} de ${l.codigo} en ninguna bodega`
+            : `no hay ${l.cantidad} de ${l.codigo} en ninguna bodega`,
+        );
+      }
       bodegaId = e.id;
     }
 
@@ -170,6 +218,7 @@ export async function crearPedido(
       // guarda 0 y la auditoría de `reglas.json` es la que tiene que gritar.
       itbmsBp: v.tasa_itbms_bp ?? 0,
       bodegaId,
+      componentes,
     });
   }
 
@@ -228,37 +277,53 @@ export async function crearPedido(
   ];
 
   for (const l of resueltas) {
+    const lineaId = ulid(ctx.ahora);
     enunciados.push(
       ctx.db
         .prepare(
           `INSERT INTO pedido_lineas (id,pedido_id,codigo,nombre,cantidad,precio_unit_cents,itbms_bp,bodega_id)
            VALUES (?,?,?,?,?,?,?,?)`,
         )
-        .bind(ulid(ctx.ahora), pedidoId, l.codigo, l.nombre, l.cantidad, l.precioUnitCents, l.itbmsBp, l.bodegaId),
-      ctx.db
-        .prepare("UPDATE existencias SET reservado = reservado + ? WHERE codigo = ? AND bodega_id = ?")
-        .bind(l.cantidad, l.codigo, l.bodegaId),
-      // La fila de control, mirando el estado YA CAMBIADO.
-      //
-      // Lo que aporta, exactamente: que el UPDATE NO ENCUENTRE SU FILA. Un
-      // `UPDATE … WHERE codigo=? AND bodega_id=?` que no casa con nada no
-      // falla — afecta cero filas y sigue—, así que sin esto el pedido se
-      // crearía SIN NINGUNA RESERVA y nadie se enteraría hasta que faltara la
-      // mercancía. Pasa con una bodega que no tiene fila de existencias para
-      // ese código: recién creada, o un código que nunca estuvo ahí.
-      //
-      // Reservar de más NO lo caza esta fila: lo caza el
-      // `CHECK (reservado <= fisico)` de la propia tabla `existencias`. Vale
-      // la pena tenerlo claro para no creer que esta línea protege algo que
-      // protege otra.
-      ctx.db
-        .prepare(
-          `INSERT INTO controles (id, regla, ok, creado_en)
-           VALUES (?, ?, (SELECT COUNT(*) FROM existencias
-                          WHERE codigo = ? AND bodega_id = ? AND fisico >= reservado), ?)`,
-        )
-        .bind(ulid(ctx.ahora), `reservar:${l.codigo}`, l.codigo, l.bodegaId, ctx.ahora),
+        .bind(lineaId, pedidoId, l.codigo, l.nombre, l.cantidad, l.precioUnitCents, l.itbmsBp, l.bodegaId),
     );
+
+    // Lo que se aparta. Para una variante normal es ella misma; para un combo,
+    // sus piezas con la receta ya multiplicada.
+    for (const c of l.componentes) {
+      enunciados.push(
+        ctx.db
+          .prepare("UPDATE existencias SET reservado = reservado + ? WHERE codigo = ? AND bodega_id = ?")
+          .bind(c.cantidad, c.codigo, l.bodegaId),
+        // La fila de control, mirando el estado YA CAMBIADO.
+        //
+        // Lo que aporta, exactamente: que el UPDATE NO ENCUENTRE SU FILA. Un
+        // `UPDATE … WHERE codigo=? AND bodega_id=?` que no casa con nada no
+        // falla — afecta cero filas y sigue—, así que sin esto el pedido se
+        // crearía SIN NINGUNA RESERVA y nadie se enteraría hasta que faltara
+        // la mercancía. Pasa con una bodega que no tiene fila de existencias
+        // para ese código: recién creada, o un código que nunca estuvo ahí.
+        //
+        // Reservar de más NO lo caza esta fila: lo caza el
+        // `CHECK (reservado <= fisico)` de la propia tabla `existencias`. Vale
+        // la pena tenerlo claro para no creer que esta línea protege algo que
+        // protege otra.
+        ctx.db
+          .prepare(
+            `INSERT INTO controles (id, regla, ok, creado_en)
+             VALUES (?, ?, (SELECT COUNT(*) FROM existencias
+                            WHERE codigo = ? AND bodega_id = ? AND fisico >= reservado), ?)`,
+          )
+          .bind(ulid(ctx.ahora), `reservar:${c.codigo}`, c.codigo, l.bodegaId, ctx.ahora),
+        // Y se guarda LO APARTADO, no la receta: la receta puede cambiar, y al
+        // cancelar hay que devolver exactamente lo que se quitó.
+        ctx.db
+          .prepare(
+            `INSERT INTO pedido_linea_componentes (linea_id,codigo,bodega_id,cantidad)
+             VALUES (?,?,?,?)`,
+          )
+          .bind(lineaId, c.codigo, l.bodegaId, c.cantidad),
+      );
+    }
   }
 
   enunciados.push(
