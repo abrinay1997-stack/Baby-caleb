@@ -39,7 +39,10 @@ export function App() {
           {/* El motivo técnico va al final y en pequeño: sirve para contárselo
               a Juan, no para que la dueña lo descifre. */}
           {yo.codigo ? (
-            <p className="m-0 mt-3 text-[12px] text-muted">Detalle para soporte: {yo.codigo}</p>
+            <p className="m-0 mt-3 text-[12px] text-muted">
+              Detalle para soporte: {yo.codigo}
+              {yo.detalle === undefined ? "" : ` — ${yo.detalle}`}
+            </p>
           ) : null}
         </Tarjeta>
       </div>
