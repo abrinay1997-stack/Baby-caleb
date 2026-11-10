@@ -145,7 +145,10 @@ export async function subir(
  * si el producto no se borra, su foto tampoco se marca.
  */
 export function enunciadosParaBorrar(
-  ctx: ContextoArchivo,
+  // Solo la base y la hora: esta función NO toca R2 —ese es justo el punto del
+  // borrado diferido— y pedir el contexto entero obligaba a quien la llama a
+  // inventarse un R2 que no usa.
+  ctx: Pick<ContextoArchivo, "db" | "ahora">,
   claves: readonly string[],
   graciaMs = GRACIA_MS,
 ): D1PreparedStatement[] {
