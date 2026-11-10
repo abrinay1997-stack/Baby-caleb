@@ -10,6 +10,8 @@ import {
   revisarPeticion,
   usuarioDeCorreo,
 } from "../seguridad";
+import { EXTENSIONES, MAXIMO_BYTES, tipoDeImagen } from "../db/imagenes";
+import { claveDe, enunciadosParaBorrar, subir } from "../db/archivos";
 import {
   borrarVariante,
   comoSeBorra,
@@ -267,7 +269,7 @@ function registrarRutas(panel: Hono<Entorno>): void {
     // consulta.
     const { results } = await c.env.DB.prepare(
       `SELECT v.codigo, v.nombre, v.talla, v.unidades_por_caja, v.precio_cents,
-              v.tasa_itbms_bp, v.publicado, v.activo, v.version, p.familia, p.nombre AS producto
+              v.tasa_itbms_bp, v.publicado, v.activo, v.version, v.imagen, p.familia, p.nombre AS producto
               ${conCosto ? ", vi.unidades AS costo_unidades, vi.valor_cents AS costo_valor_cents" : ""}
        FROM variantes v
        JOIN productos p ON p.id = v.producto_id
@@ -402,6 +404,81 @@ function registrarRutas(panel: Hono<Entorno>): void {
             },
       ),
     );
+  });
+
+  /**
+   * La foto de un producto.
+   *
+   * El cuerpo son los bytes de la imagen, en crudo. El `Content-Type` que
+   * manda el navegador NO se usa para nada: el tipo sale de mirar los bytes
+   * (`tipoDeImagen`), porque la cabecera la escribe quien sube el archivo y
+   * guardarla tal cual permitiría colar un HTML con cara de imagen.
+   *
+   * La foto anterior se MARCA para borrar en el mismo batch que entra la
+   * nueva: así no quedan dos fotos ocupando por una que se ve, y si la subida
+   * se cae no se pierde la que había. Quitarla de R2 es cosa del barrido.
+   */
+  panel.put("/catalogo/variantes/:codigo/foto", exigeEditar("precios_y_stock"), async (c) => {
+    const codigo = c.req.param("codigo");
+    const existe = await c.env.DB.prepare("SELECT codigo, imagen FROM variantes WHERE codigo = ?")
+      .bind(codigo)
+      .first<{ codigo: string; imagen: string | null }>();
+    if (existe === null) return c.json(fallo("no_encontrado", "no existe esa variante"), 404);
+
+    const cuerpoBruto = await c.req.arrayBuffer();
+    if (cuerpoBruto.byteLength === 0) {
+      return c.json(fallo("entrada_invalida", "no llegó ninguna imagen"), 400);
+    }
+    if (cuerpoBruto.byteLength > MAXIMO_BYTES) {
+      return c.json(
+        fallo(
+          "limite",
+          `La imagen pesa ${Math.round(cuerpoBruto.byteLength / 1024 / 1024)} MB y el tope son 5 MB.`,
+        ),
+        413,
+      );
+    }
+
+    const tipo = tipoDeImagen(cuerpoBruto);
+    if (tipo === null) {
+      return c.json(
+        fallo("entrada_invalida", "Ese archivo no es una imagen (se aceptan JPG, PNG, WebP y AVIF)."),
+        400,
+      );
+    }
+
+    const ahora = Date.now();
+    const ctx = { db: c.env.DB, r2: c.env.PRIVADO, ahora, actor: c.get("usuario").correo };
+    const clave = claveDe("catalogo", codigo, EXTENSIONES[tipo], ahora);
+
+    const r = await subir(ctx, clave, cuerpoBruto, {
+      tipo: "catalogo",
+      mime: tipo,
+      bytes: cuerpoBruto.byteLength,
+      // La foto de un pañal no es un dato de nadie. Es lo ÚNICO que se marca
+      // así, y es lo que la deja salir por `/img/` sin sesión.
+      sensible: false,
+      referenciaTipo: "variante",
+      referenciaId: codigo,
+    });
+    if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+
+    // La fila apunta a la nueva y la vieja se marca, en un solo batch: si esto
+    // fallara a medias, o el producto se queda con la foto vieja o con la
+    // nueva, nunca sin ninguna.
+    const enunciados = [
+      c.env.DB.prepare(
+        "UPDATE variantes SET imagen = ?, version = version + 1, actualizado_en = ? WHERE codigo = ?",
+      ).bind(`/img/${clave}`, ahora, codigo),
+    ];
+    if (existe.imagen !== null && existe.imagen.startsWith("/img/")) {
+      enunciados.push(
+        ...enunciadosParaBorrar({ db: c.env.DB, ahora }, [existe.imagen.slice("/img/".length)]),
+      );
+    }
+    await c.env.DB.batch(enunciados);
+
+    return c.json(ok({ imagen: `/img/${clave}`, mime: tipo, bytes: cuerpoBruto.byteLength }), 201);
   });
 
   panel.delete("/catalogo/variantes/:codigo", exigeEditar("precios_y_stock"), async (c) => {

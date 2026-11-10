@@ -23,6 +23,31 @@ async function pedir(app: ReturnType<typeof crearPanel>, ruta: string) {
   return { estado: r.status, cuerpo: (await r.json()) as Record<string, unknown> };
 }
 
+/** Bytes de un PNG de verdad (la cabecera, que es lo que se mira). */
+const PNG = (() => {
+  const b = new Uint8Array(64);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return b.buffer;
+})();
+
+/** Sube un archivo crudo, como hace el panel. */
+async function subirFoto(
+  app: ReturnType<typeof crearPanel>,
+  codigo: string,
+  datos: ArrayBuffer,
+  tipoDeclarado = "image/png",
+) {
+  const r = await app.fetch(
+    new Request(`https://panel.babycaleb.com/catalogo/variantes/${codigo}/foto`, {
+      method: "PUT",
+      body: datos,
+      headers: { "content-type": tipoDeclarado },
+    }),
+    real as Env,
+  );
+  return { estado: r.status, cuerpo: (await r.json()) as Record<string, unknown> };
+}
+
 /** Como `pedir`, pero escribiendo. */
 async function mandar(
   app: ReturnType<typeof crearPanel>,
@@ -61,6 +86,7 @@ beforeEach(async () => {
     real.DB.prepare("DELETE FROM bodegas"),
     real.DB.prepare("DELETE FROM usuarios"),
     real.DB.prepare("DELETE FROM ajustes"),
+    real.DB.prepare("DELETE FROM archivos"),
   ]);
 });
 
@@ -483,5 +509,73 @@ describe("dar de alta un producto no deja huérfanos", () => {
     ).first<{ publicado: number; producto: string }>();
     expect(v?.producto).toBe("Wipes de agua");
     expect(v?.publicado).toBe(0);
+  });
+});
+
+describe("la foto de un producto", () => {
+  it("se sube y la variante queda apuntando a ella", async () => {
+    await sembrarCatalogo();
+    const r = await subirFoto(entrandoComo("duena"), "NAT-M", PNG);
+    expect(r.estado).toBe(201);
+
+    const v = await real.DB.prepare("SELECT imagen FROM variantes WHERE codigo = 'NAT-M'")
+      .first<{ imagen: string }>();
+    expect(v?.imagen).toMatch(/^\/img\/catalogo\/NAT-M\//);
+  });
+
+  it("queda marcada NO sensible: es lo que la deja salir sin sesión", async () => {
+    await sembrarCatalogo();
+    await subirFoto(entrandoComo("duena"), "NAT-M", PNG);
+    const a = await real.DB.prepare(
+      "SELECT sensible, mime FROM archivos WHERE referencia_id = 'NAT-M'",
+    ).first<{ sensible: number; mime: string }>();
+    expect(a?.sensible).toBe(0);
+    expect(a?.mime).toBe("image/png");
+  });
+
+  it("el tipo sale de los BYTES, no de lo que diga el navegador", async () => {
+    await sembrarCatalogo();
+    const html = new TextEncoder().encode("<!doctype html><script>alert(1)</script>");
+    // El navegador jura que es una imagen. Los bytes dicen que no.
+    const r = await subirFoto(entrandoComo("duena"), "NAT-M", html.buffer as ArrayBuffer, "image/webp");
+    expect(r.estado).toBe(400);
+
+    const a = await real.DB.prepare("SELECT COUNT(*) AS n FROM archivos").first<{ n: number }>();
+    expect(a?.n, "no se guardó nada").toBe(0);
+  });
+
+  it("al cambiar la foto, la vieja se marca para borrar", async () => {
+    await sembrarCatalogo();
+    const primera = await subirFoto(entrandoComo("duena"), "NAT-M", PNG);
+    const claveVieja = ((primera.cuerpo as { datos: { imagen: string } }).datos.imagen).slice(5);
+
+    await subirFoto(entrandoComo("duena"), "NAT-M", PNG);
+
+    const vieja = await real.DB.prepare("SELECT borrar_despues_de FROM archivos WHERE r2_key = ?")
+      .bind(claveVieja)
+      .first<{ borrar_despues_de: number | null }>();
+    // Si no se marcara, cada cambio de foto dejaría una ocupando para siempre:
+    // la basura que el dueño pidió que no se acumulara.
+    expect(vieja?.borrar_despues_de).not.toBeNull();
+  });
+
+  it("un rol que no edita precios no puede subir fotos", async () => {
+    await sembrarCatalogo();
+    const r = await subirFoto(entrandoComo("asistente"), "NAT-M", PNG);
+    expect(r.estado).toBe(403);
+  });
+
+  it("una imagen enorme se rechaza con 413, no con un error raro", async () => {
+    await sembrarCatalogo();
+    const grande = new Uint8Array(6 * 1024 * 1024);
+    grande.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const r = await subirFoto(entrandoComo("duena"), "NAT-M", grande.buffer as ArrayBuffer);
+    expect(r.estado).toBe(413);
+  });
+
+  it("no se le pone foto a un producto que no existe", async () => {
+    await sembrarCatalogo();
+    const r = await subirFoto(entrandoComo("duena"), "NO-EXISTE", PNG);
+    expect(r.estado).toBe(404);
   });
 });

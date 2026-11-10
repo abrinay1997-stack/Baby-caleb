@@ -31,6 +31,7 @@ export interface VarianteEditable {
   tasa_itbms_bp: number | null;
   publicado: number;
   version: number;
+  imagen: string | null;
 }
 
 interface Veredicto {
@@ -92,6 +93,8 @@ export function EditarVariante({
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [veredicto, setVeredicto] = useState<Veredicto | null>(null);
+  const [foto, setFoto] = useState<string | null>(null);
+  const [subiendo, setSubiendo] = useState(false);
   const [cargado, setCargado] = useState<string | null>(null);
 
   // Los campos se llenan cuando cambia la variante, no en cada render: si no,
@@ -107,6 +110,7 @@ export function EditarVariante({
     setMotivo("");
     setError(null);
     setVeredicto(null);
+    setFoto(variante.imagen);
   }
 
   if (variante === null) return null;
@@ -117,6 +121,33 @@ export function EditarVariante({
     setError(null);
     alCerrar();
   };
+
+  /**
+   * Sube la foto en cuanto se elige, sin esperar a «Guardar».
+   *
+   * Es a propósito: una imagen tarda, y meterla dentro del guardado haría que
+   * un botón que normalmente es instantáneo se quede pensando medio minuto sin
+   * explicar por qué. Además la foto es una escritura aparte en el servidor —
+   * no viaja con los demás campos— así que juntarlas en la pantalla sería
+   * mentir sobre lo que pasa.
+   */
+  async function cambiarFoto(archivo: File) {
+    if (variante === null) return;
+    setSubiendo(true);
+    setError(null);
+    try {
+      const r = await pedir<{ imagen: string }>(
+        `/api/catalogo/variantes/${encodeURIComponent(variante.codigo)}/foto`,
+        { method: "PUT", body: archivo, headers: { "content-type": archivo.type || "application/octet-stream" } },
+      );
+      setFoto(r.imagen);
+      alGuardar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSubiendo(false);
+    }
+  }
 
   async function guardar() {
     if (variante === null) return;
@@ -278,6 +309,39 @@ export function EditarVariante({
           {error}
         </p>
       )}
+
+      <Campo etiqueta="Foto" ayuda="JPG, PNG, WebP o AVIF, hasta 5 MB. Se cambia al momento, sin esperar a Guardar.">
+        <div className="flex items-center gap-3">
+          {foto === null ? (
+            <span className="grid h-16 w-16 shrink-0 place-items-center rounded-[12px] border border-dashed border-line text-[12px] text-muted">
+              Sin foto
+            </span>
+          ) : (
+            <img
+              src={foto}
+              alt=""
+              className="h-16 w-16 shrink-0 rounded-[12px] border border-line object-cover"
+            />
+          )}
+          <label className="tactil flex cursor-pointer items-center rounded-[14px] border border-line px-4 py-2.5 font-bold focus-within:outline-accent-edge focus-within:outline-2">
+            {subiendo ? "Subiendo…" : foto === null ? "Poner foto" : "Cambiar foto"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/avif"
+              disabled={subiendo}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                // El valor se limpia para que elegir OTRA VEZ el mismo archivo
+                // vuelva a disparar el cambio: sin esto, reintentar una subida
+                // que falló no hace nada y parece que el botón está roto.
+                e.target.value = "";
+                if (f !== undefined) void cambiarFoto(f);
+              }}
+              className="sr-only"
+            />
+          </label>
+        </div>
+      </Campo>
 
       <Campo etiqueta="Nombre">
         <input className={ENTRADA} value={nombre} onChange={(e) => setNombre(e.target.value)} />
