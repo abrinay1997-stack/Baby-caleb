@@ -14,22 +14,30 @@
 # números cuadran. Si deja de servir, se sabe el lunes y no el día que haga
 # falta.
 #
-# SECRETOS Y ARCHIVOS QUE HACEN FALTA
+# SECRETOS QUE HACEN FALTA (Settings → Secrets and variables → Actions)
 #   CLOUDFLARE_API_TOKEN   token con permiso de D1 y R2
 #   CLOUDFLARE_ACCOUNT_ID  el id de la cuenta de la agencia
-#   respaldo/llave-publica.txt   la llave PÚBLICA de age, versionada en el repo
-#   RESPALDO_CLAVE         la llave PRIVADA de age, solo para el simulacro
+#   RESPALDO_CLAVE         la contraseña con la que se cifra el respaldo
 #
-# La llave pública va en el repo porque con ella solo se puede CIFRAR. La
-# privada la tiene la dueña fuera de Cloudflare y fuera de GitHub; la copia que
-# está en los secretos es para que el simulacro pueda abrir el archivo, y eso
-# significa que quien controle el repositorio puede leer un respaldo. Es una
-# decisión consciente: la alternativa es un simulacro que nadie corre.
+# RESPALDO_CLAVE ES UNA CONTRASEÑA QUE SE INVENTA, no una llave generada.
 #
-# Para crear el par (una sola vez, en la computadora de la dueña):
-#   age-keygen -o llave-privada.txt
-# La línea «public key: age1...» va a respaldo/llave-publica.txt en el repo;
-# el contenido del archivo va al secreto RESPALDO_CLAVE.
+# La primera versión de este flujo usaba un par de llaves de `age`, que es algo
+# más fino —la mitad pública cifra y no sirve para abrir nada, así que el
+# trabajo diario no necesita el secreto—. Pero crear ese par exige una terminal,
+# y el dueño de este sistema no usa la terminal. Una medida de seguridad que
+# obliga a su dueño a pedir ayuda para encenderla acaba apagada, y un respaldo
+# que no existe no protege nada.
+#
+# Lo que se gana con el par de llaves, aquí, es poco: el secreto vive igual en
+# los Actions de este repositorio para el simulacro, y quien pueda editar un
+# flujo puede leer cualquier secreto. Lo que de verdad protege —que el archivo
+# en R2 esté cifrado y que tener acceso a R2 no dé los datos de las clientas—
+# se cumple igual.
+#
+# Así que: AES-256 con PBKDF2 (600.000 iteraciones) y una contraseña. Que sea
+# LARGA: cuatro o cinco palabras sueltas valen más que ocho caracteres raros.
+# Y guárdela también fuera de GitHub —en un gestor de contraseñas—: si se pierde
+# la única copia, todos los respaldos quedan ilegibles para siempre.
 
 name: respaldo
 
@@ -65,18 +73,22 @@ jobs:
           cache: npm
           cache-dependency-path: sistema/package-lock.json
 
-      - name: La llave pública tiene que existir
+      - name: La clave tiene que existir
         run: |
-          if [ ! -s respaldo/llave-publica.txt ]; then
-            echo "::error::Falta respaldo/llave-publica.txt. Sin ella el respaldo saldría sin cifrar, y lleva datos de clientas. Ver la cabecera de este flujo."
+          if [ -z "${{ secrets.RESPALDO_CLAVE }}" ]; then
+            echo "::error::Falta el secreto RESPALDO_CLAVE. Sin él el respaldo saldría SIN CIFRAR, y lleva nombres, celulares y direcciones de clientas. Ver la cabecera de este flujo."
+            exit 1
+          fi
+          # Una contraseña corta se rompe por fuerza bruta aunque el cifrado sea
+          # bueno. Veinte caracteres son cuatro palabras sueltas.
+          largo=$(printf '%s' "${{ secrets.RESPALDO_CLAVE }}" | wc -c)
+          if [ "$largo" -lt 20 ]; then
+            echo "::error::RESPALDO_CLAVE tiene $largo caracteres y hacen falta 20 como mínimo. Use una frase de cuatro o cinco palabras."
             exit 1
           fi
 
       - run: npm ci --legacy-peer-deps
         working-directory: sistema
-
-      - name: Instalar age
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
 
       - name: Exportar babycaleb-db
         id: exportar
@@ -91,21 +103,28 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Cifrar
+        env:
+          # Por variable de entorno y NUNCA como argumento: lo que va en la
+          # línea de comandos lo ve cualquier proceso de la máquina y acaba en
+          # los registros. `-pass env:` lo lee de aquí.
+          RESPALDO_CLAVE: ${{ secrets.RESPALDO_CLAVE }}
         run: |
           fecha="${{ steps.exportar.outputs.nombre }}"
-          age -R respaldo/llave-publica.txt -o "respaldo-$fecha.sql.age" "respaldo-$fecha.sql"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt \
+            -in "respaldo-$fecha.sql" -out "respaldo-$fecha.sql.enc" \
+            -pass env:RESPALDO_CLAVE
           # El archivo en claro se borra en cuanto existe el cifrado: lleva
           # nombres, celulares y direcciones de clientas.
           shred -u "respaldo-$fecha.sql" 2>/dev/null || rm -f "respaldo-$fecha.sql"
-          echo "cifrado: $(wc -c < "respaldo-$fecha.sql.age") bytes"
+          echo "cifrado: $(wc -c < "respaldo-$fecha.sql.enc") bytes"
 
       - name: Subir a R2
         working-directory: sistema
         run: |
           fecha="${{ steps.exportar.outputs.nombre }}"
           npx wrangler r2 object put \
-            "babycaleb-respaldos/diario/$fecha.sql.age" \
-            --file "../respaldo-$fecha.sql.age" \
+            "babycaleb-respaldos/diario/$fecha.sql.enc" \
+            --file "../respaldo-$fecha.sql.enc" \
             --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -122,8 +141,8 @@ jobs:
           {
             echo "## Respaldo ${{ steps.exportar.outputs.nombre }}"
             echo ""
-            echo "- Cifrado con la llave pública de \`respaldo/llave-publica.txt\`"
-            echo "- En \`babycaleb-respaldos/diario/${{ steps.exportar.outputs.nombre }}.sql.age\`"
+            echo "- Cifrado con AES-256 y la contraseña de \`RESPALDO_CLAVE\`"
+            echo "- En \`babycaleb-respaldos/diario/${{ steps.exportar.outputs.nombre }}.sql.enc\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   simulacro:
@@ -156,7 +175,7 @@ jobs:
             echo "Hoy no es lunes: el simulacro se salta."
           fi
 
-      - name: La llave privada tiene que estar
+      - name: La clave tiene que estar
         if: steps.toca.outputs.corre == 'si'
         run: |
           if [ -z "${{ secrets.RESPALDO_CLAVE }}" ]; then
@@ -168,27 +187,27 @@ jobs:
         if: steps.toca.outputs.corre == 'si'
         working-directory: sistema
 
-      - name: Instalar age
-        if: steps.toca.outputs.corre == 'si'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
-
       - name: Bajar el último respaldo
         if: steps.toca.outputs.corre == 'si'
         working-directory: sistema
         run: |
           npx wrangler r2 object get \
-            "babycaleb-respaldos/diario/${{ needs.exportar.outputs.nombre }}.sql.age" \
-            --file "../cifrado.sql.age" --remote
+            "babycaleb-respaldos/diario/${{ needs.exportar.outputs.nombre }}.sql.enc" \
+            --file "../cifrado.sql.enc" --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Descifrar e importar en una SQLite de simulacro
         if: steps.toca.outputs.corre == 'si'
+        env:
+          # La contraseña NO se escribe en disco y NO va en la línea de
+          # comandos: `-pass env:` la lee de aquí. Antes se escribía en un
+          # `llave.txt` que había que acordarse de borrar.
+          RESPALDO_CLAVE: ${{ secrets.RESPALDO_CLAVE }}
         run: |
-          printf '%s' "${{ secrets.RESPALDO_CLAVE }}" > llave.txt
-          age -d -i llave.txt -o restaurado.sql cifrado.sql.age
-          shred -u llave.txt
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 \
+            -in cifrado.sql.enc -out restaurado.sql -pass env:RESPALDO_CLAVE
           echo "descifrado: $(wc -c < restaurado.sql) bytes"
           node --experimental-sqlite .github/scripts/verificar-respaldo.mjs restaurado.sql
 
@@ -197,4 +216,4 @@ jobs:
         run: |
           # Pase lo que pase: el runner se recicla, pero no se deja nada
           # legible en disco más tiempo del necesario.
-          shred -u restaurado.sql llave.txt 2>/dev/null || rm -f restaurado.sql llave.txt
+          shred -u restaurado.sql 2>/dev/null || rm -f restaurado.sql

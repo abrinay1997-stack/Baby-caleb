@@ -68,7 +68,21 @@ el orden es: sistema primero, CRM después.
 | Capa | Qué cubre | Cómo |
 |---|---|---|
 | Time Travel de D1 | Cualquier minuto de los últimos 30 días | `wrangler d1 time-travel restore babycaleb-db --timestamp <iso>`. **Restaura encima de la base actual**: último recurso |
-| Exportación diaria | Copia fuera de D1 | `respaldo.yml` a las 08:00 UTC (03:00 Panamá): `wrangler d1 export --remote` → cifrado con `age` (llave pública en el repo, privada como `RESPALDO_CLAVE` en GitHub y fuera de Cloudflare con la dueña) → R2 `babycaleb-respaldos/diario/AAAA-MM-DD.sql.age` |
+| Exportación diaria | Copia fuera de D1 | `respaldo.yml` a las 08:00 UTC (03:00 Panamá): `wrangler d1 export --remote` → cifrado con AES-256/PBKDF2 y la contraseña de `RESPALDO_CLAVE` (en GitHub, y copia aparte fuera de Cloudflare con la dueña) → R2 `babycaleb-respaldos/diario/AAAA-MM-DD.sql.enc` |
+
+> ⚠️ **Cambio del 2026-11-10.** El respaldo se cifraba con un par de llaves de
+> `age`, que es algo más fino: la mitad pública cifra y no abre nada, así que el
+> trabajo diario no necesitaba el secreto. Pero crear ese par exige una
+> terminal, y el dueño de este sistema no la usa. Una medida de seguridad que
+> obliga a su dueño a pedir ayuda para encenderla acaba apagada, y un respaldo
+> que no existe no protege nada.
+>
+> Lo que se perdía era poco aquí: el secreto vive igual en los Actions de este
+> repositorio para el simulacro, y quien pueda editar un flujo puede leer
+> cualquier secreto. Lo que de verdad protege —que el archivo en R2 esté
+> cifrado, y que tener acceso a R2 no dé los datos de las clientas— se cumple
+> igual. `RESPALDO_CLAVE` es ahora una contraseña que se inventa, con un mínimo
+> de 20 caracteres que el flujo comprueba antes de exportar nada.
 | Retención | — | Diarios 35 días, el del día 1 de cada mes 12 meses, el del cierre de año 5 años (reglas de ciclo de vida de R2 por prefijo) |
 | R2 privado | Comprobantes y fotos | Sin borrado automático salvo lo que marque `archivos.borrar_despues_de`; versionado del bucket si se habilita |
 | Simulacro semanal | Que el respaldo sirve | Descifrar el último, importarlo en una D1 de simulacro (o SQLite local), correr las verificaciones (balance que cuadra, existencias = movimientos, conteos) y avisar si falla |
