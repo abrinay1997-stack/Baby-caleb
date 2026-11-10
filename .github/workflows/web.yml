@@ -102,3 +102,52 @@ jobs:
             exit 1
           fi
           echo "✓ el buzón existe"
+
+  # ── Despliegue a Cloudflare ────────────────────────────────────────────────
+  #
+  # La web SIGUE sirviéndose desde Netlify: esto publica `babycaleb-web` en
+  # workers.dev, que es la copia con la que se compara píxel a píxel (F1.6)
+  # antes de tocar el DNS (F1.9). Mientras nadie apunte el dominio aquí, este
+  # despliegue no afecta a ninguna clienta.
+  desplegar:
+    name: Desplegar a Cloudflare
+    needs: construye
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Desplegar
+        id: desplegar
+        run: |
+          # `pipefail` o el despliegue miente: en bash el código de salida de
+          # una tubería es el del ÚLTIMO comando, así que sin esto `wrangler`
+          # puede fallar y el paso se da por bueno porque `tee` salió bien.
+          # Pasó de verdad en el primer despliegue del sistema.
+          set -o pipefail
+          npx wrangler deploy --var VERSION:"$GITHUB_SHA" | tee salida.txt
+          url="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' salida.txt | head -1)"
+          if [ -z "$url" ]; then
+            echo "::error::el despliegue no imprimió ninguna URL de workers.dev"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "✓ $url"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Esto NO comprueba «que algo contesta»: comprueba que el WORKER corrió.
+      # La SPA trae un <head> de fábrica igual en las siete páginas, y lo que
+      # hace el Worker es reescribirlo por ruta. Si /faq devolviera el mismo
+      # título que la portada, el sitio estaría en pie y el Worker no estaría
+      # haciendo su trabajo — que es exactamente el fallo silencioso que un
+      # «200 OK» no vería.
+      - name: El Worker reescribe el head
+        run: .github/scripts/web-salud.sh "${{ steps.desplegar.outputs.url }}"
