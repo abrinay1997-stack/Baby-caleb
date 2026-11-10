@@ -13,8 +13,14 @@
 # ahora que cuando entre el primer pedido.
 #
 # La ruta /salud tiene que quedar FUERA de la aplicación de Cloudflare Access.
-# No lleva ningún dato del negocio y por eso el código no le pide token; si
-# queda dentro, aquí llega un 403.
+# No lleva ningún dato del negocio y por eso el código no le pide token.
+#
+# Si queda dentro, lo que llega aquí NO es un 403: es un 302 al dominio del
+# equipo (…cloudflareaccess.com) pidiendo iniciar sesión, porque Access actúa
+# en el borde ANTES de que el Worker corra. Y eso no se arregla esperando: es
+# configuración de la cuenta, así que se corta en el primer intento en vez de
+# gastar diez. Se sale con Bypass en una aplicación de Access para esa ruta
+# exacta (Access → Aplicaciones → la del host + /salud → Bypass/Everyone).
 
 set -euo pipefail
 
@@ -27,7 +33,24 @@ intentos=10
 espera=3
 
 for i in $(seq 1 "$intentos"); do
-  codigo="$(curl -fsS -o cuerpo.json -w '%{http_code}' "$url" 2>/dev/null || echo "000")"
+  codigo="$(curl -fsS -o cuerpo.json -D cabeceras.txt -w '%{http_code}' "$url" 2>/dev/null || echo "000")"
+
+  # Access responde en el borde, antes del Worker: un 30x al dominio del equipo
+  # es configuración mal puesta, no propagación. Reintentar no la arregla.
+  if [ "$codigo" = "301" ] || [ "$codigo" = "302" ] || [ "$codigo" = "303" ]; then
+    destino="$(tr -d '\r' < cabeceras.txt | awk 'tolower($1) == "location:" { print $2; exit }')"
+    case "$destino" in
+      *cloudflareaccess.com*)
+        echo "✗ $url está DENTRO de la aplicación de Cloudflare Access."
+        echo "  Access redirige a iniciar sesión ($codigo) antes de que el Worker corra,"
+        echo "  así que ni el despliegue ni ningún monitor pueden leer la salud."
+        echo "  Se arregla en Zero Trust → Access → Aplicaciones: una aplicación para"
+        echo "  esta ruta exacta con una política Bypass / Include / Everyone."
+        echo "  Ruta: ${url}"
+        exit 1
+        ;;
+    esac
+  fi
 
   if [ "$codigo" = "200" ]; then
     version="$(jq -r '.version // ""' cuerpo.json)"
@@ -45,8 +68,8 @@ for i in $(seq 1 "$intentos"); do
   else
     echo "intento $i/$intentos: HTTP $codigo"
     if [ "$codigo" = "403" ]; then
-      echo "  403 suele significar que /salud quedó DENTRO de la aplicación de Access."
-      echo "  Hay que excluir esa ruta: no lleva datos del negocio."
+      echo "  Un 403 aquí viene del Worker, no de Access (Access manda un 302)."
+      echo "  Mire el cuerpo: /salud no pide token, así que algo más lo está negando."
     fi
   fi
 
