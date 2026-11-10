@@ -50,9 +50,70 @@ const json = (cuerpo: unknown, status: number): Response =>
     headers: { "content-type": "application/json; charset=utf-8" },
   });
 
+/**
+ * El chat, por el agente del CRM (F3.6).
+ *
+ * Es el MISMO bot que atiende WhatsApp y Telegram: misma base de
+ * conocimiento, mismas herramientas, mismo revisor, mismo trato de usted. Y la
+ * conversación aparece en la bandeja, así que la dueña puede leerla, meterse,
+ * o pausar el bot — nada de eso existía con el chat de Groq.
+ *
+ * El historial NO se manda: el CRM lleva su propia memoria por conversación,
+ * que es más fiel que lo que el navegador tenga en pantalla.
+ */
+async function porElCrm(
+  crm: NonNullable<Env["CRM"]>,
+  sesion: string,
+  texto: string,
+): Promise<Response> {
+  const r = await crm.mensajeWeb({ sesion, texto });
+
+  if (r.ok) {
+    // La interfaz espera UN texto. El agente trocea para los canales que
+    // mandan varios mensajes seguidos; aquí se vuelven a juntar.
+    return json({ reply: r.trozos.join("\n\n") }, 200);
+  }
+
+  if (r.codigo === "sin_respuesta") {
+    // El bot está pausado o un guardarraíl descartó el mensaje. NO es un
+    // error: se le dice a la clienta lo que de verdad está pasando, con 200,
+    // para que la pantalla no enseñe «algo salió mal».
+    return json({ reply: r.mensaje }, 200);
+  }
+
+  return json({ error: r.mensaje }, 400);
+}
+
 export async function chat(peticion: Request, env: Env): Promise<Response> {
   if (peticion.method !== "POST") {
     return json({ error: "Method Not Allowed" }, 405);
+  }
+
+  const cuerpo = (await peticion.json().catch(() => ({}))) as {
+    messages?: unknown;
+    sesion?: unknown;
+  };
+
+  // Con el binding al CRM puesto, se va por el agente de verdad. Sin él, por
+  // el camino de siempre.
+  //
+  // El interruptor es la PRESENCIA del binding y no una variable, porque un
+  // binding a un entrypoint que no existe ni siquiera deja desplegar: si está,
+  // el CRM ya tiene `CanalWeb` desplegado. Una variable podría decir «usa el
+  // CRM» con el CRM sin actualizar, y el chat se quedaría mudo.
+  if (env.CRM !== undefined) {
+    const sesion = typeof cuerpo.sesion === "string" ? cuerpo.sesion : "";
+    const ultimo = Array.isArray(cuerpo.messages)
+      ? (cuerpo.messages as { role?: string; content?: unknown }[])
+          .filter((m) => m.role !== "assistant" && typeof m.content === "string")
+          .at(-1)
+      : undefined;
+    const texto = typeof ultimo?.content === "string" ? ultimo.content : "";
+
+    if (sesion === "" || texto === "") {
+      return json({ error: "Invalid or missing messages array" }, 400);
+    }
+    return await porElCrm(env.CRM, sesion, texto);
   }
 
   if (!env.GROQ_API_KEY) {
@@ -60,7 +121,6 @@ export async function chat(peticion: Request, env: Env): Promise<Response> {
   }
 
   try {
-    const cuerpo = (await peticion.json().catch(() => ({}))) as { messages?: unknown };
     const messages = cuerpo.messages;
     if (!Array.isArray(messages)) {
       return json({ error: "Invalid or missing messages array" }, 400);

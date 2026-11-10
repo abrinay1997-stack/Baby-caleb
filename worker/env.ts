@@ -1,6 +1,18 @@
 import type { SistemaWebBinding } from "./catalogo";
 
 /**
+ * Lo que `CanalWeb` del CRM expone (F3.6). Solo mandar un mensaje: desde la
+ * web no se puede leer una conversación ajena, ni listar clientas, ni tocar el
+ * inventario.
+ */
+export interface CanalWebBinding {
+  mensajeWeb(entrada: { sesion: string; texto: string; nombre?: string }): Promise<
+    | { ok: true; trozos: string[] }
+    | { ok: false; codigo: "entrada_invalida" | "sin_respuesta"; mensaje: string }
+  >;
+}
+
+/**
  * Lo que el Worker de la web tiene a mano.
  *
  * `ASSETS` lo da Cloudflare a partir del bloque `assets` de `wrangler.jsonc`:
@@ -23,6 +35,17 @@ export interface Env {
    * un costo, aunque alguien se equivoque escribiendo código.
    */
   readonly SISTEMA?: SistemaWebBinding;
+
+  /**
+   * El CRM, por service binding (F3.6): el chat de la web.
+   *
+   * Mientras no esté, `/api/chat` usa el camino viejo (Groq). El interruptor
+   * es la PRESENCIA del binding y no una variable, porque un binding a un
+   * entrypoint que no existe ni siquiera deja desplegar: si está, el CRM ya
+   * tiene `CanalWeb` desplegado. Una variable podría decir «usa el CRM» con el
+   * CRM sin actualizar, y el chat se quedaría mudo.
+   */
+  readonly CRM?: CanalWebBinding;
 
   /** Clave de Groq para `/api/chat`. Secreto: `wrangler secret put GROQ_API_KEY`. */
   readonly GROQ_API_KEY?: string;
