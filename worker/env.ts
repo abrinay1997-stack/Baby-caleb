@@ -47,8 +47,29 @@ export interface Env {
    */
   readonly CRM?: CanalWebBinding;
 
-  /** Clave de Groq para `/api/chat`. Secreto: `wrangler secret put GROQ_API_KEY`. */
-  readonly GROQ_API_KEY?: string;
+  /**
+   * La llave del modelo para `/api/chat`. Secreto, puesto en Cloudflare.
+   *
+   * Se llama `_WEB` y no `META_API_KEY` aunque viva en otro Worker, donde no
+   * chocaría. Es a propósito: con el mismo nombre, en el panel de Cloudflare
+   * se ven dos secretos idénticos y no se sabe cuál es cuál sin abrir cada
+   * Worker. Y si alguna termina en el sitio equivocado, el código NO la
+   * encuentra y falla en voz alta, en vez de funcionar en silencio gastando el
+   * límite del asistente de la dueña con el tráfico público.
+   */
+  readonly META_API_KEY_WEB?: string;
+
+  /** El modelo del chat. Vacío = el del asistente interno. Es configuración. */
+  readonly MODELO_CHAT?: string;
+
+  /**
+   * El límite de llamadas al chat, por IP.
+   *
+   * Opcional en el tipo porque en las pruebas no existe, y el chat tiene que
+   * poder correr sin él. En producción SÍ está: sin límite, el formulario
+   * abierto a internet es una factura esperando a que pase un rastreador.
+   */
+  readonly LIMITE_CHAT?: { limit(opciones: { key: string }): Promise<{ success: boolean }> };
 
   /** El dominio del sitio, para el canónico y Open Graph. */
   readonly SITE_URL?: string;

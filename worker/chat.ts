@@ -1,4 +1,5 @@
 import type { Env } from "./env";
+import { quienLlama, revisarConversacion } from "./limites";
 import { promptDelSistema } from "./prompt";
 
 /**
@@ -26,22 +27,53 @@ async function preciosDelCatalogo(env: Env): Promise<ReadonlyMap<string, number>
 /**
  * El chat de la web, dentro del Worker.
  *
- * Portado de `netlify/functions/chat.ts` SIN cambiar su comportamiento: mismo
- * modelo, misma temperatura, mismos topes, mismos códigos de respuesta. F1.4
- * es explícito en eso, y con razón —mudar de casa no es el momento de cambiar
- * también los muebles: si algo se rompe después del corte, hay que poder
- * descartar que lo rompió la mudanza—.
+ * Nació portado de Netlify sin cambiar nada, a propósito: mudar de casa no es
+ * el momento de cambiar también los muebles. Ya se mudó, así que ahora sí
+ * cambia, y en dos cosas.
  *
- * Lo único que cambia es la forma: Netlify daba `event`/`statusCode` y aquí
- * son `Request`/`Response`. La clave pasa de `process.env` a un secreto del
- * Worker (`wrangler secret put GROQ_API_KEY`).
+ * **El proveedor.** Era Groq; ahora es el mismo que el asistente interno, con
+ * su propia llave (`META_API_KEY_WEB`, en el Worker de la web). Dos llaves y
+ * no una, a propósito: esta cara está abierta a internet y la otra está detrás
+ * de Access con cuatro correos. Si esta se abusa o se filtra, se revoca sin
+ * dejar muda a la dueña. Y un bombardeo aquí no se come el límite de allá.
+ *
+ * **El blindaje.** Antes no había ninguno: cualquiera podía mandar un mensaje
+ * de un megabyte mil veces seguidas y cada uno iba derecho al proveedor a
+ * costo del negocio. Ahora hay límite por IP y topes de tamaño, y van ANTES de
+ * mirar nada más.
  *
  * En F3.6 esto se reemplaza por `CanalWeb` del CRM y el archivo se borra.
  */
 
-interface MensajeDelChat {
-  role?: string;
-  content?: unknown;
+/** Un solo host, también para pruebas (ver la documentación de Meta). */
+const BASE_META = "https://api.meta.ai/v1";
+
+/**
+ * El mismo nivel que el asistente interno: `Contributor`.
+ *
+ * Cuesta menos a cambio de permiso para entrenar con lo que recibe, y eso está
+ * DICHO en la política de privacidad del sitio. Si alguien lo cambia aquí, hay
+ * que cambiarlo allá: una política que describe un modelo que ya no se usa es
+ * peor que no tener política.
+ */
+const MODELO_POR_OMISION = "muse-spark-1.2-contributor";
+
+/**
+ * El texto de la respuesta, sin confiar en su forma.
+ *
+ * Meta devuelve `content` como una lista de bloques. Si el formato cambia, se
+ * devuelve lo que se haya podido leer en vez de reventar: un cambio de forma
+ * del proveedor deja al chat callado, no caído.
+ */
+export function textoDeLaRespuesta(crudo: unknown): string {
+  const cuerpo = (crudo ?? {}) as Record<string, unknown>;
+  const bloques = Array.isArray(cuerpo["content"]) ? (cuerpo["content"] as unknown[]) : [];
+  let texto = "";
+  for (const b of bloques) {
+    const bloque = (b ?? {}) as Record<string, unknown>;
+    if (bloque["type"] === "text" && typeof bloque["text"] === "string") texto += bloque["text"];
+  }
+  return texto;
 }
 
 const json = (cuerpo: unknown, status: number): Response =>
@@ -116,47 +148,74 @@ export async function chat(peticion: Request, env: Env): Promise<Response> {
     return await porElCrm(env.CRM, sesion, texto);
   }
 
-  if (!env.GROQ_API_KEY) {
-    return json({ error: "GROQ_API_KEY not configured on server" }, 500);
+  // ── El blindaje ──────────────────────────────────────────────────────────
+  //
+  // El chat está abierto a internet sin cuenta ni contraseña, y cada mensaje
+  // que pasa de aquí cuesta dinero en el proveedor del modelo. Las dos
+  // defensas van ANTES de mirar nada más: no tiene sentido validar con cuidado
+  // una petición que de todas formas no se va a atender.
+
+  if (env.LIMITE_CHAT !== undefined) {
+    const { success } = await env.LIMITE_CHAT.limit({ key: quienLlama(peticion) });
+    if (!success) {
+      // 429 con un texto que una clienta entienda, no un código seco. La
+      // mayoría de los que llegan aquí son robots, pero la que no lo es
+      // merece saber qué pasó.
+      return json(
+        {
+          error:
+            "Está escribiendo muy rápido. Espere un momento, o escríbanos por WhatsApp y le contesta una persona.",
+        },
+        429,
+      );
+    }
+  }
+
+  const revision = revisarConversacion(cuerpo.messages);
+  if (!revision.ok) {
+    return json({ error: revision.motivo }, revision.estado);
+  }
+
+  if (!env.META_API_KEY_WEB) {
+    return json({ error: "Falta META_API_KEY_WEB en el Worker" }, 500);
   }
 
   try {
-    const messages = cuerpo.messages;
-    if (!Array.isArray(messages)) {
-      return json({ error: "Invalid or missing messages array" }, 400);
-    }
-
-    const respuesta = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    // `system` va en su propio campo, NO como un mensaje más de la lista. Es
+    // lo que separa las instrucciones del negocio de lo que teclea la clienta:
+    // si fueran un mensaje más, cualquiera podría mandar otro que dijera lo
+    // contrario y el modelo tendría dos textos del mismo rango discutiendo.
+    const respuesta = await fetch(`${BASE_META}/messages`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.GROQ_API_KEY}`,
-        "Content-Type": "application/json",
+        authorization: `Bearer ${env.META_API_KEY_WEB}`,
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: promptDelSistema(await preciosDelCatalogo(env)) },
-          ...(messages as MensajeDelChat[]).map((m) => ({
-            role: m.role === "assistant" ? "assistant" : "user",
-            content: m.content,
-          })),
-        ],
-        temperature: 0.7,
+        model: env.MODELO_CHAT ?? MODELO_POR_OMISION,
         max_tokens: 220, // suficiente para respuestas breves de ~400 caracteres
+        system: promptDelSistema(await preciosDelCatalogo(env)),
+        messages: revision.mensajes.map((m) => ({ role: m.role, content: m.content })),
       }),
     });
 
     if (!respuesta.ok) {
-      const detalle = await respuesta.text();
-      return json({ error: `Groq API Error: ${detalle}` }, respuesta.status);
+      // El detalle NO se devuelve a la clienta: el cuerpo de un error puede
+      // traer de vuelta lo que se mandó, y ahí va el prompt entero.
+      const detalle = (await respuesta.text().catch(() => "")).slice(0, 300);
+      console.warn(JSON.stringify({ evento: "chat_modelo_fallo", estado: respuesta.status, detalle }));
+      return json(
+        { error: "El asistente no está disponible ahora mismo. Escríbanos por WhatsApp." },
+        502,
+      );
     }
 
-    const datos = (await respuesta.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    let texto = datos.choices?.[0]?.message?.content ?? "";
+    let texto = textoDeLaRespuesta(await respuesta.json());
 
-    // Salvaguarda: evita respuestas excesivamente largas sin cortar a media frase.
+    // Salvaguarda del largo: el prompt pide respuestas cortas y el modelo casi
+    // siempre obedece, pero «casi» no es una garantía y una parrafada en una
+    // burbuja de chat no se lee. Se corta en la última frase entera, no a
+    // mitad de palabra.
     const MAX_CHARS = 500;
     if (texto.length > MAX_CHARS) {
       const recortado = texto.substring(0, MAX_CHARS);
@@ -164,8 +223,24 @@ export async function chat(peticion: Request, env: Env): Promise<Response> {
       texto = (ultimoPunto > 200 ? recortado.substring(0, ultimoPunto + 1) : recortado).trim();
     }
 
+    if (texto.trim() === "") {
+      // El modelo no dijo nada legible: pasa si cambia el formato de su
+      // respuesta. Mejor mandar a WhatsApp que enseñar una burbuja vacía.
+      return json(
+        { reply: "No tengo eso a mano. Escríbanos por WhatsApp y le contesta una persona." },
+        200,
+      );
+    }
+
     return json({ reply: texto }, 200);
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : "Internal Server Error" }, 500);
+    // Lo que se registra lleva el detalle; lo que se devuelve, no. Un error
+    // del proveedor puede traer de vuelta lo que se le mandó, y ahí va el
+    // prompt entero.
+    console.warn(JSON.stringify({ evento: "chat_error", error: String(e) }));
+    return json(
+      { error: "El asistente no está disponible ahora mismo. Escríbanos por WhatsApp." },
+      500,
+    );
   }
 }

@@ -29,6 +29,14 @@
     { "binding": "SISTEMA", "service": "babycaleb-sistema", "entrypoint": "SistemaWeb" }
   ],
 
+  // El límite del chat, por IP. 15 por minuto: una clienta entusiasmada manda
+  // cinco o seis; un script manda cientos. Lo cuenta Cloudflare en el borde,
+  // así que una petición bloqueada no llega a costar nada en el proveedor del
+  // modelo — que es el punto.
+  "ratelimits": [
+    { "name": "LIMITE_CHAT", "namespace_id": "2001", "simple": { "limit": 15, "period": 60 } }
+  ],
+
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

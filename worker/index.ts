@@ -96,8 +96,12 @@ export default {
             ? "indexable"
             : "OCULTO a buscadores (INDEXABLE no está encendido)",
           // El chat necesita su clave; decirlo aquí evita descubrirlo cuando
-          // una clienta escriba.
-          chat: env.GROQ_API_KEY ? "listo" : "falta GROQ_API_KEY",
+          // una clienta escriba. Y el límite por IP se dice aparte: sin él el
+          // chat FUNCIONA, que es justo lo que lo hace peligroso —un
+          // formulario abierto a internet sin freno no da ningún síntoma hasta
+          // que llega la factura—.
+          chat: env.META_API_KEY_WEB ? "listo" : "falta META_API_KEY_WEB",
+          chat_limite: env.LIMITE_CHAT ? "puesto" : "SIN LÍMITE por IP",
           // Sin el binding, /api/catalogo sirve la copia del build y la web
           // sigue en pie — pero con precios de la fecha del despliegue. Vale
           // más verlo aquí que descubrirlo por un precio viejo.

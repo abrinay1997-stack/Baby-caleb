@@ -232,22 +232,21 @@ export const PRIVACIDAD: DocumentoLegal = {
             "en el chat no se queda solamente con nosotros.",
         },
         {
-          // Lo verificado: para el asistente INTERNO del negocio se escogió un
-          // nivel de servicio más barato a cambio de permiso para entrenar con
-          // lo que recibe (decisión D-19 y su corrección del 2026-11-09 en
-          // `docs/plan/10-riesgos-y-decisiones.md`; `ia_entrena_con_datos:
-          // true` en `sistema/reglas.json`). Para el chat DE LA WEB, el
-          // proveedor es otro (worker/chat.ts:129) y lo que su contrato diga
-          // sobre entrenamiento NO está comprobado — por eso se dice aquí y
-          // queda como pendiente, en vez de afirmarlo de más o de menos.
+          // Cambió el 2026-11-11: el chat de la web pasó de Groq al MISMO
+          // proveedor que el asistente interno, con su propia llave. Antes
+          // este párrafo decía «el chat usa otro proveedor y su contrato está
+          // por confirmar», y decirlo así ya no sería honesto: ahora sí se
+          // sabe, y la respuesta es que sí entrena. Respaldo:
+          // `ia_entrena_con_datos: true` en `sistema/reglas.json`, decisión
+          // D-19 y su corrección del 2026-11-09 en
+          // `docs/plan/10-riesgos-y-decisiones.md`, y worker/chat.ts.
           tipo: "p",
           texto:
-            "Para el trabajo interno del negocio se escogió a propósito un servicio de " +
-            "inteligencia artificial más barato, que cuesta menos justamente a cambio de " +
-            "permiso para entrenar con lo que recibe. El chat de esta página usa hoy otro " +
-            "proveedor, y lo que su contrato dice sobre entrenar con las conversaciones está " +
-            "por confirmar: mientras no lo confirmemos, trate lo que escriba en el chat como " +
-            "algo que puede terminar entrenando un modelo.",
+            "Se escogió a propósito un servicio de inteligencia artificial más barato, que " +
+            "cuesta menos justamente a cambio de permiso para entrenar con lo que recibe. Es " +
+            "el mismo para el chat de esta página y para el trabajo interno del negocio, así " +
+            "que lo dicho arriba vale sin matices: lo que usted escriba en el chat puede " +
+            "terminar entrenando un modelo.",
         },
         {
           tipo: "p",
@@ -258,9 +257,9 @@ export const PRIVACIDAD: DocumentoLegal = {
             `${POR_WHATSAPP} y le contesta una persona.`,
         },
         {
-          // Comprobado: worker/chat.ts:129-147 manda la conversación a
-          // `https://api.groq.com/openai/v1/chat/completions` con el modelo
-          // `llama-3.3-70b-versatile`. Y worker/chat.ts:64-117 + worker/env.ts:8-13:
+          // Comprobado: worker/chat.ts manda la conversación a
+          // `https://api.meta.ai/v1/messages` con el modelo
+          // `muse-spark-1.2-contributor`. Y worker/chat.ts + worker/env.ts:
           // cuando se conecte la bandeja del negocio (el «binding» CRM), el
           // mensaje pasa por ahí y la conversación se guarda para que la dueña
           // la pueda leer, contestar o pausar.
