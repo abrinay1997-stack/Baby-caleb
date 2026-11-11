@@ -477,7 +477,7 @@ const conFormaDeActividad = (f: FilaActividad): Actividad => ({
 async function leerInventario(db: D1Database): Promise<Inventario> {
   const f = await db.prepare(SQL_INVENTARIO).first<FilaInventario>();
   const base = { filas: f?.filas ?? 0, sinMinimo: f?.sin_minimo ?? 0 };
-  if (f === null || f.movimientos === 0) return { cargado: false, ...base };
+  if (f === null) return { cargado: false, ...base };
 
   const { results } = await db
     .prepare(SQL_LISTA_BAJA)

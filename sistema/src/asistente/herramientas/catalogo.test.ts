@@ -168,20 +168,29 @@ describe("buscar_articulo · de lo que dice la clienta a lo que sabe la base", (
     expect(r.articulos.map((a) => a.codigo)).toEqual([codigo]);
   });
 
-  it("«M» trae la talla M y NO la Unitalla", async () => {
-    // La talla se compara EXACTA y el resto por parecido. Con LIKE «%m%» quien
-    // pregunta por la M recibe también la «Unitalla», y una talla equivocada en
-    // un pañal es una caja devuelta.
+  it("la talla se compara EXACTA: pedir la L no trae la XL", async () => {
+    // El peligro de verdad: con LIKE «%L%» sobre la talla, quien pregunta por
+    // la L recibe también la XL y la XXL, y un pañal XL vendido como L es una
+    // caja devuelta.
     //
-    // Ni los nombres ni los códigos de esta siembra llevan la letra M, para que
-    // lo único que pueda responder a la búsqueda sea la talla.
-    const conM = await sembrar({ talla: "M", nombre: "Pieza roja", producto: "Prueba tallas" });
-    const uni = await sembrar({ talla: "Unitalla", nombre: "Pieza azul", producto: "Prueba tallas" });
+    // Se prueba con tallas inventadas —«ZQ» y «XZQ»— en vez de con L y XL, y no
+    // es por comodidad: la búsqueda mira TAMBIÉN el nombre y el nombre del
+    // producto, y en este catálogo «Pañal Nateen Talla L» lleva una ele, así
+    // que buscar «L» devuelve medio catálogo por el nombre y la fila que
+    // importa se queda fuera del límite. Con esto pasó: la primera versión de
+    // esta prueba usaba «M» contra «Unitalla» —que no lleva ninguna eme— y
+    // pasaba en verde aunque la talla se comparara con LIKE. Un token que no
+    // aparece en ningún nombre ni en ningún código deja sola a la regla que se
+    // quiere probar.
+    const exacta = await sembrar({ talla: "ZQ", nombre: "Pieza roja", producto: "Prueba" });
+    const contiene = await sembrar({ talla: "XZQ", nombre: "Pieza negra", producto: "Prueba" });
 
-    const r = await buscarArticulo.ejecutar(ctx(), { texto: "M", cuantos: 20 });
+    const r = await buscarArticulo.ejecutar(ctx(), { texto: "ZQ", cuantos: 20 });
     const codigos = r.articulos.map((a) => a.codigo);
-    expect(codigos).toContain(conM.codigo);
-    expect(codigos).not.toContain(uni.codigo);
+    expect(codigos).toContain(exacta.codigo);
+    expect(codigos, "una talla que solo CONTIENE lo buscado no es la talla pedida").not.toContain(
+      contiene.codigo,
+    );
   });
 
   it("pone primero el acierto exacto por código", async () => {
