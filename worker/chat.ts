@@ -193,7 +193,18 @@ export async function chat(peticion: Request, env: Env): Promise<Response> {
       },
       body: JSON.stringify({
         model: env.MODELO_CHAT ?? MODELO_POR_OMISION,
-        max_tokens: 220, // suficiente para respuestas breves de ~400 caracteres
+        // 220 era el número justo para una respuesta de ~400 caracteres, y por
+        // eso era un error: `max_tokens` no es el largo de la respuesta, es
+        // todo lo que el modelo puede producir en ese turno. Un modelo que
+        // razona antes de escribir gasta ahí su presupuesto y termina SIN
+        // bloque de texto — que es exactamente lo que se ve: 200, y nada
+        // legible dentro.
+        //
+        // 2048 es el valor por omisión del proveedor del asistente en este
+        // mismo repositorio (`sistema/src/asistente/proveedor.ts`), así que no
+        // es un número inventado. Y no alarga lo que lee la clienta: lo que se
+        // devuelve se recorta igual a 500 caracteres unas líneas más abajo.
+        max_tokens: 2048,
         system: promptDelSistema(await preciosDelCatalogo(env)),
         messages: revision.mensajes.map((m) => ({ role: m.role, content: m.content })),
       }),
