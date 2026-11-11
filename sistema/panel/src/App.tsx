@@ -6,6 +6,7 @@ import { Frontera } from "./Frontera";
 import { Ajustes } from "./pantallas/Ajustes";
 import { Bodegas } from "./pantallas/Bodegas";
 import { Catalogo } from "./pantallas/Catalogo";
+import { Cobros } from "./pantallas/Cobros";
 import { Entregas } from "./pantallas/Entregas";
 import { Contabilidad } from "./pantallas/Contabilidad";
 import { Existencias } from "./pantallas/Existencias";
@@ -63,6 +64,7 @@ export function App() {
           <Route element={<Armazon yo={yo.datos} />}>
             <Route index element={<Resumen />} />
             <Route path="pedidos" element={<Pedidos />} />
+            <Route path="cobros" element={<Cobros />} />
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="existencias" element={<Existencias />} />
             <Route path="entregas" element={<Entregas />} />

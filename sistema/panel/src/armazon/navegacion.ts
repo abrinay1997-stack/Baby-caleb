@@ -50,6 +50,12 @@ export const SECCIONES: Seccion[] = [
         permiso: "pedidos",
       },
       {
+        ruta: "/cobros",
+        nombre: "Cobros",
+        descripcion: "Los comprobantes que hay que mirar",
+        permiso: "cobros",
+      },
+      {
         ruta: "/catalogo",
         nombre: "Catálogo",
         descripcion: "Productos, tallas y precios",

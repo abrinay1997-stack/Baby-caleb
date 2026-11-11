@@ -25,6 +25,7 @@ const soloMedir = process.argv.includes("--solo-medir");
 /** Las pantallas que hay. El cajón se audita aparte, abierto. */
 const PANTALLAS = [
   ["resumen", "/"],
+  ["cobros", "/cobros"],
   ["catalogo", "/catalogo"],
   ["existencias", "/existencias"],
   ["bodegas", "/bodegas"],

@@ -1013,6 +1013,50 @@ function registrarRutas(panel: Hono<Entorno>): void {
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
+  /**
+   * La captura del comprobante.
+   *
+   * Sin esto la pantalla pedía confirmar a ciegas, y eso vacía la regla «el
+   * navegador no decide un pago»: si quien confirma no puede VER la captura,
+   * su clic no comprueba nada — solo traslada la firma. Una captura puede
+   * estar recortada, ser de otro pedido, ser de ayer o ser de otra persona, y
+   * todo eso se ve mirándola.
+   *
+   * Se sirve en vez de dar un enlace de R2 porque el bucket es privado y tiene
+   * que seguir siéndolo: ahí viven las capturas de pago de las clientas.
+   */
+  panel.get("/cobros/:pagoId/comprobante", exige("cobros"), async (c) => {
+    const fila = await c.env.DB.prepare("SELECT comprobante_r2 FROM pagos WHERE id = ?")
+      .bind(c.req.param("pagoId"))
+      .first<{ comprobante_r2: string | null }>();
+    if (fila?.comprobante_r2 == null) {
+      return c.json(fallo("no_encontrado", "ese pago no tiene captura"), 404);
+    }
+
+    const a = await c.env.PRIVADO.get(fila.comprobante_r2);
+    if (a === null) {
+      // La fila dice que hay captura y en R2 no está. Es una avería, no un
+      // 404: confundirlos manda al siguiente que lo mire a buscar la captura
+      // en vez de mirar el almacenamiento.
+      return c.json(fallo("interno", "la captura está registrada pero no se pudo leer"), 500);
+    }
+
+    const mime = await c.env.DB.prepare("SELECT mime FROM archivos WHERE r2_key = ?")
+      .bind(fila.comprobante_r2)
+      .first<{ mime: string }>();
+
+    return new Response(a.body, {
+      headers: {
+        "content-type": mime?.mime ?? "application/octet-stream",
+        // Que el navegador no adivine el tipo, y que esto NO entre en ninguna
+        // caché compartida: es el recibo bancario de una clienta.
+        "x-content-type-options": "nosniff",
+        "cache-control": "private, no-store",
+        "content-disposition": "inline",
+      },
+    });
+  });
+
   /** Y dice que no. No se borra: queda el rechazo y su motivo. */
   panel.post("/cobros/:pagoId/rechazar", exigeEditar("cobros"), async (c) => {
     const b = (await cuerpo(c)) ?? {};

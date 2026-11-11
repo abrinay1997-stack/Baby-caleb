@@ -227,6 +227,78 @@ const RESPUESTAS = {
   "/api/resumen": (url) =>
     ok(resumenDeMuestra(url.searchParams.get("periodo") === "semana" ? "semana" : "hoy")),
 
+  /**
+   * `/cobros`: la bandeja de comprobantes, con los cuatro casos que la
+   * pantalla tiene que saber pintar distinto.
+   *
+   * Uno viejo (que pide atención), uno sin captura (que avisa de que no se
+   * puede comprobar mirando), uno por un método sin cuenta en la contabilidad
+   * (que avisa de que no va a quedar asiento) y uno que se pasaría del total
+   * (que es la señal de que la captura puede ser de otro pedido). Con un solo
+   * caso bonito, los avisos no se ven nunca y nadie los revisa.
+   */
+  "/api/cobros": ok({
+    hayMas: false,
+    comprobantes: [
+      {
+        pagoId: "01JBCY0000000000000000001",
+        pedidoId: "01JBCP0000000000000000001",
+        numero: "BC-000412",
+        cliente: "Ana Gómez",
+        montoCents: 1500,
+        metodo: "yappy",
+        tipo: "abono",
+        comprobanteR2: "comprobantes/ana.jpg",
+        creadoEn: Date.now() - 3 * 60 * 60 * 1000,
+        totalCents: 4650,
+        pagadoCents: 0,
+        estadoPedido: "por_abonar",
+      },
+      {
+        pagoId: "01JBCY0000000000000000002",
+        pedidoId: "01JBCP0000000000000000002",
+        numero: "BC-000408",
+        cliente: "Marielys Pérez",
+        montoCents: 3150,
+        metodo: "transferencia",
+        tipo: "saldo",
+        comprobanteR2: null,
+        creadoEn: Date.now() - 2 * 24 * 60 * 60 * 1000,
+        totalCents: 3150,
+        pagadoCents: 0,
+        estadoPedido: "agendado",
+      },
+      {
+        pagoId: "01JBCY0000000000000000003",
+        pedidoId: "01JBCP0000000000000000003",
+        numero: "BC-000399",
+        cliente: null,
+        montoCents: 2000,
+        metodo: "nequi",
+        tipo: "abono",
+        comprobanteR2: "comprobantes/sin-nombre.jpg",
+        creadoEn: Date.now() - 20 * 60 * 1000,
+        totalCents: 9300,
+        pagadoCents: 1000,
+        estadoPedido: "por_abonar",
+      },
+      {
+        pagoId: "01JBCY0000000000000000004",
+        pedidoId: "01JBCP0000000000000000004",
+        numero: "BC-000387",
+        cliente: "Yoselin Rodríguez de la Espriella",
+        montoCents: 5000,
+        metodo: "efectivo",
+        tipo: "total",
+        comprobanteR2: null,
+        creadoEn: Date.now() - 9 * 24 * 60 * 60 * 1000,
+        totalCents: 4650,
+        pagadoCents: 1000,
+        estadoPedido: "entregado",
+      },
+    ],
+  }),
+
   // `/catalogo`: las columnas del SELECT, con costo porque el rol es dueña.
   "/api/catalogo": ok({
     muestraCosto: true,
