@@ -1398,6 +1398,14 @@ export async function marcarEntregada(
   }
 
   // El cobro del saldo.
+  //
+  // El id se nombra en vez de generarse dentro del `bind` porque el asiento 4
+  // lo necesita: su referencia apunta al PAGO, no al pedido. Un pedido tiene
+  // varios pagos (el abono, el saldo) y cada uno lleva su asiento, así que una
+  // referencia al pedido no permite preguntar «¿este cobro está en los
+  // libros?» — que es justo la casilla del cierre que lo vigila.
+  const pagoDelSaldo = ulid(ctx.ahora);
+
   if (cobrado > 0) {
     enunciados.push(
       ctx.db
@@ -1407,7 +1415,7 @@ export async function marcarEntregada(
            VALUES (?,?,'manual',?,'saldo','aprobado',?,?,?,?,?,?)`,
         )
         .bind(
-          ulid(ctx.ahora),
+          pagoDelSaldo,
           envio.pedido_id,
           e.metodoCobro ?? "otro",
           cobrado,
@@ -1564,7 +1572,12 @@ export async function marcarEntregada(
       }
       const cobro = cobroDelSaldo({
         fecha: fechaDelAsiento,
-        referencia,
+        // Al PAGO y no al pedido: los asientos 3 y 3b son del pedido (la venta
+        // y su costo pasan una vez), pero un cobro es de UN pago concreto, y
+        // sin esa referencia no se puede preguntar por un pago si está
+        // anotado. La columna no tiene llave foránea a propósito, así que el
+        // orden dentro del batch da igual.
+        referencia: { tipo: "pago", id: pagoDelSaldo },
         cuenta,
         montoCents: cobrado,
         numero: p.numero,

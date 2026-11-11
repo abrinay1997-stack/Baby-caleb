@@ -26,6 +26,13 @@ import {
 import { guardar as guardarAjuste, historial, leerVigentes } from "../db/ajustes";
 import { leerPedido, listarPedidos } from "../db/pedidos-lectura";
 import {
+  comprobantesPorConfirmar,
+  confirmarPago,
+  esMetodoManual,
+  registrarComprobante,
+  rechazarPago,
+} from "../db/pagos";
+import {
   ajustarRedondeoDeInventario,
   cerrarMes,
   huecosAbiertos,
@@ -281,6 +288,25 @@ function contextoCatalogo(c: Context<Entorno>) {
 }
 const entero = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isSafeInteger(v) ? v : undefined;
+
+/**
+ * Un entero que llega en la URL, donde todo es texto.
+ *
+ * `entero` no sirve para eso y el error era invisible: pide un `number` y
+ * `c.req.query()` devuelve `string`, así que `enteroDeTexto(c.req.query("limite"))`
+ * daba `undefined` SIEMPRE. El efecto no era un error ni un 400 — era que
+ * `?limite=10` se ignoraba en silencio y la ruta usaba su valor por defecto.
+ * Pasaba en tres rutas (el libro diario, los pedidos y los cobros) y ninguna
+ * prueba lo notaba, porque todas pedían sin límite.
+ *
+ * `Number(v)` y no `parseInt`: `parseInt("10 gatos")` da 10, y un límite que
+ * sale de un texto a medias es peor que ninguno.
+ */
+const enteroDeTexto = (v: unknown): number | undefined => {
+  if (typeof v !== "string" || v.trim() === "") return undefined;
+  const n = Number(v);
+  return Number.isSafeInteger(n) ? n : undefined;
+};
 
 // ---------------------------------------------------------------------------
 
@@ -665,7 +691,7 @@ function registrarRutas(panel: Hono<Entorno>): void {
   });
 
   panel.get("/contabilidad/diario", exige("contabilidad"), async (c) => {
-    const limite = entero(c.req.query("limite"));
+    const limite = enteroDeTexto(c.req.query("limite"));
     const asientos = await libroDiario(
       { db: c.env.DB, ahora: Date.now() },
       { ...rango(c), ...(limite === undefined ? {} : { limite }) },
@@ -887,7 +913,7 @@ function registrarRutas(panel: Hono<Entorno>): void {
   panel.get("/pedidos", exige("pedidos"), async (c) => {
     const estado = texto(c.req.query("estado"));
     const busca = texto(c.req.query("busca"));
-    const limite = entero(c.req.query("limite"));
+    const limite = enteroDeTexto(c.req.query("limite"));
     const r = await listarPedidos(c.env.DB, quienMira(c), {
       ...(estado === undefined || estado === "" ? {} : { estado }),
       ...(busca === undefined ? {} : { busca }),
@@ -898,6 +924,110 @@ function registrarRutas(panel: Hono<Entorno>): void {
 
   panel.get("/pedidos/:id", exige("pedidos"), async (c) => {
     const r = await leerPedido(c.env.DB, quienMira(c), c.req.param("id"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cobros (F4.4)
+  //
+  // El módulo de pagos estaba escrito y probado desde F4.4 y NO TENÍA NI UNA
+  // RUTA: `confirmarPago` no se podía llamar desde ningún sitio, así que un
+  // comprobante entraba en «confirmando» y se quedaba ahí para siempre. La
+  // regla «el navegador no decide un pago» estaba cumplida de la peor forma
+  // posible — nadie decidía nada.
+  //
+  // Van con `cobros` y no con `pedidos`: quien despacha ve los pedidos y no
+  // tiene por qué tocar el dinero. En la matriz de roles, `cobros` en
+  // «editar» hoy solo lo tienen la dueña y la contadora.
+  // ---------------------------------------------------------------------------
+
+  /** La bandeja: comprobantes esperando que una persona los mire. */
+  panel.get("/cobros", exige("cobros"), async (c) => {
+    const limite = enteroDeTexto(c.req.query("limite"));
+    const r = await comprobantesPorConfirmar(c.env.DB, limite ?? 50);
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Anotar un comprobante.
+   *
+   * Entra en «confirmando» aunque lo registre la dueña desde el panel: la
+   * separación entre «alguien dice que pagó» y «una persona lo comprobó» no es
+   * por desconfianza de quien lo anota, es que son dos hechos distintos y los
+   * libros necesitan saber cuál es cuál. Confirmar es un clic más.
+   */
+  panel.post("/cobros", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const pedidoId = texto(b["pedidoId"]);
+    const montoCents = entero(b["montoCents"]);
+    const metodo = texto(b["metodo"]);
+    const tipo = texto(b["tipo"]);
+    const idempotencia = texto(b["idempotencia"]);
+    const comprobanteR2 = texto(b["comprobanteR2"]);
+
+    if (pedidoId === undefined || montoCents === undefined || metodo === undefined) {
+      return c.json(fallo("entrada_invalida", "hacen falta el pedido, el monto y el método"), 400);
+    }
+    // Esta guarda NO es la que protege: `registrarComprobante` ya rechaza un
+    // método que no es manual, y la mutación que la quita no pone roja ni una
+    // prueba. Se queda porque estrecha el tipo —`texto()` da `string` y el
+    // módulo pide `MetodoManual`—, así que sin ella haría falta un cast, que
+    // es justo la clase de afirmación que luego no se comprueba. Quien la lea
+    // no debe creer que es lo que defiende.
+    if (!esMetodoManual(metodo)) {
+      return c.json(fallo("entrada_invalida", `«${metodo}» no es un método manual`), 400);
+    }
+
+    // La del tipo SÍ protege, y se midió: sin ella, el CHECK de la columna
+    // salta y el `catch` del módulo lo contaba como el UNIQUE de la clave de
+    // idempotencia, respondiendo «ese comprobante ya estaba registrado». El
+    // `catch` ya está arreglado; esta guarda da el mensaje que nombra el campo.
+    if (tipo !== "abono" && tipo !== "total" && tipo !== "saldo") {
+      return c.json(fallo("entrada_invalida", "el tipo es «abono», «total» o «saldo»"), 400);
+    }
+
+    const r = await registrarComprobante(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      {
+        // Sin clave de idempotencia no hay candado: dos clics del mismo botón
+        // escriben dos comprobantes por el mismo dinero. Se exige en vez de
+        // inventarse una, porque una inventada aquí sería distinta en cada
+        // intento y el candado no cerraría nada.
+        idempotencia: idempotencia ?? `panel:${pedidoId}:${montoCents}:${metodo}`,
+        pedidoId,
+        montoCents,
+        metodo,
+        tipo,
+        ...(comprobanteR2 === undefined ? {} : { comprobanteR2 }),
+      },
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Una persona mira la captura y dice que sí. Aquí entra el dinero. */
+  panel.post("/cobros/:pagoId/confirmar", exigeEditar("cobros"), async (c) => {
+    const r = await confirmarPago(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      c.req.param("pagoId"),
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Y dice que no. No se borra: queda el rechazo y su motivo. */
+  panel.post("/cobros/:pagoId/rechazar", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const motivo = texto(b["motivo"]);
+    if (motivo === undefined || motivo.trim() === "") {
+      return c.json(
+        fallo("entrada_invalida", "diga por qué se rechaza: sin motivo no le sirve a nadie"),
+        400,
+      );
+    }
+    const r = await rechazarPago(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      c.req.param("pagoId"),
+      motivo,
+    );
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 

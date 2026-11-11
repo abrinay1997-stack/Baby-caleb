@@ -1022,7 +1022,7 @@ export async function revisionDeCierre(
     saldos,
     sinCuadre,
     sinVenta,
-    sinCobro,
+    sinAsiento,
   ] = await Promise.all([
       ctx.db
         .prepare("SELECT estado FROM periodos WHERE mes = ?")
@@ -1087,22 +1087,28 @@ export async function revisionDeCierre(
         )
         .bind(desde, hasta)
         .first<{ n: number }>(),
-      // Entregas que COBRARON dinero y no tienen asiento de cobro.
+      // Dinero que entró y los libros no dicen a dónde.
       //
-      // Es el hueco que deja `marcarEntregada` a propósito: cuando el saldo se
-      // cobra con «otro», o en efectivo sin motorizado asignado, no se sabe a
-      // qué cuenta entró el dinero y no se escribe asiento — antes que meterlo
-      // en 1103 porque suena razonable. Esta casilla es la otra mitad de esa
-      // decisión: no saber está bien, callarlo no.
+      // Es el hueco que el sistema deja A PROPÓSITO en los dos sitios donde
+      // entra dinero, cuando no se sabe a qué cuenta fue: el motorizado que
+      // cobra con «otro» o sin estar asignado a la parada, y el pago manual
+      // por un método que no tiene cuenta en el plan. En los dos casos se
+      // prefirió no escribir asiento antes que meterlo en una cuenta «que
+      // suena razonable», porque eso es poner una cifra a ojo en los libros.
+      //
+      // Esta casilla es la otra mitad de esa decisión: no saber está bien,
+      // callarlo no. Mira los PAGOS y no las entregas —antes miraba las
+      // entregas y se le escapaba la mitad: un comprobante confirmado desde el
+      // panel no toca `envios`— y por eso los asientos de cobro llevan su
+      // referencia al pago y no al pedido: un pedido tiene varios pagos y cada
+      // uno lleva el suyo.
       ctx.db
         .prepare(
-          `SELECT COUNT(*) AS n FROM envios e
-             JOIN pedidos p ON p.id = e.pedido_id
-            WHERE e.estado = 'entregado' AND e.cobrado_cents > 0
-              AND date(e.entregado_en / 1000, 'unixepoch', '-5 hours') BETWEEN ?1 AND ?2
+          `SELECT COUNT(*) AS n FROM pagos p
+            WHERE p.estado = 'aprobado'
+              AND date(p.confirmado_en / 1000, 'unixepoch', '-5 hours') BETWEEN ?1 AND ?2
               AND NOT EXISTS (SELECT 1 FROM asientos a
-                               WHERE a.referencia_tipo = 'pedido'
-                                 AND a.referencia_id = p.id AND a.hecho IN ('4','4b'))`,
+                               WHERE a.referencia_tipo = 'pago' AND a.referencia_id = p.id)`,
         )
         .bind(desde, hasta)
         .first<{ n: number }>(),
@@ -1195,13 +1201,13 @@ export async function revisionDeCierre(
           : `${sinVenta?.n ?? 0} pedidos entregados sin asiento de venta: salió mercancía del inventario que los libros no explican. Avísele a Juan.`,
     },
     {
-      clave: "cobro_sin_asiento",
-      titulo: "Todo lo cobrado en la puerta tiene su asiento",
-      estado: (sinCobro?.n ?? 0) === 0 ? "ok" : "falta",
+      clave: "pago_sin_asiento",
+      titulo: "Todo el dinero que entró tiene su asiento",
+      estado: (sinAsiento?.n ?? 0) === 0 ? "ok" : "falta",
       detalle:
-        (sinCobro?.n ?? 0) === 0
+        (sinAsiento?.n ?? 0) === 0
           ? "Todo."
-          : `${sinCobro?.n ?? 0} entregas cobraron dinero sin que los libros digan a qué cuenta entró. Pasa cuando el motorizado cobró con «otro», o en efectivo sin estar asignado a la parada: ahí el sistema no lo adivina. Hay que anotar a mano a dónde fue ese dinero, en Contabilidad › asiento nuevo.`,
+          : `${sinAsiento?.n ?? 0} pagos aprobados sin que los libros digan a qué cuenta entró el dinero. Pasa cuando el motorizado cobró con «otro» o sin estar asignado a la parada, y cuando un pago llegó por un método que no tiene cuenta. El sistema no lo adivina: hay que anotar a dónde fue, en Contabilidad › asiento nuevo.`,
     },
     {
       clave: "cuadre",

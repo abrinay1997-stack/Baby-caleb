@@ -1678,9 +1678,14 @@ describe("fechaDePanama", () => {
 describe("los asientos que deja una entrega", () => {
   const asientosDe = async (pedidoId: string) => {
     const { results } = await env.DB.prepare(
+      // Todo lo que explica este pedido, por los DOS caminos: la venta y su
+      // costo apuntan al pedido (pasan una vez), y cada cobro apunta a SU
+      // pago, porque un pedido tiene varios y cada uno lleva su asiento.
       `SELECT a.id, a.hecho, a.fecha, a.origen, a.descripcion, cc.diferencia
          FROM asientos a LEFT JOIN control_cuadre cc ON cc.asiento_id = a.id
-        WHERE a.referencia_tipo = 'pedido' AND a.referencia_id = ?
+        WHERE (a.referencia_tipo = 'pedido' AND a.referencia_id = ?1)
+           OR (a.referencia_tipo = 'pago'
+               AND a.referencia_id IN (SELECT id FROM pagos WHERE pedido_id = ?1))
         ORDER BY a.hecho`,
     )
       .bind(pedidoId)
@@ -2002,7 +2007,7 @@ describe("los asientos que deja una entrega", () => {
     ).toBe(true);
 
     expect((await casilla("2025-03", "venta_sin_asiento")).estado).toBe("ok");
-    expect((await casilla("2025-03", "cobro_sin_asiento")).estado).toBe("ok");
+    expect((await casilla("2025-03", "pago_sin_asiento")).estado).toBe("ok");
   });
 
   it("una entrega sin asiento de venta bloquea el cierre: es la historia de antes", async () => {
@@ -2040,7 +2045,7 @@ describe("los asientos que deja una entrega", () => {
     const e = await enLaCalle({ cantidad: 2, fisico: 10 });
     const T = Date.UTC(2025, 3, 18, 15, 0, 0); // abril de 2025, mes propio
 
-    expect((await casilla("2025-04", "cobro_sin_asiento")).estado).toBe("ok");
+    expect((await casilla("2025-04", "pago_sin_asiento")).estado).toBe("ok");
 
     expect(
       (
@@ -2060,9 +2065,9 @@ describe("los asientos que deja una entrega", () => {
     // dinero. Las dos casillas dicen cosas distintas a propósito.
     expect((await casilla("2025-04", "venta_sin_asiento")).estado).toBe("ok");
 
-    const c = await casilla("2025-04", "cobro_sin_asiento");
+    const c = await casilla("2025-04", "pago_sin_asiento");
     expect(c.estado).toBe("falta");
-    expect(c.detalle).toContain("1 entregas");
+    expect(c.detalle).toContain("1 pagos");
     // Y no se queda en el diagnóstico: dice dónde se arregla.
     expect(c.detalle).toMatch(/asiento nuevo/);
 
