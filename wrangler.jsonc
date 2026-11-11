@@ -54,7 +54,18 @@
   // babycaleb.com, conectado el 2026-11-10. `www` NO entra aquí: el Worker lo
   // redirige con un 301 a la raíz (F1.9), porque dos direcciones con el mismo
   // contenido reparten entre ellas lo que debería ir a una sola.
-  "routes": [{ "pattern": "babycaleb.com", "custom_domain": true }],
+  // La raíz como dominio propio, y `www` como RUTA.
+  //
+  // La diferencia importa: un dominio propio necesita crear su registro DNS, y
+  // en `www` ya hay un CNAME que apunta a la raíz. Con el Worker en la raíz,
+  // Cloudflare intenta usarla como el servidor que hay detrás y se queda
+  // esperando: error 522. Una ruta no crea ningún registro — intercepta lo que
+  // ya pasa por ahí, porque ese CNAME está proxiado—, así que convive con él y
+  // el Worker contesta su 301 a la raíz (F1.9).
+  "routes": [
+    { "pattern": "babycaleb.com", "custom_domain": true },
+    { "pattern": "www.babycaleb.com/*", "zone_name": "babycaleb.com" }
+  ],
 
   // SITE_URL manda sobre el `Host` de la petición: con el Host, el canónico de
   // una vista previa apuntaría a la vista previa y Google indexaría esa.
