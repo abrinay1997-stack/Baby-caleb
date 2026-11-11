@@ -6,9 +6,18 @@
   // binding a un entrypoint que no existe impide desplegar, así que cada uno
   // llega con la fase que lo crea.
   //
-  // Apunta a `babycaleb-sistema-staging` A PROPÓSITO: `babycaleb-sistema` (el
-  // de producción) todavía no existe, y esta web vive en workers.dev como
-  // copia de prueba. Se cambia en el traspaso (F3.4), junto con el DNS.
+  // Apunta a `babycaleb-sistema` (PRODUCCIÓN) desde el 2026-11-11.
+  //
+  // Hasta ese día apuntaba a staging a propósito, porque el Worker de
+  // producción no existía. Ahora existe, tiene su puerta de Access, su D1 con
+  // el catálogo y sus usuarios, así que esta web lee de la MISMA base que ve
+  // la dueña en el panel. Eso es lo que hace que cambiar un precio o publicar
+  // un producto se note en la tienda sin desplegar nada.
+  //
+  // Antes del cambio, los 12 productos se publicaron en la D1 de producción
+  // para que coincidiera con lo que las clientas YA veían: los mismos códigos
+  // y los mismos precios que staging servía, al centavo. Sin eso, el cambio
+  // de binding habría dejado la tienda vacía en el momento de desplegar.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "babycaleb-web",
   "main": "worker/index.ts",
@@ -17,7 +26,7 @@
   "observability": { "enabled": true },
 
   "services": [
-    { "binding": "SISTEMA", "service": "babycaleb-sistema-staging", "entrypoint": "SistemaWeb" }
+    { "binding": "SISTEMA", "service": "babycaleb-sistema", "entrypoint": "SistemaWeb" }
   ],
 
   "assets": {
@@ -89,8 +98,11 @@
   //
   // Condiciones para encenderlo, las tres:
   //   1. `babycaleb-sistema` (producción) existe y la web apunta a él;
+  //      ✅ desde el 2026-11-11.
   //   2. Yarielis aprobó los precios y el catálogo está publicado;
-  //   3. existen las páginas legales (Ley 81).
+  //      El catálogo ya está publicado (12 de 12). La APROBACIÓN de los
+  //      precios es de ella y nadie más la puede dar: sigue pendiente.
+  //   3. existen las páginas legales (Ley 81). ✅ F1.7.
   //
   // El estado sale en /api/salud y el chequeo del despliegue lo dice en voz
   // alta cada vez: un sitio lanzado y olvidado en «oculto» no da ningún

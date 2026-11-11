@@ -31,7 +31,12 @@ export default defineConfig({
         // en vez de recibir datos inventados que parezcan del sistema.
         workers: [
           {
-            name: "babycaleb-sistema-staging",
+            // El nombre tiene que ser EL MISMO que el binding de
+            // `wrangler.jsonc`. Cuando la web pasó de staging a producción,
+            // cambiar solo el binding tumbó la suite entera: workerd se niega
+            // a arrancar si un binding apunta a un servicio que no existe, y
+            // el error no dice «falta el doble», dice «runtime failure».
+            name: "babycaleb-sistema",
             modules: true,
             script: `
               import { WorkerEntrypoint } from "cloudflare:workers";
