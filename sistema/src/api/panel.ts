@@ -31,6 +31,8 @@ import {
   confirmarPago,
   esMetodoManual,
   registrarComprobante,
+  registrarContracargo,
+  registrarReembolso,
   rechazarPago,
 } from "../db/pagos";
 import {
@@ -87,6 +89,7 @@ import {
   crearEnvio,
   despacharRuta,
   devolverParada,
+  devolverPedidoEntregado,
   entregasDelDia,
   fechaDePanama,
   guardarPrueba,
@@ -1393,6 +1396,32 @@ function registrarRutas(panel: Hono<Entorno>): void {
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
+  /**
+   * La clienta devuelve lo que ya se le entregó (asiento 13).
+   *
+   * La mercancía vuelve al inventario con el costo con el que salió, la venta
+   * se deshace y lo que se le devuelve queda donde corresponde: descontado de
+   * lo que debía, o anotado como dinero suyo que está aquí. Todo en un batch:
+   * mercancía sin asiento es un descuadre que no se ve hasta el cierre.
+   *
+   * Pide `cobros` en «editar» y no `pedidos`: esto decide dinero —una venta
+   * menos y un saldo a favor de la clienta— y en la matriz de hoy eso es la
+   * dueña. Devolver una PARADA que no se llegó a entregar es otra cosa y va
+   * con `pedidos`: ahí no hay venta que deshacer.
+   */
+  panel.post("/pedidos/:id/devolucion", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const motivo = (texto(b["motivo"]) ?? "").trim();
+    if (motivo === "") {
+      return c.json(
+        fallo("entrada_invalida", "diga por qué se devuelve: queda en la bitácora"),
+        400,
+      );
+    }
+    const r = await devolverPedidoEntregado(contextoEntrega(c), c.req.param("id"), motivo);
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
   panel.get("/pedidos/:id", exige("pedidos"), async (c) => {
     const r = await leerPedido(c.env.DB, quienMira(c), c.req.param("id"));
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
@@ -1526,6 +1555,82 @@ function registrarRutas(panel: Hono<Entorno>): void {
         "content-disposition": "inline",
       },
     });
+  });
+
+  /**
+   * Se le devuelve dinero a una clienta (asiento 14).
+   *
+   * Anota un reembolso QUE YA SE HIZO: la transferencia de vuelta, el efectivo
+   * entregado, o la devolución hecha en el portal de la pasarela. El sistema no
+   * mueve dinero —no tiene con qué— así que esto no ordena nada: registra el
+   * hecho y su asiento, juntos.
+   *
+   * Pide el permiso de `cobros` en «editar», que hoy solo tiene la dueña:
+   * quien despacha mira los pedidos y no saca dinero de ninguna cuenta.
+   */
+  panel.post("/cobros/:pagoId/reembolso", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const montoCents = entero(b["montoCents"]);
+    const motivo = texto(b["motivo"]);
+    const proveedorRef = texto(b["proveedorRef"]);
+
+    if (montoCents === undefined) {
+      // El monto NO se deduce del pago: un reembolso puede ser parcial, y
+      // suponer «el pago entero» es decidir por quien lo está registrando.
+      return c.json(fallo("entrada_invalida", "diga cuánto se le devolvió, en centavos"), 400);
+    }
+    if (motivo === undefined || motivo.trim() === "") {
+      return c.json(
+        fallo("entrada_invalida", "diga por qué se le devolvió: queda en la bitácora"),
+        400,
+      );
+    }
+
+    const r = await registrarReembolso(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      {
+        pagoId: c.req.param("pagoId"),
+        montoCents,
+        motivo,
+        ...(proveedorRef === undefined ? {} : { proveedorRef }),
+      },
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * La pasarela revierte un cobro (asiento 15).
+   *
+   * Lo registra una persona porque hoy ninguna pasarela está encendida y el
+   * aviso de PayPal todavía no llega a ningún sitio; el día que llegue, el
+   * webhook llamará a la misma función con los mismos datos.
+   */
+  panel.post("/cobros/:pagoId/contracargo", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const montoCents = entero(b["montoCents"]);
+    const motivo = texto(b["motivo"]);
+    const proveedorRef = texto(b["proveedorRef"]);
+
+    if (montoCents === undefined) {
+      return c.json(fallo("entrada_invalida", "diga cuánto se llevaron, en centavos"), 400);
+    }
+    if (motivo === undefined || motivo.trim() === "") {
+      return c.json(
+        fallo("entrada_invalida", "diga qué dijo la pasarela: queda en la bitácora"),
+        400,
+      );
+    }
+
+    const r = await registrarContracargo(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      {
+        pagoId: c.req.param("pagoId"),
+        montoCents,
+        motivo,
+        ...(proveedorRef === undefined ? {} : { proveedorRef }),
+      },
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   /** Y dice que no. No se borra: queda el rechazo y su motivo. */

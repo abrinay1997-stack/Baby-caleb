@@ -757,6 +757,8 @@ const RESPUESTAS = {
         detalle: "Activos = pasivos + patrimonio + el resultado del periodo." },
       { clave: "venta_sin_asiento", titulo: "Todas las entregas del mes tienen su asiento de venta",
         estado: "ok", detalle: "Todas." },
+      { clave: "devolucion_sin_asiento", titulo: "Todas las devoluciones del mes tienen su asiento",
+        estado: "ok", detalle: "Todas." },
       { clave: "pago_sin_asiento", titulo: "Todo el dinero que entró tiene su asiento",
         estado: "ok", detalle: "Todo." },
       { clave: "cuadre", titulo: "Todos los asientos del mes tienen su cuadre", estado: "ok", detalle: "Todos." },

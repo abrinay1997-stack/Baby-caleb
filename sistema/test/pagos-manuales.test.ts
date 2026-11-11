@@ -5,7 +5,10 @@ import { enunciadosDeCobro } from "../src/db/transiciones";
 import {
   confirmarPago,
   enunciadosDeConfirmacion,
+  enunciadosDeDineroQueSale,
   registrarComprobante,
+  registrarContracargo,
+  registrarReembolso,
   rechazarPago,
 } from "../src/db/pagos";
 
@@ -559,5 +562,371 @@ describe("cuando la tabla rechaza el dato", () => {
     expect(dos.ok).toBe(false);
     if (dos.ok) return;
     expect(dos.codigo).toBe("repetido");
+  });
+});
+
+/**
+ * El dinero que vuelve: reembolsos y contracargos (04-pagos §7, asientos 14 y 15).
+ *
+ * Los dos constructores estaban escritos, cuadraban y tenían sus pruebas en el
+ * dominio… y nadie los llamaba: no había función, ni ruta, ni forma de
+ * devolverle un peso a una clienta sin escribirlo a mano en la consola de D1.
+ * Es la trampa nº 12 otra vez, y por eso estas pruebas miran las TABLAS
+ * —`asientos`, `reembolsos`, `pagos`, `pedidos`— y no lo que devuelve la
+ * función.
+ *
+ * Cada una se validó rompiendo lo que vigila: quitando el asiento del batch,
+ * cambiando la cuenta contra la que se carga, y neutralizando los dos
+ * controles.
+ */
+describe("el dinero que vuelve", () => {
+  const asientosDelPago = async (pagoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT a.id, a.hecho, a.origen, a.descripcion, cc.diferencia
+         FROM asientos a LEFT JOIN control_cuadre cc ON cc.asiento_id = a.id
+        WHERE a.referencia_tipo = 'pago' AND a.referencia_id = ?
+        ORDER BY a.hecho`,
+    )
+      .bind(pagoId)
+      .all<{
+        id: string;
+        hecho: string;
+        origen: string;
+        descripcion: string;
+        diferencia: number | null;
+      }>();
+    return results;
+  };
+
+  const lineasDelAsiento = async (asientoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT c.codigo, l.debe_cents AS debe, l.haber_cents AS haber
+         FROM asiento_lineas l JOIN cuentas c ON c.id = l.cuenta_id
+        WHERE l.asiento_id = ? ORDER BY c.codigo`,
+    )
+      .bind(asientoId)
+      .all<{ codigo: string; debe: number; haber: number }>();
+    return results;
+  };
+
+  const pagoDe = (pagoId: string) =>
+    env.DB.prepare("SELECT estado, actualizado_en FROM pagos WHERE id = ?")
+      .bind(pagoId)
+      .first<{ estado: string; actualizado_en: number }>();
+
+  const reembolsosDe = async (pagoId: string) => {
+    const { results } = await env.DB.prepare(
+      "SELECT monto_cents, motivo, via, estado, actor FROM reembolsos WHERE pago_id = ? ORDER BY id",
+    )
+      .bind(pagoId)
+      .all<{ monto_cents: number; motivo: string; via: string; estado: string; actor: string }>();
+    return results;
+  };
+
+  /** Un pedido con un pago manual ya aprobado. */
+  async function conPagoAprobado(montoCents: number, metodo = "yappy") {
+    const p = await unPedido();
+    const c = await comprobante(p.id, montoCents, { metodo, tipo: "abono" });
+    if (!c.ok) throw new Error(c.mensaje);
+    const conf = await confirmarPago(ctx(), c.datos.pagoId);
+    if (!conf.ok) throw new Error(conf.mensaje);
+    return { pedido: p, pagoId: c.datos.pagoId };
+  }
+
+  it("un reembolso antes de entregar sale del anticipo, no de las ventas", async () => {
+    const { pedido, pagoId } = await conPagoAprobado(3000);
+
+    const r = await registrarReembolso(ctx(), {
+      pagoId,
+      montoCents: 3000,
+      motivo: "se arrepintió y no había salido",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.pagadoCents).toBe(0);
+    expect(r.datos.estadoDelPago).toBe("reembolsado");
+
+    // El pedido deja de tener ese dinero y lo dice con su estado de pago.
+    const e = await estadoDe(pedido.id);
+    expect(e?.pagado_cents).toBe(0);
+    expect(e?.estado_pago).toBe("reembolsado");
+    expect((await pagoDe(pagoId))?.estado).toBe("reembolsado");
+
+    // Y queda la fila del libro: cuánto, por qué, por dónde y quién.
+    expect(await reembolsosDe(pagoId)).toEqual([
+      {
+        monto_cents: 3000,
+        motivo: "se arrepintió y no había salido",
+        via: "manual",
+        estado: "hecho",
+        actor: "yarielis",
+      },
+    ]);
+
+    const asiento = (await asientosDelPago(pagoId)).find((a) => a.hecho === "14");
+    expect(asiento, "falta el asiento 14").toBeDefined();
+    expect(asiento?.origen).toBe("reembolso");
+    expect(asiento?.diferencia, "el asiento 14 no cuadró").toBe(0);
+    expect(asiento?.descripcion).toContain(pedido.numero);
+
+    // El pedido no había salido, así que ese dinero nunca fue una venta: sale
+    // del pasivo con la clienta. Cargarlo a 4901 restaría de las ventas un
+    // dinero que jamás entró en ellas.
+    expect(await lineasDelAsiento(asiento!.id)).toEqual([
+      { codigo: "1101", debe: 0, haber: 3000 },
+      { codigo: "2101", debe: 3000, haber: 0 },
+    ]);
+  });
+
+  it("después de entregar deshace la venta: va contra devoluciones (4901)", async () => {
+    const { pedido, pagoId } = await conPagoAprobado(3000);
+    // El pedido ya salió: ahí la venta SÍ se reconoció, y devolver dinero es
+    // deshacerla. Se mueve a mano porque lo que se prueba es la cuenta del
+    // asiento, no el camino de la entrega, que tiene sus propias pruebas.
+    await env.DB.prepare("UPDATE pedidos SET estado = 'entregado' WHERE id = ?")
+      .bind(pedido.id)
+      .run();
+
+    const r = await registrarReembolso(ctx(), {
+      pagoId,
+      montoCents: 3000,
+      motivo: "le llegó rota",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const asiento = (await asientosDelPago(pagoId)).find((a) => a.hecho === "14");
+    expect(await lineasDelAsiento(asiento!.id)).toEqual([
+      { codigo: "1101", debe: 0, haber: 3000 },
+      { codigo: "4901", debe: 3000, haber: 0 },
+    ]);
+  });
+
+  it("el dinero vuelve por donde entró: cada método, su cuenta", async () => {
+    for (const [metodo, cuenta] of [
+      ["yappy", "1101"],
+      ["transferencia", "1102"],
+      ["efectivo", "1103"],
+    ] as const) {
+      const { pagoId } = await conPagoAprobado(1500, metodo);
+      expect(
+        (await registrarReembolso(ctx(), { pagoId, montoCents: 1500, motivo: "devuelto" })).ok,
+        metodo,
+      ).toBe(true);
+
+      const asiento = (await asientosDelPago(pagoId)).find((a) => a.hecho === "14");
+      expect(await lineasDelAsiento(asiento!.id), metodo).toEqual([
+        { codigo: "2101", debe: 1500, haber: 0 },
+        { codigo: cuenta, debe: 0, haber: 1500 },
+      ].sort((a, b) => a.codigo.localeCompare(b.codigo)));
+    }
+  });
+
+  it("un reembolso parcial lo dice en los dos sitios, y el resto puede volver después", async () => {
+    const { pedido, pagoId } = await conPagoAprobado(3000);
+
+    expect((await registrarReembolso(ctx(), { pagoId, montoCents: 1000, motivo: "una caja" })).ok)
+      .toBe(true);
+    expect((await estadoDe(pedido.id))?.pagado_cents).toBe(2000);
+    expect((await estadoDe(pedido.id))?.estado_pago).toBe("reembolso_parcial");
+    expect((await pagoDe(pagoId))?.estado).toBe("reembolso_parcial");
+
+    expect((await registrarReembolso(ctx(), { pagoId, montoCents: 2000, motivo: "el resto" })).ok)
+      .toBe(true);
+    expect((await estadoDe(pedido.id))?.pagado_cents).toBe(0);
+    expect((await pagoDe(pagoId))?.estado).toBe("reembolsado");
+    expect(await reembolsosDe(pagoId)).toHaveLength(2);
+  });
+
+  it("no puede volver más de lo que entró", async () => {
+    const { pagoId } = await conPagoAprobado(3000);
+    expect((await registrarReembolso(ctx(), { pagoId, montoCents: 2500, motivo: "casi todo" })).ok)
+      .toBe(true);
+
+    const r = await registrarReembolso(ctx(), { pagoId, montoCents: 1000, motivo: "y un poco más" });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("monto_no_coincide");
+    // El mensaje dice las dos cifras: sin ellas, quien lo lea tiene que ir a
+    // buscar cuánto llevaba devuelto ese pago.
+    expect(r.mensaje).toMatch(/\$25\.00/);
+    expect(await reembolsosDe(pagoId)).toHaveLength(1);
+  });
+
+  it("de un pago que no está aprobado no vuelve nada", async () => {
+    const p = await unPedido();
+    const c = await comprobante(p.id, 2000);
+    if (!c.ok) throw new Error(c.mensaje);
+
+    // Sigue en «confirmando»: nadie ha comprobado que ese dinero entrara, así
+    // que devolverlo sería sacar de la cuenta algo que nunca llegó.
+    const r = await registrarReembolso(ctx(), {
+      pagoId: c.datos.pagoId,
+      montoCents: 2000,
+      motivo: "mejor no",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.codigo).toBe("transicion_invalida");
+    expect((await estadoDe(p.id))?.pagado_cents).toBe(0);
+    expect(await reembolsosDe(c.datos.pagoId)).toHaveLength(0);
+  });
+
+  it("sin motivo no se registra: dentro de seis meses nadie sabría por qué volvió", async () => {
+    const { pagoId } = await conPagoAprobado(2000);
+    const r = await registrarReembolso(ctx(), { pagoId, montoCents: 2000, motivo: "   " });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.codigo).toBe("entrada_invalida");
+    expect(await reembolsosDe(pagoId)).toHaveLength(0);
+  });
+
+  /** Un pago de pasarela, que es de donde vienen los contracargos. */
+  async function conPagoDePasarela(montoCents: number, proveedor: "tilopay" | "paypal") {
+    const p = await unPedido();
+    const pagoId = `pago-${proveedor}-${Date.now()}-${n++}`;
+    // Se inserta directo porque `registrarComprobante` solo acepta métodos
+    // manuales —y hace bien: un cobro de tarjeta no lo anota una persona—. El
+    // adaptador de la pasarela, que es quien lo escribirá, llega en F4.7.
+    await env.DB.prepare(
+      `INSERT INTO pagos (id,pedido_id,proveedor,metodo,tipo,estado,monto_cents,
+         intento_ref,creado_en,actualizado_en)
+       VALUES (?,?,?,'tarjeta','total','confirmando',?,?,?,?)`,
+    )
+      .bind(pagoId, p.id, proveedor, montoCents, `ref-${pagoId}`, ahora(), ahora())
+      .run();
+    const conf = await confirmarPago(ctx(), pagoId);
+    if (!conf.ok) throw new Error(conf.mensaje);
+    return { pedido: p, pagoId };
+  }
+
+  it("un contracargo deshace la venta contra la cuenta de la pasarela", async () => {
+    const { pedido, pagoId } = await conPagoDePasarela(5000, "tilopay");
+
+    const r = await registrarContracargo(ctx(), {
+      pagoId,
+      montoCents: 5000,
+      motivo: "la clienta desconoció el cargo",
+      proveedorRef: "DISPUTA-123",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const e = await estadoDe(pedido.id);
+    expect(e?.pagado_cents, "el dinero ya no está: el pedido tiene que decirlo").toBe(0);
+    expect(e?.estado_pago).toBe("reembolsado");
+    expect((await pagoDe(pagoId))?.estado).toBe("reembolsado");
+
+    const asiento = (await asientosDelPago(pagoId)).find((a) => a.hecho === "15");
+    expect(asiento, "falta el asiento 15").toBeDefined();
+    expect(asiento?.origen).toBe("contracargo");
+    expect(asiento?.diferencia, "el asiento 15 no cuadró").toBe(0);
+
+    // 1105 es «Por liquidar Tilopay»: ahí es donde estaba ese dinero mientras
+    // la pasarela no lo depositaba, y de ahí se lo llevan.
+    expect(await lineasDelAsiento(asiento!.id)).toEqual([
+      { codigo: "1105", debe: 0, haber: 5000 },
+      { codigo: "4901", debe: 5000, haber: 0 },
+    ]);
+
+    // Y la bitácora del pedido dice que fue un contracargo, no un reembolso:
+    // la columna `pagos.estado` no distingue los dos y no se le inventa un
+    // valor nuevo, así que la diferencia vive aquí y en el asiento.
+    const ev = await env.DB.prepare(
+      "SELECT tipo FROM pedido_eventos WHERE pedido_id = ? AND tipo = 'contracargo'",
+    )
+      .bind(pedido.id)
+      .first<{ tipo: string }>();
+    expect(ev?.tipo).toBe("contracargo");
+  });
+
+  it("un contracargo de un pago en efectivo no existe, y se dice en vez de inventarlo", async () => {
+    const { pedido, pagoId } = await conPagoAprobado(2000, "efectivo");
+
+    const r = await registrarContracargo(ctx(), {
+      pagoId,
+      montoCents: 2000,
+      motivo: "alguien lo marcó mal",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.codigo).toBe("entrada_invalida");
+
+    // Y no escribió nada por el camino: el dinero sigue donde estaba.
+    expect((await estadoDe(pedido.id))?.pagado_cents).toBe(2000);
+    expect((await pagoDe(pagoId))?.estado).toBe("aprobado");
+    expect(await reembolsosDe(pagoId)).toHaveLength(0);
+  });
+
+  describe("dos salidas de dinero a la vez", () => {
+    it("con la versión vieja del pedido en la mano, el batch se niega", async () => {
+      // Es la actualización perdida, por el lado del dinero que sale: dos
+      // reembolsos DISTINTOS leen `pagado_cents = 3000` a la vez, uno resta
+      // $10 y el otro $5, y el último que escribe borra al otro. Lo cierra la
+      // versión del pedido, que el segundo ya no tiene.
+      const { pedido, pagoId } = await conPagoAprobado(3000);
+      const v = await env.DB.prepare("SELECT version FROM pedidos WHERE id = ?")
+        .bind(pedido.id)
+        .first<{ version: number }>();
+
+      expect((await registrarReembolso(ctx(), { pagoId, montoCents: 1000, motivo: "una caja" })).ok)
+        .toBe(true);
+
+      await expect(
+        env.DB.batch(
+          enunciadosDeDineroQueSale(ctx(), {
+            pagoId,
+            pedidoId: pedido.id,
+            montoCents: 500,
+            motivo: "otra caja",
+            via: "manual",
+            proveedorRef: null,
+            estadoDelPagoLeido: "reembolso_parcial",
+            estadoDelPagoNuevo: "reembolso_parcial",
+            versionLeida: v?.version ?? 0,
+            // Lo que habría escrito quien leyó 3000 antes del otro reembolso.
+            pagadoDespuesCents: 2500,
+            estadoDePagoDelPedido: "reembolso_parcial",
+            evento: "reembolso",
+          }),
+        ),
+      ).rejects.toThrow();
+
+      expect((await estadoDe(pedido.id))?.pagado_cents, "el primer reembolso sigue ahí").toBe(2000);
+    });
+
+    it("y con el estado viejo del pago, también", async () => {
+      // El otro lado de la carrera: dos personas devolviendo el MISMO pago. El
+      // `WHERE estado = ?` hace que el segundo UPDATE no case con nada —y un
+      // UPDATE que no casa NO FALLA—, así que lo que tumba el batch es el
+      // control, que mira el estado nuevo Y la hora que escribió este batch.
+      const { pedido, pagoId } = await conPagoAprobado(3000);
+      expect((await registrarReembolso(ctx(), { pagoId, montoCents: 3000, motivo: "todo" })).ok)
+        .toBe(true);
+
+      const v = await env.DB.prepare("SELECT version FROM pedidos WHERE id = ?")
+        .bind(pedido.id)
+        .first<{ version: number }>();
+      // Otra hora a propósito: si fuera la misma, el control no distinguiría
+      // este batch del anterior, que es justo lo que `actualizado_en` defiende.
+      const despues = { db: env.DB, ahora: ahora() + 60_000, actor: "yarielis" };
+
+      await expect(
+        env.DB.batch(
+          enunciadosDeDineroQueSale(despues, {
+            pagoId,
+            pedidoId: pedido.id,
+            montoCents: 3000,
+            motivo: "otra vez",
+            via: "manual",
+            proveedorRef: null,
+            // El estado que creía tener quien llegó segundo.
+            estadoDelPagoLeido: "aprobado",
+            estadoDelPagoNuevo: "reembolsado",
+            versionLeida: v?.version ?? 0,
+            pagadoDespuesCents: 0,
+            estadoDePagoDelPedido: "reembolsado",
+            evento: "reembolso",
+          }),
+        ),
+      ).rejects.toThrow();
+
+      expect(await reembolsosDe(pagoId), "el segundo no dejó fila").toHaveLength(1);
+    });
   });
 });

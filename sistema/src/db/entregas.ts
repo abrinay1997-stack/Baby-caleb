@@ -14,9 +14,11 @@ import {
   cobroDelSaldo,
   codigoDeCaja,
   costoDeLaEntrega,
+  devolucionAlInventario,
   entregaDelPedido,
   fechaContable,
 } from "../dominio/contabilidad";
+import { formatear } from "../dominio/dinero";
 import { enunciadosDeAsiento, enunciadosDeCuentaDeMotorizado } from "./contabilidad";
 import type { Ventana } from "../dominio/ajustes";
 
@@ -114,6 +116,9 @@ export function fechaDePanama(ahora: number): string {
 /** `"PENDIENTE"` no es un valor: es que la dueña todavía no lo decidió. */
 export type Pendiente = "PENDIENTE";
 
+/** Las dos salidas que el plan contempla para el abono de un pedido cancelado. */
+export type DestinoDelAbono = "reembolso" | "credito";
+
 export interface AjustesDeEntrega {
   /** Las ventanas que la dueña ofrece («mañana», «tarde»…). */
   readonly ventanas: readonly string[] | Pendiente;
@@ -184,6 +189,33 @@ export async function ajustesDeEntrega(
   const comisiones = co === undefined || co.pendiente ? ("PENDIENTE" as const) : co.valor;
 
   return { ventanas, comisiones };
+}
+
+/**
+ * Qué se hace con el abono de un pedido que se cancela (`02-datos §9`).
+ *
+ * Son dos caminos y el documento no elige: «se le devuelve» (reembolso) o «le
+ * queda como crédito para otro pedido». La dueña lo decide en los ajustes, y
+ * mientras no lo haga esto devuelve `"PENDIENTE"` tal cual — nunca uno de los
+ * dos «porque suena razonable». Es el mismo criterio que las ventanas de
+ * entrega, y por la misma razón: lo que falta se ve, no se rellena.
+ *
+ * Si los ajustes no se pueden leer también sale `"PENDIENTE"`. Es lo seguro:
+ * quien llame se para y lo dice, en vez de elegir por ella con la base caída.
+ */
+export async function destinoDelAbono(
+  db: D1Database,
+  ahora: number,
+): Promise<DestinoDelAbono | Pendiente> {
+  const r = await leerVigentes({ db, ahora });
+  if (!r.ok) return "PENDIENTE";
+
+  const a = r.datos.ajustes.find((x) => x.clave === "cancelacion_con_abono");
+  if (a === undefined || a.pendiente) return "PENDIENTE";
+  // `leerVigentes` ya validó el valor contra el esquema de la clave, que solo
+  // admite «reembolso» y «credito»; esta comprobación es la que convence al
+  // tipo, no una segunda validación.
+  return a.valor === "reembolso" || a.valor === "credito" ? a.valor : "PENDIENTE";
 }
 
 // ---------------------------------------------------------------------------
@@ -1725,6 +1757,31 @@ export async function marcarFallida(
   return ok(respuesta);
 }
 
+export interface ParadaDevuelta {
+  readonly devuelta: true;
+  /** Cuántas filas de `existencias` se liberaron. */
+  readonly liberadas: number;
+  /** Lo que la clienta había abonado y sigue en 2101 esperando destino. */
+  readonly abonoCents: number;
+  /**
+   * Qué dice la dueña que se hace con ese abono. `null` cuando no había abono,
+   * que es cuando no hay nada que decidir.
+   */
+  readonly destinoDelAbono: DestinoDelAbono | null;
+}
+
+export interface PedidoDevuelto {
+  readonly pedidoId: string;
+  /** Cuántas salidas de inventario volvieron. */
+  readonly piezasDevueltas: number;
+  /** Lo que se le reintegra a la clienta: el subtotal (asiento 13). */
+  readonly reintegradoCents: number;
+  /** 1201 si descarga lo que debía; 2101 si pasa a ser dinero suyo aquí. */
+  readonly cuentaReintegro: "1201" | "2101";
+  /** `true` si alguna pieza había salido sin costo conocido. */
+  readonly costoDesconocido: boolean;
+}
+
 /**
  * La parada se devuelve: el pedido se cae y su mercancía vuelve a la venta.
  *
@@ -1738,12 +1795,32 @@ export async function marcarFallida(
  * corresponde es una devolución, no un borrón— y, sobre todo, el estado de la
  * parada y la liberación tienen que entrar en el MISMO batch. En dos batches,
  * un corte en medio deja el envío devuelto con la mercancía todavía apartada.
+ *
+ * ## Por qué aquí NO hay asiento, y qué hay en su lugar
+ *
+ * Esta devolución es la de un pedido que **nunca se entregó**: la parada salió,
+ * no se pudo dejar, y vuelve a la bodega. La venta no se reconoció —eso pasa al
+ * entregar (asiento 3)— y la mercancía no salió del inventario: solo estaba
+ * apartada, así que el físico no se movió. No hay nada que deshacer en los
+ * libros, y escribir el asiento 13 aquí sería peor que no escribir ninguno:
+ * cargaría a «Devoluciones» un subtotal que nunca entró en «Ventas» y metería
+ * en Inventario un costo que nunca salió de él. Los dos lados cuadrarían y los
+ * dos serían falsos. La devolución que sí deshace una venta —la de un pedido ya
+ * entregado— es `devolverPedidoEntregado`, más abajo, y esa sí lleva su
+ * asiento 13.
+ *
+ * Lo que sí hay aquí es dinero de la clienta: si abonó, ese abono vive en 2101
+ * y el pedido se está cancelando. **Qué se hace con él no lo decide este
+ * código** — lo decide la dueña en `ajustes.cancelacion_con_abono`, que hoy
+ * está en PENDIENTE. Mientras lo esté, la devolución FALLA y dice qué falta
+ * decidir y dónde: adivinar «se le devuelve» o «le queda de crédito» es mover
+ * el dinero de una clienta a ojo, y eso no se hace ni una vez.
  */
 export async function devolverParada(
   ctx: ContextoEntrega,
   envioId: string,
   motivo: string,
-): Promise<Resultado<{ devuelta: true; liberadas: number }>> {
+): Promise<Resultado<ParadaDevuelta>> {
   if (motivo.trim() === "") {
     return fallo("entrada_invalida", "una devolución sin motivo no le sirve a nadie");
   }
@@ -1769,6 +1846,33 @@ export async function devolverParada(
     );
   }
 
+  // ── El abono, que es la única decisión de dinero que hay aquí ────────────
+  //
+  // El pedido se cancela. Si la clienta abonó, ese dinero está en 2101 y
+  // alguien tiene que decir qué se hace con él. Lo dice la dueña, una vez, en
+  // Configuración → Ajustes; no lo decide este código caso por caso ni «por
+  // defecto», porque un valor por defecto aquí es una política inventada que se
+  // aplica al dinero de otra persona.
+  //
+  // Mientras siga en PENDIENTE la devolución no se registra. Fallar diciendo
+  // qué falta deja el pedido como estaba —se puede volver a intentar en cuanto
+  // ella lo decida— y mover el dinero adivinando no se puede deshacer.
+  let destino: DestinoDelAbono | null = null;
+  if (p.pagado_cents > 0) {
+    const decidido = await destinoDelAbono(ctx.db, ctx.ahora);
+    if (decidido === "PENDIENTE") {
+      return fallo(
+        "entrada_invalida",
+        `El pedido ${p.numero} tiene ${formatear(p.pagado_cents)} abonados y todavía no está ` +
+          "decidido qué se hace con el dinero de un pedido cancelado: si se le devuelve a la " +
+          "clienta o le queda como crédito para otro pedido. Lo decide usted en " +
+          "Configuración → Ajustes, en «Si se cancela un pedido ya abonado». Hasta entonces la " +
+          "devolución no se registra: el sistema no mueve el dinero de una clienta adivinando.",
+      );
+    }
+    destino = decidido;
+  }
+
   const { results: componentes } = await ctx.db
     .prepare(
       `SELECT plc.codigo, plc.cantidad, plc.bodega_id
@@ -1781,7 +1885,17 @@ export async function devolverParada(
 
   const enunciados: D1PreparedStatement[] = [
     ...enunciadosDeParada(ctx, envioId, envio.estado, "devuelto", envio.version, { nota: motivo }),
-    ...enunciadosDeTransicion(ctx, p.id, p.estado, "cancelado", { motivo, envioId }),
+    // El destino del abono va en la bitácora del pedido y no en un asiento: el
+    // dinero no se ha movido todavía —sigue en 2101, que es donde tiene que
+    // estar— y lo que se guarda es la decisión que había vigente ese día. Lo
+    // que la ejecuta es otra cosa: `registrarReembolso` cuando se le devuelve,
+    // o el asiento 16 cuando se le aplica a otro pedido.
+    ...enunciadosDeTransicion(ctx, p.id, p.estado, "cancelado", {
+      motivo,
+      envioId,
+      abonoCents: p.pagado_cents,
+      destinoDelAbono: destino,
+    }),
   ];
 
   for (const c of componentes) {
@@ -1812,7 +1926,306 @@ export async function devolverParada(
       : fallo("interno", texto);
   }
 
-  return ok({ devuelta: true as const, liberadas: componentes.length });
+  return ok({
+    devuelta: true as const,
+    liberadas: componentes.length,
+    abonoCents: p.pagado_cents,
+    destinoDelAbono: destino,
+  });
+}
+
+/**
+ * El pedido entregado se devuelve: la mercancía vuelve y su costo también.
+ *
+ * Esta es la devolución que SÍ deshace una venta, y por eso es la que lleva el
+ * asiento 13 del plan (05-contabilidad §3). Lo que hace, todo en un batch:
+ *
+ *  1. el pedido pasa de `entregado` a `devuelto`;
+ *  2. cada salida de inventario de esa entrega entra de vuelta, con su
+ *     `revierte_id` apuntando a la salida que deshace;
+ *  3. el costo promedio recupera las unidades y su valor;
+ *  4. el asiento 13: Debe 4901 (lo que se le devuelve) + 1301 (el costo) ·
+ *     Haber 1201 o 2101 + 5101 (el costo).
+ *
+ * **Lo que vuelve es lo que salió, no lo que valdría hoy.** Las unidades y el
+ * costo se leen de los `movimientos_inventario` de la entrega, no del promedio
+ * de ahora: si el promedio cambió desde la venta, devolver al promedio de hoy
+ * mete en inventario un valor que nunca salió de él, y esa diferencia no la
+ * delata nada porque el asiento cuadra igual.
+ *
+ * ## Lo que este camino NO cubre, y aquí no se inventa
+ *
+ * El asiento 13 solo cuadra cuando **lo que se le reintegra a la clienta es el
+ * subtotal**: el constructor lo exige y el hueco `devolucion_parcial` dice por
+ * qué —a qué cuenta va la diferencia (un ITBMS, un descuento, media caja) lo
+ * tiene que decir la contadora—. Así que aquí se devuelve el pedido ENTERO, y
+ * un pedido con descuento o con ITBMS se niega diciendo qué falta.
+ *
+ * El envío no se devuelve: el asiento 13 del plan no toca 4102. No es un olvido
+ * de este código, es lo que dice el documento, y cambiarlo se cambia allí
+ * primero.
+ */
+export async function devolverPedidoEntregado(
+  ctx: ContextoEntrega,
+  pedidoId: string,
+  motivo: string,
+): Promise<Resultado<PedidoDevuelto>> {
+  if (motivo.trim() === "") {
+    return fallo("entrada_invalida", "una devolución sin motivo no le sirve a nadie");
+  }
+
+  const p = await leerPedido(ctx.db, pedidoId);
+  if (p === null) return fallo("no_encontrado", "no existe ese pedido");
+  if (p.estado !== "entregado") {
+    return fallo(
+      "transicion_invalida",
+      `el pedido ${p.numero} está ${p.estado}: una devolución deshace una entrega, y esta no se entregó. Una parada que vuelve sin entregarse se devuelve desde la ruta del día.`,
+    );
+  }
+
+  if (p.descuento_cents !== 0 || p.itbms_cents !== 0) {
+    return fallo(
+      "entrada_invalida",
+      `El pedido ${p.numero} lleva descuento o ITBMS, y entonces lo que se le devuelve a la clienta no es el subtotal. El asiento 13 del plan no dice a qué cuenta va esa diferencia: lo tiene que decir la contadora. Hasta entonces esta devolución se registra a mano, en Contabilidad › asiento nuevo.`,
+    );
+  }
+  if (p.subtotal_cents <= 0) {
+    return fallo(
+      "entrada_invalida",
+      `el pedido ${p.numero} no tiene subtotal que devolver: un regalo o un canje se arregla con un movimiento de inventario, no con una devolución`,
+    );
+  }
+
+  /**
+   * De qué cuenta sale lo que se le reintegra (05 §3, asiento 13: «1201 o
+   * 2101»).
+   *
+   * Son los dos casos puros, y el que falta se dice en vez de repartirse a ojo:
+   *
+   *  · si todavía debe al menos lo que se le devuelve, se le quita de lo que
+   *    debe (1201) y no sale dinero de ninguna cuenta;
+   *  · si ya pagó todo, lo que se le devuelve pasa a ser dinero suyo que está
+   *    aquí (2101), y de ahí sale el día que se le reembolse.
+   *
+   * El caso mezclado —debe algo, pero menos de lo que se le devuelve— es parte
+   * de cada uno, y el asiento 13 solo admite UNA cuenta. Partirlo por la mitad
+   * sería elegir una proporción que nadie ha decidido.
+   */
+  const reintegradoCents = p.subtotal_cents;
+  const saldo = p.total_cents - p.pagado_cents;
+  const cuentaReintegro = saldo >= reintegradoCents ? "1201" : saldo === 0 ? "2101" : null;
+  if (cuentaReintegro === null) {
+    return fallo(
+      "entrada_invalida",
+      `El pedido ${p.numero} tiene ${formatear(saldo)} sin cobrar y se le devuelven ${formatear(reintegradoCents)}: parte sale de lo que debe y parte es dinero suyo. El asiento 13 del plan va contra una sola cuenta, así que cómo se parte lo tiene que decir la contadora. Hasta entonces esta devolución se registra a mano, en Contabilidad › asiento nuevo.`,
+    );
+  }
+
+  /**
+   * Lo que salió de verdad, movimiento por movimiento.
+   *
+   * `revierte_id` es lo que impide devolver dos veces la misma salida: una
+   * salida que ya tiene su entrada no vuelve a aparecer en esta consulta. La
+   * transición del pedido también lo impide —de `devuelto` no se vuelve— pero
+   * esto lo deja dicho en el dato y no solo en el estado.
+   */
+  const { results: salidas } = await ctx.db
+    .prepare(
+      `SELECT m.id, m.codigo, m.bodega_id, m.delta, m.costo_unit_cents
+         FROM movimientos_inventario m
+        WHERE m.tipo = 'venta'
+          AND m.referencia_tipo = 'envio'
+          AND m.referencia_id IN (SELECT e.id FROM envios e WHERE e.pedido_id = ?)
+          AND NOT EXISTS (SELECT 1 FROM movimientos_inventario d WHERE d.revierte_id = m.id)
+        ORDER BY m.id`,
+    )
+    .bind(pedidoId)
+    .all<{
+      id: string;
+      codigo: string;
+      bodega_id: string;
+      delta: number;
+      costo_unit_cents: number | null;
+    }>();
+
+  if (salidas.length === 0) {
+    return fallo(
+      "transicion_invalida",
+      `del pedido ${p.numero} no hay mercancía que devolver: sus salidas de inventario ya volvieron, o la entrega se registró antes de que el sistema llevara inventario`,
+    );
+  }
+
+  /** Lo que vuelve de un artículo. El promedio es por variante, no por línea. */
+  interface Vuelta {
+    unidades: number;
+    costoCents: number;
+    /** `false` si alguna de sus salidas no sabía lo que había costado. */
+    costoConocido: boolean;
+  }
+  const porCodigo = new Map<string, Vuelta>();
+  let costoTotalCents = 0;
+  let costoDesconocido = false;
+
+  for (const s of salidas) {
+    // La venta salió en negativo; lo que vuelve es esa misma cantidad.
+    const cantidad = -s.delta;
+    if (cantidad <= 0) {
+      return fallo(
+        "interno",
+        "esa entrega tiene un movimiento de venta que no resta: avísele a Juan",
+      );
+    }
+    const v = porCodigo.get(s.codigo) ?? { unidades: 0, costoCents: 0, costoConocido: true };
+    v.unidades += cantidad;
+    if (s.costo_unit_cents === null) {
+      // Salió sin costo conocido (no había promedio cargado): vuelve igual, y
+      // el valor del inventario no se toca. Ponerle un costo ahora sería
+      // inventarlo, y además metería en 1301 un valor que nunca salió de ahí.
+      v.costoConocido = false;
+      costoDesconocido = true;
+    } else {
+      const c = s.costo_unit_cents * cantidad;
+      v.costoCents += c;
+      costoTotalCents += c;
+    }
+    porCodigo.set(s.codigo, v);
+  }
+
+  const conCosto = [...porCodigo].filter(([, v]) => v.costoConocido);
+  const { results: valores } =
+    conCosto.length === 0
+      ? { results: [] as { codigo: string; unidades: number; valor_cents: number }[] }
+      : await ctx.db
+          .prepare(
+            `SELECT codigo, unidades, valor_cents FROM valor_inventario
+              WHERE codigo IN (${conCosto.map(() => "?").join(",")})`,
+          )
+          .bind(...conCosto.map(([codigo]) => codigo))
+          .all<{ codigo: string; unidades: number; valor_cents: number }>();
+  const promedioAntes = new Map(valores.map((v) => [v.codigo, v]));
+
+  // ── El batch ─────────────────────────────────────────────────────────────
+  //
+  // La transición va PRIMERO porque es el candado: de `devuelto` no se vuelve,
+  // así que dos peticiones a la vez no pueden entrar las dos — la segunda no
+  // casa con `WHERE estado = 'entregado'`, su control sale cero y se cae el
+  // batch entero, mercancía y asiento incluidos.
+  const enunciados: D1PreparedStatement[] = [
+    ...enunciadosDeTransicion(ctx, p.id, "entregado", "devuelto", {
+      motivo,
+      reintegradoCents,
+      cuentaReintegro,
+    }),
+  ];
+
+  for (const s of salidas) {
+    const cantidad = -s.delta;
+    enunciados.push(
+      ctx.db
+        .prepare(
+          `INSERT INTO movimientos_inventario
+             (id,codigo,bodega_id,delta,tipo,costo_unit_cents,referencia_tipo,referencia_id,
+              motivo,actor,revierte_id,creado_en)
+           VALUES (?,?,?,?,'devolucion',?,'pedido',?,?,?,?,?)`,
+        )
+        .bind(
+          ulid(ctx.ahora), s.codigo, s.bodega_id, cantidad, s.costo_unit_cents,
+          pedidoId, motivo.trim(), ctx.actor, s.id, ctx.ahora,
+        ),
+      /**
+       * Solo el físico, y SIN fila de control. Las dos cosas a propósito:
+       *
+       * - **Solo el físico.** Lo reservado se consumió al entregar; volver a
+       *   sumarlo dejaría la caja apartada para un pedido que ya no existe.
+       * - **Sin control.** Lo único que podría pasar callando es que la fila de
+       *   `existencias` no exista, y eso ya lo impide la llave foránea
+       *   `(codigo, bodega_id)` del movimiento que se inserta justo encima:
+       *   sin esa fila, el INSERT tumba el batch. Es el mismo razonamiento, y
+       *   la misma comprobación, que en `marcarEntregada`.
+       */
+      ctx.db
+        .prepare("UPDATE existencias SET fisico = fisico + ? WHERE codigo = ? AND bodega_id = ?")
+        .bind(cantidad, s.codigo, s.bodega_id),
+    );
+  }
+
+  for (const [codigo, v] of conCosto) {
+    const antes = promedioAntes.get(codigo) ?? { unidades: 0, valor_cents: 0 };
+    enunciados.push(
+      // El UPDATE SUMA (no escribe un absoluto) para no pisar lo que otro batch
+      // haya hecho en medio; el control de al lado mira el resultado EXACTO que
+      // esta devolución esperaba. Juntos: si nadie se metió, cuadra; si alguien
+      // se metió, el control sale cero y se cae todo. Con un absoluto pasaría
+      // lo contrario —se pisaría el otro movimiento y el control pasaría tan
+      // contento, porque escribió justo lo que esperaba—.
+      //
+      // Y si la fila del promedio no existe, el UPDATE no casa con nada, no
+      // falla, y el costo se perdería en silencio: el control lo caza, porque
+      // cuenta cero.
+      ctx.db
+        .prepare(
+          "UPDATE valor_inventario SET unidades = unidades + ?, valor_cents = valor_cents + ? WHERE codigo = ?",
+        )
+        .bind(v.unidades, v.costoCents, codigo),
+      ctx.db
+        .prepare(
+          `INSERT INTO controles (id, regla, ok, creado_en)
+           VALUES (?, ?, (SELECT COUNT(*) FROM valor_inventario
+                          WHERE codigo = ? AND unidades = ? AND valor_cents = ?), ?)`,
+        )
+        .bind(
+          ulid(ctx.ahora),
+          `devolucion:costo:${codigo}`,
+          codigo,
+          antes.unidades + v.unidades,
+          antes.valor_cents + v.costoCents,
+          ctx.ahora,
+        ),
+    );
+  }
+
+  // Asiento 13, en ESTE batch. Si no se puede armar, la mercancía tampoco se
+  // mueve: una devolución sin asiento es mercancía que reaparece en el
+  // inventario y una venta que sigue contada, y eso no se ve en ninguna
+  // pantalla hasta el cierre del mes.
+  const asiento = devolucionAlInventario({
+    fecha: fechaContable(ctx.ahora),
+    referencia: { tipo: "pedido", id: p.id },
+    numero: p.numero,
+    subtotalCents: p.subtotal_cents,
+    // `null` cuando no se sabe lo que costó, y también cuando el costo conocido
+    // es cero: el constructor solo admite un monto positivo o nulo, y las dos
+    // cosas dan el mismo asiento —sin líneas de costo— porque no hay costo que
+    // anotar. Lo que no se hace es escribir un cero como si fuera un dato.
+    costoCents: costoDesconocido || costoTotalCents === 0 ? null : costoTotalCents,
+    reintegradoCents,
+    cuentaReintegro,
+  });
+  if (!asiento.ok) return asiento;
+  enunciados.push(...enunciadosDeAsiento(ctx, asiento.datos).enunciados);
+
+  try {
+    await ctx.db.batch(enunciados);
+  } catch (err) {
+    const texto = err instanceof Error ? err.message : String(err);
+    if (/periodo_cerrado/.test(texto)) {
+      return fallo(
+        "periodo_cerrado",
+        "el mes de esta devolución ya está cerrado: para registrarla hay que reabrir ese mes, y reabrir pide motivo",
+      );
+    }
+    return /CHECK|controles|UNIQUE|constraint|ABORT|abort/i.test(texto)
+      ? fallo("conflicto_version", "algo cambió mientras se devolvía el pedido; vuelva a intentarlo")
+      : fallo("interno", texto);
+  }
+
+  return ok({
+    pedidoId,
+    piezasDevueltas: salidas.length,
+    reintegradoCents,
+    cuentaReintegro,
+    costoDesconocido,
+  });
 }
 
 /**
