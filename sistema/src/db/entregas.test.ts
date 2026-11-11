@@ -4,6 +4,7 @@ import { token, ulid } from "../ids";
 import { crearPedido } from "./pedidos";
 import { agendar } from "./transiciones";
 import { guardar as guardarAjuste } from "./ajustes";
+import { revisionDeCierre } from "./contabilidad";
 import {
   type ContextoEntrega,
   ajustesDeEntrega,
@@ -1961,5 +1962,113 @@ describe("los asientos que deja una entrega", () => {
     expect((await asientosDe(e.pedidoId)).map((a) => a.hecho)).toEqual(
       unaVez.map((a) => a.hecho),
     );
+  });
+
+  /**
+   * Las dos casillas del cierre que vigilan justo esto.
+   *
+   * Cada prueba entrega en un MES PROPIO del pasado —`marcarEntregada` no
+   * valida la fecha y `entregado_en` sale de `ctx.ahora`— porque la revisión se
+   * pide por mes y este archivo no aísla el almacenamiento entre pruebas: si
+   * las dos miraran el mes de hoy, la que espera «ok» dependería de correr
+   * antes que la que entrega con «otro».
+   */
+  const casilla = async (mes: string, clave: string) => {
+    const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, mes);
+    if (!r.ok) throw new Error(`no se pudo revisar ${mes}: ${r.mensaje}`);
+    const c = r.datos.casillas.find((x) => x.clave === clave);
+    if (c === undefined) throw new Error(`no existe la casilla ${clave}`);
+    return c;
+  };
+
+  it("un mes cobrado como se debe deja las dos casillas del cierre en «ok»", async () => {
+    const codigo = await variante(10);
+    await conCosto(codigo, 10, 2000);
+    const e = await enLaCalle({ cantidad: 2, codigo });
+    const T = Date.UTC(2025, 2, 18, 15, 0, 0); // marzo de 2025, mes propio
+
+    expect(
+      (
+        await marcarEntregada(
+          { db: env.DB, ahora: T, actor: "yarielis@babycaleb.com" },
+          {
+            idempotencia: id("idem"),
+            envioId: e.envioId,
+            motorizadoId: e.motorizado.id,
+            metodoCobro: "efectivo",
+          },
+        )
+      ).ok,
+    ).toBe(true);
+
+    expect((await casilla("2025-03", "venta_sin_asiento")).estado).toBe("ok");
+    expect((await casilla("2025-03", "cobro_sin_asiento")).estado).toBe("ok");
+  });
+
+  it("una entrega sin asiento de venta bloquea el cierre: es la historia de antes", async () => {
+    // Lo que esta casilla defiende de verdad NO se puede provocar con
+    // `marcarEntregada`, porque desde hoy toda entrega escribe su asiento 3.
+    // Defiende lo de ANTES: las entregas que Baby Caleb ya hizo mientras el
+    // sistema no llevaba libros, y que van a aparecer en cuanto se importe
+    // historia o se mueva un pedido a mano. Así que el escenario se arma con
+    // UPDATE, que es exactamente la forma en que ese estado puede existir.
+    //
+    // Sin esta prueba la casilla sobrevivía a la mutación «estado: siempre
+    // ok»: las otras dos pruebas solo la veían decir «ok», que es lo que una
+    // casilla rota también dice.
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const T = Date.UTC(2025, 4, 18, 15, 0, 0); // mayo de 2025, mes propio
+
+    expect((await casilla("2025-05", "venta_sin_asiento")).estado).toBe("ok");
+
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE envios SET estado = 'entregado', entregado_en = ?, cobrado_cents = 0 WHERE id = ?",
+      ).bind(T, e.envioId),
+      env.DB.prepare("UPDATE pedidos SET estado = 'entregado' WHERE id = ?").bind(e.pedidoId),
+    ]);
+
+    const c = await casilla("2025-05", "venta_sin_asiento");
+    expect(c.estado).toBe("falta");
+    expect(c.detalle).toContain("1 pedidos");
+
+    const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, "2025-05");
+    expect(r.ok && r.datos.sePuedeCerrar).toBe(false);
+  });
+
+  it("cobrar con «otro» bloquea el cierre del mes y dice qué hacer", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const T = Date.UTC(2025, 3, 18, 15, 0, 0); // abril de 2025, mes propio
+
+    expect((await casilla("2025-04", "cobro_sin_asiento")).estado).toBe("ok");
+
+    expect(
+      (
+        await marcarEntregada(
+          { db: env.DB, ahora: T, actor: "yarielis@babycaleb.com" },
+          {
+            idempotencia: id("idem"),
+            envioId: e.envioId,
+            motorizadoId: e.motorizado.id,
+            metodoCobro: "otro",
+          },
+        )
+      ).ok,
+    ).toBe(true);
+
+    // La venta SÍ quedó escrita: lo que falta es solo saber dónde entró el
+    // dinero. Las dos casillas dicen cosas distintas a propósito.
+    expect((await casilla("2025-04", "venta_sin_asiento")).estado).toBe("ok");
+
+    const c = await casilla("2025-04", "cobro_sin_asiento");
+    expect(c.estado).toBe("falta");
+    expect(c.detalle).toContain("1 entregas");
+    // Y no se queda en el diagnóstico: dice dónde se arregla.
+    expect(c.detalle).toMatch(/asiento nuevo/);
+
+    // «falta» bloquea el cierre. Es el punto de la casilla: no saber dónde
+    // está el dinero no se cierra, se resuelve.
+    const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, "2025-04");
+    expect(r.ok && r.datos.sePuedeCerrar).toBe(false);
   });
 });

@@ -742,8 +742,25 @@ export interface PorCobrar {
  *
  * Sale de `pedidos` y no del mayor de 1201: el saldo por clienta necesita saber
  * de QUÉ pedido es cada dólar, y `asiento_lineas` no guarda el pedido de cada
- * línea. El total de aquí y el saldo de 1201 tienen que coincidir; cuando no
- * coinciden es que falta un asiento, y eso lo dice la lista de cierre.
+ * línea.
+ *
+ * **Lo que este comentario decía antes y no era verdad.** Decía que el total de
+ * aquí y el saldo de 1201 tienen que coincidir, y que la lista de cierre lo
+ * dice cuando no. La lista no lo decía: la comprobación estaba prometida y sin
+ * escribir, que es peor que no prometer nada — quien lee esto da por hecho que
+ * alguien vigila.
+ *
+ * Y escrita tal cual tampoco sirve todavía: los asientos existen desde el día
+ * en que el sistema empezó a llevarlos, así que las entregas anteriores salen
+ * en esta cifra y no en 1201, y la comparación saldría en rojo durante meses
+ * por algo que nadie puede arreglar. Eso es lo que espera el hueco
+ * `fecha_arranque`, que hoy «todavía no tiene dónde guardarse».
+ *
+ * Lo que la lista de cierre SÍ comprueba, y es computable hoy sin inventar
+ * nada, son las dos mitades que de verdad rompen el cuadre: `venta_sin_asiento`
+ * (una entrega cuya venta no está en los libros) y `cobro_sin_asiento` (un
+ * saldo cobrado sin que se sepa a qué cuenta entró). Las dos nombran el pedido
+ * y bloquean el cierre.
  */
 export async function porCobrar(ctx: ContextoDeLectura, al: string): Promise<PorCobrar> {
   const { results } = await ctx.db
@@ -996,8 +1013,17 @@ export async function revisionDeCierre(
   }
   const { desde, hasta } = rangoDelMes(mes);
 
-  const [periodo, extracto, pagosSinCruzar, sinCosto, descuadres, saldos, sinCuadre] =
-    await Promise.all([
+  const [
+    periodo,
+    extracto,
+    pagosSinCruzar,
+    sinCosto,
+    descuadres,
+    saldos,
+    sinCuadre,
+    sinVenta,
+    sinCobro,
+  ] = await Promise.all([
       ctx.db
         .prepare("SELECT estado FROM periodos WHERE mes = ?")
         .bind(mes)
@@ -1042,9 +1068,48 @@ export async function revisionDeCierre(
         )
         .bind(desde, hasta)
         .first<{ n: number }>(),
+      // Entregas sin su asiento de venta: mercancía que salió del inventario y
+      // que ningún libro explica. Es el peor de los descuadres porque no se
+      // nota en ninguna pantalla —el pedido dice «entregado», el stock bajó— y
+      // solo aparece cuando el margen del mes sale raro.
+      //
+      // Los pedidos de cero quedan fuera: un regalo o un canje no genera
+      // asiento de venta a propósito (lo rechaza el constructor), así que
+      // contarlos aquí sería una alarma que nunca se puede apagar.
+      ctx.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM pedidos p
+            WHERE p.estado = 'entregado' AND p.total_cents > 0
+              AND ${FECHA_DE_ENTREGA} BETWEEN ?1 AND ?2
+              AND NOT EXISTS (SELECT 1 FROM asientos a
+                               WHERE a.referencia_tipo = 'pedido'
+                                 AND a.referencia_id = p.id AND a.hecho = '3')`,
+        )
+        .bind(desde, hasta)
+        .first<{ n: number }>(),
+      // Entregas que COBRARON dinero y no tienen asiento de cobro.
+      //
+      // Es el hueco que deja `marcarEntregada` a propósito: cuando el saldo se
+      // cobra con «otro», o en efectivo sin motorizado asignado, no se sabe a
+      // qué cuenta entró el dinero y no se escribe asiento — antes que meterlo
+      // en 1103 porque suena razonable. Esta casilla es la otra mitad de esa
+      // decisión: no saber está bien, callarlo no.
+      ctx.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM envios e
+             JOIN pedidos p ON p.id = e.pedido_id
+            WHERE e.estado = 'entregado' AND e.cobrado_cents > 0
+              AND date(e.entregado_en / 1000, 'unixepoch', '-5 hours') BETWEEN ?1 AND ?2
+              AND NOT EXISTS (SELECT 1 FROM asientos a
+                               WHERE a.referencia_tipo = 'pedido'
+                                 AND a.referencia_id = p.id AND a.hecho IN ('4','4b'))`,
+        )
+        .bind(desde, hasta)
+        .first<{ n: number }>(),
     ]);
 
   const cajas = saldos.filter((s) => s.subtipo === "caja_motorizado" && s.saldoCents !== 0);
+
   const b = balance(saldos);
   const hoy = fechaContable(ctx.ahora);
 
@@ -1119,6 +1184,24 @@ export async function revisionDeCierre(
       detalle: b.cuadra
         ? "Activos = pasivos + patrimonio + el resultado del periodo."
         : `Falta ${b.diferenciaCents} centavos por cuadrar.`,
+    },
+    {
+      clave: "venta_sin_asiento",
+      titulo: "Todas las entregas del mes tienen su asiento de venta",
+      estado: (sinVenta?.n ?? 0) === 0 ? "ok" : "falta",
+      detalle:
+        (sinVenta?.n ?? 0) === 0
+          ? "Todas."
+          : `${sinVenta?.n ?? 0} pedidos entregados sin asiento de venta: salió mercancía del inventario que los libros no explican. Avísele a Juan.`,
+    },
+    {
+      clave: "cobro_sin_asiento",
+      titulo: "Todo lo cobrado en la puerta tiene su asiento",
+      estado: (sinCobro?.n ?? 0) === 0 ? "ok" : "falta",
+      detalle:
+        (sinCobro?.n ?? 0) === 0
+          ? "Todo."
+          : `${sinCobro?.n ?? 0} entregas cobraron dinero sin que los libros digan a qué cuenta entró. Pasa cuando el motorizado cobró con «otro», o en efectivo sin estar asignado a la parada: ahí el sistema no lo adivina. Hay que anotar a mano a dónde fue ese dinero, en Contabilidad › asiento nuevo.`,
     },
     {
       clave: "cuadre",
