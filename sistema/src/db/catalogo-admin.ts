@@ -372,9 +372,22 @@ export async function editarVariante(
   }
 
   const campos: string[] = [];
+  /**
+   * Las mismas columnas, para COMPROBAR en vez de para asignar.
+   *
+   * `IS` y no `=`, y no es cosmético: en SQL `tasa_itbms_bp = NULL` no es
+   * falso, es DESCONOCIDO, así que un control que compare con `=` da cero en
+   * cuanto una de las columnas se deja vacía. En SQLite `x IS y` sí compara
+   * nulos, y es el único operador que vale aquí.
+   *
+   * El `=` del SET está bien: ahí es una asignación, no una comparación. Son
+   * dos listas porque son dos cosas distintas que se escribían igual.
+   */
+  const condiciones: string[] = [];
   const valores: unknown[] = [];
   const poner = (columna: string, valor: unknown) => {
     campos.push(`${columna} = ?`);
+    condiciones.push(`${columna} IS ?`);
     valores.push(valor);
   };
 
@@ -414,7 +427,7 @@ export async function editarVariante(
       .prepare(
         `INSERT INTO controles (id, regla, ok, creado_en)
          VALUES (?, ?, (SELECT COUNT(*) FROM variantes
-                        WHERE codigo = ? AND version = ? AND ${campos.join(" AND ")}), ?)`,
+                        WHERE codigo = ? AND version = ? AND ${condiciones.join(" AND ")}), ?)`,
       )
       .bind(ulid(ctx.ahora), `editar:${codigo}`, codigo, versionNueva, ...valores, ctx.ahora),
   ];
