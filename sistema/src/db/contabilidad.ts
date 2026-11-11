@@ -312,80 +312,121 @@ export async function revertirAsiento(
 // El residuo del costo promedio (asiento 18)
 // ---------------------------------------------------------------------------
 
-export interface RedondeoAjustado {
+export interface ResiduoDeInventario {
   readonly codigo: string;
   readonly residuoCents: number;
+}
+
+export interface RedondeoAjustado extends ResiduoDeInventario {
   readonly asientoId: string;
 }
 
 /**
- * Limpia los centavos de redondeo que dejó el costo promedio.
+ * Las variantes que se quedaron con centavos de inventario y sin unidades.
  *
  * El costo de una salida es `round(valor_cents × q / unidades)` (05 §4), así
- * que cuando las unidades de una variante llegan a cero puede quedar un residuo
- * en `valor_cents`: inventario que ya no existe. `marcarEntregada` lo deja ahí a
+ * que cuando las unidades llegan a cero puede quedar un residuo en
+ * `valor_cents`: inventario que ya no existe. `marcarEntregada` lo deja ahí a
  * propósito —«los centavos de redondeo los ajusta el asiento 18»— porque
- * inventarse un ajuste en medio de una entrega sería meterle al costo de esa
- * venta un centavo que no es suyo.
- *
- * Aquí se pasa al costo de lo vendido, que es por donde se fue la mercancía, y
- * se pone el valor en cero. Es idempotente: si no queda residuo, no hay nada
- * que ajustar y no se escribe ningún asiento.
- *
- * ## Las dos carreras, y qué cierra cada una
- *
- * **Otro proceso limpió el mismo residuo primero.** La resta va sin guarda en
- * el `WHERE`: `valor_cents = valor_cents - residuo`. Si ya estaba en cero, la
- * resta lo deja en negativo y el `CHECK (valor_cents >= 0)` de la tabla tumba el
- * batch entero, asiento incluido. La tabla es más fiable que un `WHERE` porque
- * no se puede olvidar.
- *
- * **Llegó una compra en medio y ya no está en cero unidades.** Ahí el `WHERE`
- * no casa, el UPDATE cambia cero filas —y un UPDATE que no casa NO falla— así
- * que el asiento entraría solo, descontando del inventario un residuo que sigue
- * puesto. Eso lo caza la fila de control, que mira lo que ESTE batch escribió:
- * esa variante en cero unidades y cero valor.
+ * inventarse un ajuste en medio de una entrega le metería al costo de ESA venta
+ * un centavo que no es suyo.
  */
-export async function ajustarRedondeoDeInventario(
-  ctx: ContextoContable,
-): Promise<Resultado<{ ajustes: RedondeoAjustado[] }>> {
+export async function residuosPorAjustar(
+  ctx: ContextoDeLectura,
+): Promise<ResiduoDeInventario[]> {
   const { results } = await ctx.db
     .prepare(
       "SELECT codigo, valor_cents FROM valor_inventario WHERE unidades = 0 AND valor_cents <> 0",
     )
     .all<{ codigo: string; valor_cents: number }>();
+  return results.map((v) => ({ codigo: v.codigo, residuoCents: v.valor_cents }));
+}
 
-  const fecha = fechaContable(ctx.ahora);
+/**
+ * El asiento 18 de un residuo, con la bajada del valor y su control.
+ *
+ * Se devuelve en vez de ejecutarse, como todo en este archivo, y aquí además
+ * por una razón concreta: es lo que permite PROBAR las dos carreras de abajo
+ * contra los enunciados de verdad en vez de contra una copia escrita a mano en
+ * la prueba —una copia que seguiría pasando si estos enunciados cambiaran—.
+ *
+ * ## Las dos carreras, y qué cierra cada una
+ *
+ * **Otro proceso limpió el mismo residuo primero.** La resta va SIN guarda de
+ * valor en el `WHERE`: `valor_cents = valor_cents - residuo`. Si ya estaba en
+ * cero, la resta lo deja en negativo y el `CHECK (valor_cents >= 0)` de la tabla
+ * tumba el batch entero, asiento incluido. La tabla es más fiable que un `WHERE`
+ * porque no se puede olvidar.
+ *
+ * **Llegó una compra en medio y la variante ya no está en cero unidades.** Ahí
+ * el `WHERE` no casa, el UPDATE cambia cero filas —y un UPDATE que no casa NO
+ * falla— así que el asiento entraría solo, llevándose al costo un residuo que
+ * sigue puesto. Eso lo caza la fila de control, que mira lo que ESTE batch
+ * escribió: esa variante en cero unidades Y en cero valor.
+ *
+ * Las DOS cosas en el control, y no solo el valor: si pasaran las dos a la vez
+ * —otro se llevó el residuo y además entró mercancía— el valor estaría en cero
+ * sin que este batch hubiera hecho nada, el CHECK no tendría nada que restar de
+ * más, y un control que solo mirara el valor dejaría entrar el asiento cobrando
+ * por segunda vez lo que ya se cobró. Lo probé quitando esa parte: entraba. Hay
+ * una prueba que lo fija.
+ */
+export function enunciadosDeAjusteDeRedondeo(
+  ctx: ContextoContable,
+  r: ResiduoDeInventario,
+): Resultado<{ asientoId: string; enunciados: D1PreparedStatement[] }> {
+  const propuesta = ajusteDeRedondeo({
+    fecha: fechaContable(ctx.ahora),
+    referencia: { tipo: "variante", id: r.codigo },
+    residuoCents: r.residuoCents,
+    codigo: r.codigo,
+  });
+  if (!propuesta.ok) return propuesta;
+
+  const { asientoId, enunciados } = enunciadosDeAsiento(ctx, propuesta.datos);
+  return ok({
+    asientoId,
+    enunciados: [
+      ...enunciados,
+      ctx.db
+        .prepare(
+          "UPDATE valor_inventario SET valor_cents = valor_cents - ? WHERE codigo = ? AND unidades = 0",
+        )
+        .bind(r.residuoCents, r.codigo),
+      ctx.db
+        .prepare(
+          `INSERT INTO controles (id, regla, ok, creado_en)
+           VALUES (?, 'inventario:residuo',
+                   (SELECT COUNT(*) FROM valor_inventario
+                     WHERE codigo = ? AND unidades = 0 AND valor_cents = 0), ?)`,
+        )
+        .bind(ulid(ctx.ahora), r.codigo, ctx.ahora),
+    ],
+  });
+}
+
+/**
+ * Limpia los centavos de redondeo que dejó el costo promedio (asiento 18).
+ *
+ * Es idempotente: si no queda residuo, no hay nada que ajustar y no se escribe
+ * ningún asiento. Un asiento de cero centavos no corrige nada y ensucia el
+ * libro.
+ */
+export async function ajustarRedondeoDeInventario(
+  ctx: ContextoContable,
+): Promise<Resultado<{ ajustes: RedondeoAjustado[] }>> {
+  const residuos = await residuosPorAjustar(ctx);
   const ajustes: RedondeoAjustado[] = [];
 
-  for (const v of results) {
-    const propuesta = ajusteDeRedondeo({
-      fecha,
-      referencia: { tipo: "variante", id: v.codigo },
-      residuoCents: v.valor_cents,
-      codigo: v.codigo,
-    });
-    if (!propuesta.ok) return propuesta;
-
-    const { asientoId, enunciados } = enunciadosDeAsiento(ctx, propuesta.datos);
+  for (const r of residuos) {
+    const paso = enunciadosDeAjusteDeRedondeo(ctx, r);
+    if (!paso.ok) return paso;
     try {
-      await ctx.db.batch([
-        ...enunciados,
-        ctx.db
-
-        ctx.db
-          .prepare(
-            `INSERT INTO controles (id, regla, ok, creado_en)
-             VALUES (?, 'inventario:residuo',
-                     (SELECT COUNT(*) FROM valor_inventario
-                       WHERE codigo = ? AND unidades = 0 AND valor_cents = 0), ?)`,
-          )
-          .bind(ulid(ctx.ahora), v.codigo, ctx.ahora),
-      ]);
+      await ctx.db.batch(paso.datos.enunciados);
     } catch (err) {
       return comoSeLee(err);
     }
-    ajustes.push({ codigo: v.codigo, residuoCents: v.valor_cents, asientoId });
+    ajustes.push({ ...r, asientoId: paso.datos.asientoId });
   }
 
   return ok({ ajustes });

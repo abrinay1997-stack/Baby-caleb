@@ -8,7 +8,6 @@ import {
   balance,
   codigoDeCaja,
   cobroDelSaldo,
-  ajusteDeRedondeo,
   entregaDelPedido,
   fechaContable,
   gasto,
@@ -18,6 +17,7 @@ import {
   type ContextoContable,
   ajustarRedondeoDeInventario,
   cerrarMes,
+  enunciadosDeAjusteDeRedondeo,
   cuentaDeMotorizado,
   entregasSinCosto,
   enunciadosDeAsiento,
@@ -708,36 +708,20 @@ describe("el residuo del costo promedio (asiento 18)", () => {
     // así que sin la fila de control el asiento entraría descontando del
     // inventario un residuo que sigue puesto.
     const codigo = await conValor(0, 5);
+    // El contexto de antes de la compra: el que ya tenía en la mano el proceso
+    // que iba a ajustar.
     const ctxViejo = ctx();
     await env.DB.prepare("UPDATE valor_inventario SET unidades = 10 WHERE codigo = ?")
       .bind(codigo)
       .run();
 
-    // Se vuelve a pedir el ajuste con el residuo que se leyó antes, como lo
-    // haría el batch que ya iba en camino.
-    const propuesta = debeSerOk(
-      ajusteDeRedondeo({
-        fecha: fechaContable(ctxViejo.ahora),
-        referencia: { tipo: "variante", id: codigo },
-        residuoCents: 5,
-        codigo,
-      }),
+    // Los enunciados DE VERDAD, los mismos que corre `ajustarRedondeoDeInventario`.
+    // Escribirlos a mano aquí sería probar una copia: seguiría pasando aunque
+    // los de producción perdieran la fila de control.
+    const { asientoId, enunciados } = debeSerOk(
+      enunciadosDeAjusteDeRedondeo(ctxViejo, { codigo, residuoCents: 5 }),
     );
-    const { asientoId, enunciados } = enunciadosDeAsiento(ctxViejo, propuesta);
-    await expect(
-      env.DB.batch([
-        ...enunciados,
-        env.DB.prepare(
-          "UPDATE valor_inventario SET valor_cents = valor_cents - ? WHERE codigo = ? AND unidades = 0",
-        ).bind(5, codigo),
-        env.DB.prepare(
-          `INSERT INTO controles (id, regla, ok, creado_en)
-           VALUES (?, 'inventario:residuo',
-                   (SELECT COUNT(*) FROM valor_inventario
-                     WHERE codigo = ? AND unidades = 0 AND valor_cents = 0), ?)`,
-        ).bind(ulid(Date.now()), codigo, Date.now()),
-      ]),
-    ).rejects.toThrow(/CHECK|constraint/i);
+    await expect(env.DB.batch(enunciados)).rejects.toThrow(/CHECK|constraint/i);
 
     const quedo = await env.DB.prepare("SELECT COUNT(*) AS n FROM asientos WHERE id = ?")
       .bind(asientoId)
@@ -749,6 +733,31 @@ describe("el residuo del costo promedio (asiento 18)", () => {
     expect(v?.valor_cents).toBe(5);
   });
 
+  it("si otro lo limpió Y además llegó una compra, tampoco se cobra dos veces", async () => {
+    // El estado raro que junta las dos carreras: alguien ya se llevó el residuo
+    // al costo (valor en cero) y además entró mercancía (unidades > 0). Aquí el
+    // CHECK no salta —no hay nada que restar de más, porque el UPDATE no casa—
+    // y lo único que impide que el asiento entre solo, cobrando por segunda vez
+    // un residuo que ya se cobró, es que el control mire TAMBIÉN las unidades.
+    // Lo comprobé quitándole esa parte al control: el asiento entraba.
+    const codigo = await conValor(0, 4);
+    await env.DB.prepare(
+      "UPDATE valor_inventario SET valor_cents = 0, unidades = 10 WHERE codigo = ?",
+    )
+      .bind(codigo)
+      .run();
+
+    const { asientoId, enunciados } = debeSerOk(
+      enunciadosDeAjusteDeRedondeo(ctx(), { codigo, residuoCents: 4 }),
+    );
+    await expect(env.DB.batch(enunciados)).rejects.toThrow(/CHECK|constraint/i);
+
+    const quedo = await env.DB.prepare("SELECT COUNT(*) AS n FROM asientos WHERE id = ?")
+      .bind(asientoId)
+      .first<{ n: number }>();
+    expect(quedo?.n).toBe(0);
+  });
+
   it("si otro limpió el mismo residuo antes, lo tumba el CHECK de la tabla", async () => {
     // La otra carrera: la variante sigue en cero unidades pero el residuo ya se
     // limpió. Aquí no hace falta control: restar de más deja `valor_cents` en
@@ -758,23 +767,10 @@ describe("el residuo del costo promedio (asiento 18)", () => {
       .bind(codigo)
       .run();
 
-    const propuesta = debeSerOk(
-      ajusteDeRedondeo({
-        fecha: fechaContable(Date.now()),
-        referencia: { tipo: "variante", id: codigo },
-        residuoCents: 4,
-        codigo,
-      }),
+    const { asientoId, enunciados } = debeSerOk(
+      enunciadosDeAjusteDeRedondeo(ctx(), { codigo, residuoCents: 4 }),
     );
-    const { asientoId, enunciados } = enunciadosDeAsiento(ctx(), propuesta);
-    await expect(
-      env.DB.batch([
-        ...enunciados,
-        env.DB.prepare(
-          "UPDATE valor_inventario SET valor_cents = valor_cents - ? WHERE codigo = ? AND unidades = 0",
-        ).bind(4, codigo),
-      ]),
-    ).rejects.toThrow(/CHECK|constraint/i);
+    await expect(env.DB.batch(enunciados)).rejects.toThrow(/CHECK|constraint/i);
 
     const quedo = await env.DB.prepare("SELECT COUNT(*) AS n FROM asientos WHERE id = ?")
       .bind(asientoId)
