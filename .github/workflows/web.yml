@@ -83,12 +83,17 @@ jobs:
 
       # Con caché, solo faltan las librerías del sistema (apt), que no se
       # guardan: `--with-deps` sin `install` del navegador es rápido.
+      #
+      # Y con reintentos, porque la parte de apt es la frágil: el 11 de
+      # noviembre este paso tumbó tres flujos seguidos con «Temporary failure
+      # resolving 'archive.ubuntu.com'». Ver el guion para por qué reintentar
+      # aquí es correcto y por qué no debe envolver una prueba.
       - name: Instalar el navegador
         run: |
           if [ "${{ steps.cache-navegador.outputs.cache-hit }}" = "true" ]; then
-            npx playwright install-deps chromium
+            .github/scripts/navegador.sh --solo-dependencias
           else
-            npx playwright install --with-deps chromium
+            .github/scripts/navegador.sh
           fi
 
       - name: Contraste (WCAG AA)
