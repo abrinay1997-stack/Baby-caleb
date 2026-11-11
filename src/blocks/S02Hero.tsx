@@ -3,11 +3,34 @@ import { Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import SplitType from 'split-type';
 import { getContentData } from '../data/content';
+import { useCatalogo, desdeDe } from '../hooks/useCatalogo';
 
 export default function S02Hero() {
   const containerRef = useRef<HTMLDivElement>(null);
   const h1Ref = useRef<HTMLHeadingElement>(null);
   const data = getContentData().hero;
+
+  /**
+   * El «desde $X» de la tarjeta del pañal, del catálogo de verdad.
+   *
+   * Aquí decía `Desde $17` ESCRITO A MANO, y el pañal más barato cuesta $45.
+   * O sea que la portada le prometía a una clienta un precio veintiocho
+   * dólares por debajo del real — el peor sitio posible para una cifra
+   * inventada, porque es lo primero que se ve y nadie lo compara con nada.
+   *
+   * Lo encontró una auditoría del panel, no una prueba: ninguna podía verlo,
+   * porque un número escrito a mano en un JSX es sintácticamente perfecto.
+   *
+   * Y es exactamente la regla del CLAUDE.md —«nunca escribas un precio en
+   * `content.json` ni en el código»— rota en el bloque más visible del sitio.
+   * El precio tiene un solo dueño, que es la D1 del sistema.
+   *
+   * Los códigos salen del propio producto en `content.json`, no escritos
+   * aquí: si mañana se añade una talla más barata, esto la sigue sola.
+   */
+  const catalogo = useCatalogo();
+  const panales = getContentData().products.find((p) => p.variants.some((v) => v.codigo?.startsWith('NAT-') && !v.codigo.startsWith('NAT-P')));
+  const desdeElPanal = desdeDe(catalogo, (panales?.variants ?? []).map((v) => v.codigo));
 
   useEffect(() => {
     let h1Split: SplitType;
@@ -117,7 +140,7 @@ export default function S02Hero() {
               <div>
                 <span className="block mono text-[10px] text-sage-strong">Desde talla RN</span>
                 <span className="block font-bold text-fg leading-tight">Pañal Nateen</span>
-                <span className="block text-xs text-muted">Desde $17</span>
+                <span className="block text-xs text-muted">{desdeElPanal}</span>
               </div>
             </div>
             <div className="hero-float absolute -top-4 right-4 md:right-8 bg-sage text-fg font-bold text-xs px-4 py-2 rounded-pill shadow-soft flex items-center gap-2">
