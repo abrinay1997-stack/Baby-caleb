@@ -93,7 +93,16 @@ export default function S01Nav() {
         }`}
       >
         <Link to="/" className="flex items-center gap-2 group focus-visible:outline-accent-edge">
-          <span className="font-display font-bold text-xl text-fg tracking-tight">Baby Caleb</span>
+          {/* `whitespace-nowrap`: el nombre de la marca no se parte en dos
+              líneas, pase lo que pase. Se vio con el traductor del navegador
+              puesto —«FAQ» se convierte en «Preguntas frecuentes» y los
+              enlaces crecen— y la marca acababa como «Bebé / Caleb». El
+              traductor es solo el caso que lo destapó: cualquier texto más
+              largo (otro idioma, un nombre más largo) haría lo mismo.
+              `shrink-0` para que la barra encoja los enlaces y no la marca. */}
+          <span className="font-display font-bold text-xl text-fg tracking-tight whitespace-nowrap shrink-0">
+            Baby Caleb
+          </span>
         </Link>
 
         {/* Desktop Nav */}
