@@ -59,6 +59,20 @@
       // `single-page-application` y devuelve el index.html de la web. Cada
       // foto llegaría como una página HTML, con un 200 y todo.
       "/foto/*",
+      // El enlace corto de una ficha, `/p/<slug>`.
+      //
+      // El Worker sabe redirigirlo a `/productos/<slug>` desde hace días, y no
+      // servía de NADA: sin estar en esta lista, la petición la atiende primero
+      // el servidor de archivos, no encuentra `/p/...`, cae en
+      // `single-page-application` y devuelve el index.html. Quien recibía un
+      // enlace compartido veía una página con cabecera, pie y nada en medio —
+      // con un 200, que es lo que lo hacía invisible.
+      //
+      // Es EXACTAMENTE lo que avisa el comentario de `/foto/*` aquí arriba. La
+      // lección estaba escrita al lado y aun así volvió a pasar: por eso ahora
+      // hay una prueba que compara las rutas que el Worker atiende con esta
+      // lista (`worker/enlace-corto.test.ts`).
+      "/p/*",
       "/",
       "/productos",
       "/productos/*",
