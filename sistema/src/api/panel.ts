@@ -56,6 +56,7 @@ import {
   estado as estadoDePasarelas,
   quitarCredencial,
 } from "../db/pasarelas";
+import { registrar as registrarMovimientos } from "../db/inventario";
 import {
   armarRuta,
   cancelarRuta,
@@ -615,6 +616,45 @@ function registrarRutas(panel: Hono<Entorno>): void {
        ORDER BY v.nombre, b.nombre`,
     ).all();
     return c.json(ok({ existencias: results }));
+  });
+
+  /**
+   * Mover existencias.
+   *
+   * Es la única puerta del panel hacia el inventario, y hasta hoy no existía:
+   * la pantalla sabía leer y nadie sabía escribir, así que el sistema creía
+   * que había cero de todo y no se podía ni vender ni reservar.
+   *
+   * No hay forma de «poner el stock en 40». El inventario es un libro: se
+   * registra lo que entró o lo que salió, y la existencia es la suma. La base
+   * lo defiende con un trigger que prohíbe editar un movimiento, así que una
+   * ruta que escribiera el número directo tendría que saltarse el libro — y
+   * entonces el libro ya no explicaría el número.
+   *
+   * Lo más parecido es el CONTEO, que sí recibe «conté 37»: pero no lo escribe
+   * como un absoluto, sino como la diferencia contra lo que había, con su
+   * motivo y su rastro. Y lo hace a prueba de carreras (ver `quedaEn`).
+   *
+   * `precios_y_stock` y no `pedidos`: mirar cuánto hay es una cosa y cambiarlo
+   * es otra. Según la matriz de roles, solo la dueña.
+   */
+  panel.post("/existencias/movimientos", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const lineas = b["lineas"];
+    if (!Array.isArray(lineas)) {
+      return c.json(fallo("entrada_invalida", "un movimiento necesita sus renglones"), 400);
+    }
+
+    const r = await registrarMovimientos(
+      { db: c.env.DB, actor: c.get("usuario").id, ahora: Date.now() },
+      {
+        tipo: b["tipo"],
+        ...(texto(b["motivo"]) === undefined ? {} : { motivo: texto(b["motivo"]) as string }),
+        lineas: lineas as never,
+      },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
   });
 
   panel.get("/bodegas", exige("pedidos"), async (c) => {
