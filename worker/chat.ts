@@ -210,7 +210,8 @@ export async function chat(peticion: Request, env: Env): Promise<Response> {
       );
     }
 
-    let texto = textoDeLaRespuesta(await respuesta.json());
+    const crudo: unknown = await respuesta.json();
+    let texto = textoDeLaRespuesta(crudo);
 
     // Salvaguarda del largo: el prompt pide respuestas cortas y el modelo casi
     // siempre obedece, pero «casi» no es una garantía y una parrafada en una
@@ -224,8 +225,26 @@ export async function chat(peticion: Request, env: Env): Promise<Response> {
     }
 
     if (texto.trim() === "") {
-      // El modelo no dijo nada legible: pasa si cambia el formato de su
-      // respuesta. Mejor mandar a WhatsApp que enseñar una burbuja vacía.
+      // El modelo contestó 200 y sin texto legible. Es el caso difícil de
+      // diagnosticar: la clienta ve una frase amable y nadie se entera de por
+      // qué. Así que se anota la FORMA de lo que llegó —las claves de primer
+      // nivel, los tipos de bloque, el motivo de parada y el modelo que dice
+      // ser— y nunca el contenido: ahí puede venir de vuelta lo que se mandó,
+      // y ahí va el prompt entero.
+      //
+      // Se lee en Cloudflare → Workers → babycaleb-web → Logs, en vivo.
+      const cuerpoCrudo = (crudo ?? {}) as Record<string, unknown>;
+      const bloques = Array.isArray(cuerpoCrudo["content"]) ? cuerpoCrudo["content"] : [];
+      console.warn(
+        JSON.stringify({
+          evento: "chat_sin_texto",
+          claves: Object.keys(cuerpoCrudo),
+          modelo_pedido: env.MODELO_CHAT ?? MODELO_POR_OMISION,
+          modelo_dicho: cuerpoCrudo["model"] ?? null,
+          motivo_parada: cuerpoCrudo["stop_reason"] ?? null,
+          bloques: (bloques as unknown[]).map((b) => (b as Record<string, unknown>)?.["type"]),
+        }),
+      );
       return json(
         { reply: "No tengo eso a mano. Escríbanos por WhatsApp y le contesta una persona." },
         200,

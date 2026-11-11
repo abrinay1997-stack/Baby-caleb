@@ -102,6 +102,11 @@ export default {
           // que llega la factura—.
           chat: env.META_API_KEY_WEB ? "listo" : "falta META_API_KEY_WEB",
           chat_limite: env.LIMITE_CHAT ? "puesto" : "SIN LÍMITE por IP",
+          // Qué modelo se está pidiendo de verdad. Sale aquí porque el nombre
+          // viene de `reglas.json` y NUNCA se había usado contra la API: si
+          // está mal, esto es lo primero que hay que mirar, y mirarlo no debe
+          // exigir leer el código.
+          chat_modelo: env.MODELO_CHAT ?? "muse-spark-1.2-contributor",
           // Sin el binding, /api/catalogo sirve la copia del build y la web
           // sigue en pie — pero con precios de la fecha del despliegue. Vale
           // más verlo aquí que descubrirlo por un precio viejo.
