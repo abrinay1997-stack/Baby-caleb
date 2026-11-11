@@ -100,3 +100,27 @@ export function slugDeRuta(camino: string): string | null {
   const m = /^\/productos\/([^/]+)\/?$/.exec(camino);
   return m?.[1] ?? null;
 }
+
+/**
+ * El enlace corto de una ficha: `/p/<slug>` lleva a `/productos/<slug>`.
+ *
+ * Existe para compartir por chat. `babycaleb.com/p/nat-m` cabe en un mensaje,
+ * se dicta por teléfono sin equivocarse y no se parte en dos líneas; la ruta
+ * larga, pegada en WhatsApp junto a un texto, se corta y deja de ser enlace.
+ *
+ * No hace falta ninguna tabla ni ningún servicio de acortado: el slug YA es el
+ * identificador de la ficha, así que esto es un cambio de prefijo y nada más.
+ * Un acortador de verdad —con códigos propios— haría falta el día que se
+ * quieran contar los clics por campaña, y ese día se añade; hoy sería una
+ * tabla que mantener a cambio de nada.
+ *
+ * Devuelve la ruta de destino, o `null` si no es un enlace corto. No valida el
+ * slug: si no existe, la ficha ya sabe decir que no existe, y comprobarlo aquí
+ * obligaría a consultar el catálogo en CADA petición para una ruta que casi
+ * siempre es buena.
+ */
+export function rutaCortaDeProducto(camino: string): string | null {
+  const m = /^\/p\/([^/]+)\/?$/.exec(camino);
+  const slug = m?.[1];
+  return slug === undefined || slug === "" ? null : `/productos/${slug}`;
+}

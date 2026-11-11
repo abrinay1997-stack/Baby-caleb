@@ -2,7 +2,7 @@ import { catalogo, variantesDelCatalogo } from "./catalogo";
 import { chat } from "./chat";
 import type { Env } from "./env";
 import { reescribirHead } from "./head";
-import { slugDeRuta } from "../src/seo/producto";
+import { rutaCortaDeProducto, slugDeRuta } from "../src/seo/producto";
 import { PREFIJO, imagen } from "./imagenes";
 import { urlDelSitio } from "./sitio";
 import { quiereIndexarse, redireccionCanonica, seIndexa } from "./visibilidad";
@@ -55,6 +55,20 @@ export default {
     const aDondeVa = redireccionCanonica(env.SITE_URL ?? "", url);
     if (aDondeVa !== null) {
       return Response.redirect(aDondeVa, 301);
+    }
+
+    // ---- El enlace corto de una ficha -------------------------------------
+    // `/p/<slug>` → `/productos/<slug>`. Va ANTES que todo lo demás porque es
+    // un desvío, no una página: cuanto antes se resuelva, menos trabajo se
+    // hace para algo que no se va a servir.
+    //
+    // 301 y no 302: el enlace corto es para compartir, así que acabará pegado
+    // en mensajes y en publicaciones durante años. Un permanente le dice al
+    // buscador que la página buena es la larga, y evita que las dos compitan
+    // entre sí por el mismo producto.
+    const fichaCorta = rutaCortaDeProducto(url.pathname);
+    if (fichaCorta !== null) {
+      return Response.redirect(new URL(fichaCorta, url.origin).toString(), 301);
     }
 
     // ---- API -------------------------------------------------------------

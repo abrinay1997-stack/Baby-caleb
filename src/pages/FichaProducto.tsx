@@ -12,6 +12,7 @@ import {
 } from '../seo/producto';
 import { getContentData } from '../data/content';
 import { useCarrito } from '../carrito/useCarrito';
+import { CompartirProducto } from '../components/CompartirProducto'
 
 const WHATSAPP_BASE = 'https://wa.me/50767575065?text=';
 
@@ -192,6 +193,8 @@ export default function FichaProducto() {
             <p aria-live="polite" className="text-muted min-h-5 text-xs">
               {agregado ? 'Lo agregamos a tu carrito.' : ''}
             </p>
+
+            <CompartirProducto slug={slug} nombre={variante.nombre} />
 
             <p className="text-muted text-xs">
               El delivery va aparte del precio del producto y se cotiza por zona.
