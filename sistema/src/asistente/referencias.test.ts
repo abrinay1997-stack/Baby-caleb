@@ -218,14 +218,35 @@ describe("la guarda, aplicada a TODAS las herramientas", () => {
     const todas = catalogo().todas();
     expect(todas.length).toBeGreaterThan(0);
 
-    for (const h of todas) {
-      // Argumentos mínimos que sirvan para cualquier herramienta de lectura.
-      const args = h.parametros.safeParse({ codigo });
-      if (!args.success) continue;
+    // Varias formas de llamar, no una.
+    //
+    // Antes esto probaba `{ codigo }` y se saltaba en silencio todo lo que no
+    // encajara. Con eso, una herramienta de lectura que pidiera sus argumentos
+    // de otra manera —`buscar_articulo`, que recibe `texto`— quedaba sin
+    // vigilar y la prueba seguía verde. Una prueba que se salta lo que no
+    // entiende no es una prueba: es una lista de buenas intenciones.
+    const formas: unknown[] = [{ codigo }, { texto: codigo }, {}];
+    const probadas: string[] = [];
 
+    for (const h of todas) {
+      const args = formas
+        .map((f) => h.parametros.safeParse(f))
+        .find((r) => r.success);
+      // Las que escriben piden motivo y números, así que ninguna forma les
+      // vale: no se ejecutan aquí a propósito —esta prueba no cambia nada.
+      if (args === undefined) continue;
+
+      probadas.push(h.nombre);
       const salida: unknown = await h.ejecutar(ctx, args.data as never);
       const filtra = revisar(salida, nombres);
       expect(filtra, `«${h.nombre}» filtra: ${JSON.stringify(filtra)}`).toEqual([]);
     }
+
+    // Y se exige que se hayan probado TODAS las de lectura: si una se queda
+    // fuera, es que nadie la está vigilando y conviene enterarse aquí.
+    const deLectura = todas.filter((h) => h.nivel === "lectura").map((h) => h.nombre);
+    expect(probadas.sort(), "quedó una herramienta de lectura sin vigilar").toEqual(
+      deLectura.sort(),
+    );
   });
 });

@@ -81,5 +81,14 @@ export async function calcularHuella(): Promise<string> {
  *
  * Se actualiza con `npm run huella`.
  */
+/*
+ * 2026-11-11 · cambió al registrar `Cobertura` y `VariantePublica.pedido`.
+ *
+ * No cambia ningún comportamiento: documenta uno que ya existía. `buscarCatalogo`
+ * devolvía el campo `pedido` —la única puerta por la que una cantidad de
+ * inventario sale del sistema— y el contrato no lo mencionaba, así que la huella
+ * vigilaba todo menos el campo que lleva el número exacto. El CRM necesita esta
+ * misma huella en `src/sistema/contrato.ts`.
+ */
 export const HUELLA_CONTRATO =
-  "444ea2bd5567871d606b7e627a7f62c126f459b81d60bb78fbfa6831048582df";
+  "c0595a467dd9c25779e36dc57fe96dd4c45ea177a3567519a8a62a6eb134a047";

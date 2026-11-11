@@ -36,10 +36,26 @@ import { zonasParaBuscar } from "./zonas";
  * credencial.
  */
 
+/**
+ * El stock detallado, para la DUEÑA (nunca para el bot: lo cierra `comoDuena`).
+ *
+ * Lleva `libres` y `hay` además de `fisico` y `reservado`, y no es un lujo: al
+ * otro lado del binding hay un modelo leyendo esto, y «fisico: 20,
+ * reservado: 18» contestado de memoria se vuelve «hay 20». Lo que se puede
+ * vender son 2. La resta la hace el sistema, que es quien sabe hacerla, y la
+ * etiqueta viene de la misma función que usa el catálogo.
+ */
 export interface StockPorBodega {
   readonly codigo: string;
   readonly nombre: string;
-  readonly porBodega: { bodega: string; fisico: number; reservado: number }[];
+  readonly porBodega: {
+    bodega: string;
+    fisico: number;
+    reservado: number;
+    /** Lo que de verdad se puede vender: `fisico - reservado`. */
+    libres: number;
+    hay: Disponibilidad;
+  }[];
 }
 
 export interface MovimientoVista {
@@ -81,6 +97,12 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
    * `cantidad` es la única forma en que un número de inventario sale hacia el
    * bot, y solo cuando NO alcanza: «de 30 no, de 25 sí» es la respuesta útil y
    * no hay manera de darla sin el número. Si alcanza, basta un sí.
+   *
+   * El número sale UNA VEZ por llamada, en el artículo que mejor casa con `q`
+   * —el que la clienta nombró—. Los demás aciertos se llevan el sí o el no.
+   * Antes lo llevaban todos, y entonces `buscarCatalogo("", 100, 999999)` no
+   * era una pregunta: era el inventario exacto del catálogo entero en una sola
+   * llamada, por la puerta pensada para hacer un contraofrecimiento.
    */
   async buscarCatalogo(
     q: string,
@@ -94,6 +116,10 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
     return ok(await buscar(this.env.DB, q, limite ?? 20, pedida));
   }
 
+  /**
+   * El catálogo entero. Con `cantidad`, el sí o el no de cada artículo y de
+   * ninguno el número: una lista completa no es la pregunta de una clienta.
+   */
   async listarCatalogo(cantidad?: number): Promise<Resultado<VariantePublica[]>> {
     const pedida = normalizarCantidad(cantidad);
     if (pedida === "invalida") {
@@ -240,7 +266,17 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
     const porCodigo = new Map<string, StockPorBodega>();
     for (const f of results) {
       const ya = porCodigo.get(f.codigo);
-      const fila = { bodega: f.bodega, fisico: f.fisico, reservado: f.reservado };
+      // `reservado <= fisico` lo garantiza el esquema, así que la resta no se
+      // recorta en cero: si saliera negativa sería un descuadre y conviene que
+      // se vea, no que se maquille.
+      const libres = f.fisico - f.reservado;
+      const fila = {
+        bodega: f.bodega,
+        fisico: f.fisico,
+        reservado: f.reservado,
+        libres,
+        hay: disponibilidad(libres, UMBRAL_POCAS),
+      };
       if (ya === undefined) {
         porCodigo.set(f.codigo, { codigo: f.codigo, nombre: f.nombre, porBodega: [fila] });
       } else {

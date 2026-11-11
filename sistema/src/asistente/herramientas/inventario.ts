@@ -84,9 +84,65 @@ export const verStock = definir({
       // Si se cortó en 100, decirlo: un total que en realidad era un recorte
       // es la forma más fácil de que el asistente afirme una cifra falsa.
       recortado: results.length === 100,
+      aviso: await porQueNoSalioNada(ctx.db, args, results.length),
     };
   },
 });
+
+/**
+ * Por qué una consulta de stock volvió vacía.
+ *
+ * Una lista vacía es la respuesta más peligrosa que puede dar esta herramienta:
+ * el modelo lee `articulos: []` y contesta «no hay», que es una de tres cosas
+ * distintas y se parecen solo desde aquí.
+ *
+ *  - El código no existe → no hay nada que contestar; hay que preguntar bien.
+ *  - Es un COMBO → sí se puede vender, pero no tiene existencias propias: se
+ *    arma con sus componentes. Decir «no hay» de un combo que se puede armar es
+ *    perder una venta y quedar mal.
+ *  - Existe y no está dado de alta en bodega → NO SE SABE cuánto hay, que no es
+ *    lo mismo que cero. Un modelo que recibe «no se sabe» dice «déjeme
+ *    confirmarlo»; uno que recibe cero dice «no hay».
+ *
+ * Hacia fuera la decisión es la contraria y también es correcta: el catálogo
+ * público lee la falta de existencias como «agotado», porque de cara a la
+ * clienta lo prudente es no prometer. Hacia dentro lo prudente es no mentirle a
+ * quien tiene que ir a mirar.
+ *
+ * La consulta extra solo se hace cuando no salió nada Y se preguntó por un
+ * código: en el camino normal esto no cuesta un viaje a la base.
+ */
+async function porQueNoSalioNada(
+  db: D1Database,
+  args: { codigo?: string | undefined; bodega?: string | undefined },
+  cuantos: number,
+): Promise<string | null> {
+  if (cuantos > 0 || args.codigo === undefined) return null;
+
+  const v = await laVariante(db, args.codigo);
+  if (v === null) return noExiste(args.codigo);
+
+  if (v.es_combo === 1) {
+    return (
+      `«${args.codigo}» (${v.nombre}) es un combo: no tiene existencias propias, ` +
+      "se arma con sus componentes. Para saber cuántos se pueden armar use ver_combo."
+    );
+  }
+
+  const donde = args.bodega === undefined ? "en ninguna bodega" : `en «${args.bodega}»`;
+  return (
+    `«${args.codigo}» (${v.nombre}) existe pero no está dado de alta ${donde}: ` +
+    "NO SE SABE cuánto hay, y eso no es lo mismo que cero. Hay que darlo de alta o mirar otra bodega."
+  );
+}
+
+const laVariante = (db: D1Database, codigo: string) =>
+  db
+    .prepare("SELECT nombre, es_combo FROM variantes WHERE codigo = ?")
+    .bind(codigo)
+    .first<{ nombre: string; es_combo: number }>();
+
+const noExiste = (codigo: string) => `no existe ningún artículo con el código «${codigo}»`;
 
 export const movimientos = definir({
   nombre: "movimientos",
@@ -149,8 +205,34 @@ export const movimientos = definir({
       // `actor` y `costo_unit_cents` existen en la tabla y NO salen: el primero
       // puede ser una persona y el segundo es costo, que tiene su propio
       // permiso. Que estén en el SELECT de al lado y no aquí es a propósito.
+      aviso: await porQueNoHayHistorial(ctx.db, args.codigo, results.length),
     };
   },
 });
+
+/**
+ * Por qué un artículo no tiene historial.
+ *
+ * Mismo problema que en `ver_stock` y mismo remedio: una lista vacía son dos
+ * cosas distintas. «El código está mal escrito» y «este artículo es nuevo y no
+ * se ha movido nunca» llevan a respuestas opuestas, y desde una lista vacía se
+ * parecen. La segunda además es una respuesta buena —no es un hueco de datos—,
+ * así que conviene poder darla con confianza.
+ */
+async function porQueNoHayHistorial(
+  db: D1Database,
+  codigo: string,
+  cuantos: number,
+): Promise<string | null> {
+  if (cuantos > 0) return null;
+
+  const v = await laVariante(db, codigo);
+  if (v === null) return noExiste(codigo);
+
+  return (
+    `«${codigo}» (${v.nombre}) existe y no tiene ningún movimiento anotado todavía: ` +
+    "nunca ha entrado ni salido nada. No es que falten datos."
+  );
+}
 
 export const HERRAMIENTAS_DE_INVENTARIO = [verStock, movimientos] as const;
