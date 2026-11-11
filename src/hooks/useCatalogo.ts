@@ -39,6 +39,9 @@ const DEL_BUILD: Catalogo = porCodigo(
 );
 
 let enVuelo: Promise<Catalogo> | null = null;
+/** Quién quiere enterarse de que el catálogo de verdad ya llegó. */
+const avisos = new Set<() => void>();
+let yaLlego = false;
 
 function pedirUnaVez(): Promise<Catalogo> {
   enVuelo ??= fetch('/api/catalogo')
@@ -49,8 +52,33 @@ function pedirUnaVez(): Promise<Catalogo> {
       // vacía la promesa: reintentar en cada componente que se monte sería
       // castigar a un sistema que ya está caído.
       return DEL_BUILD;
+    })
+    .then((c) => {
+      yaLlego = true;
+      for (const avisar of avisos) avisar();
+      return c;
     });
   return enVuelo;
+}
+
+/**
+ * Si el catálogo de verdad todavía no llegó.
+ *
+ * Hace falta porque la copia del build **miente sobre la disponibilidad**: se
+ * genera en el despliegue y hoy trae las doce variantes en `agotado`. Durante
+ * los primeros cientos de milisegundos la página diría que no hay nada de
+ * nada, y después cambiaría sola.
+ *
+ * Con los precios eso daba igual —un precio viejo sigue siendo un precio— y
+ * por eso la copia se pinta de entrada. Con un botón de «Agregar» no da
+ * igual: saldría apagado y se encendería solo, y quien lo tocó en medio ve
+ * que no pasa nada y lo vuelve a tocar.
+ *
+ * Así que esto existe para poder decir «un momento» en vez de decir una cosa
+ * y cambiarla.
+ */
+export function cargandoCatalogo(): boolean {
+  return !yaLlego;
 }
 
 export function useCatalogo(): Catalogo {
@@ -67,6 +95,33 @@ export function useCatalogo(): Catalogo {
   }, []);
 
   return catalogo;
+}
+
+/**
+ * El catálogo y si todavía se está esperando.
+ *
+ * Aparte de `useCatalogo` para no cambiarle la forma a los sitios que solo
+ * quieren precios y les da igual la espera.
+ */
+export function useCatalogoConEstado(): { catalogo: Catalogo; cargando: boolean } {
+  const catalogo = useCatalogo();
+  const [cargando, setCargando] = useState(() => cargandoCatalogo());
+
+  useEffect(() => {
+    if (!cargandoCatalogo()) {
+      setCargando(false);
+      return;
+    }
+    const avisar = () => setCargando(false);
+    avisos.add(avisar);
+    // Puede haber llegado entre el render y este efecto.
+    if (!cargandoCatalogo()) avisar();
+    return () => {
+      avisos.delete(avisar);
+    };
+  }, []);
+
+  return { catalogo, cargando };
 }
 
 /** `5000` da `$50`; `4650` da `$46.50`. Los centavos solo salen si los hay. */

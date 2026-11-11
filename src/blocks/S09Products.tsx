@@ -4,12 +4,13 @@ import { useGsapContext } from '../hooks/useGsapContext';
 import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
 import { buttonVariants } from '../components/ui/Button';
-import { useCatalogo, precioDe, desdeDe } from '../hooks/useCatalogo';
-
-const WHATSAPP_BASE = 'https://wa.me/50767575065?text=';
+import { Link } from 'react-router-dom';
+import { useCatalogoConEstado, desdeDe } from '../hooks/useCatalogo';
+import { FilaPresentacion } from '../carrito/FilaPresentacion';
+import { whatsappCon } from '../data/contacto';
 
 export default function S09Products() {
-  const catalogo = useCatalogo();
+  const { catalogo, cargando } = useCatalogoConEstado();
   // Lo descatalogado no se pinta: vender lo que no existe acaba en un pedido
   // que nadie puede cumplir, y en un bot diciéndole a la clienta lo contrario
   // que la web.
@@ -37,7 +38,11 @@ export default function S09Products() {
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
         {data.map((product, idx) => {
-          const message = encodeURIComponent(`Hola Baby Caleb, me interesa: ${product.name}`);
+          // La ficha de la primera presentación: es donde viven la foto
+          // grande, el rango de peso y los datos estructurados que lee Google.
+          // Sin este enlace esas páginas existían y no se llegaba a ninguna.
+          const primera = product.variants[0]?.codigo;
+          const slug = primera === undefined ? undefined : catalogo.get(primera)?.slug;
           return (
             <div
               key={idx}
@@ -57,31 +62,42 @@ export default function S09Products() {
               </div>
               <div className="p-8 flex flex-col flex-grow">
                 {/* Nombre de producto: no se traduce (ver FichaProducto). */}
-                <h3 translate="no" className="text-2xl text-fg mb-3 leading-tight">{product.name}</h3>
+                <h3 translate="no" className="text-2xl text-fg mb-3 leading-tight">
+                  {slug === undefined ? (
+                    product.name
+                  ) : (
+                    <Link
+                      to={`/productos/${slug}`}
+                      className="hover:text-accent-strong focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 rounded-sm transition-colors"
+                    >
+                      {product.name}
+                    </Link>
+                  )}
+                </h3>
                 <p className="text-muted text-sm mb-6 leading-relaxed">
                   {product.description}
                 </p>
 
                 <div className="mb-6">
-                  <span className="block mono text-xs text-muted mb-3">Presentaciones</span>
+                  <span className="block mono text-xs text-muted mb-3">
+                    Presentaciones · toca una para agregarla
+                  </span>
                   <div className="space-y-2">
                     {product.variants.map((v, vIdx) => (
-                      <div
+                      <FilaPresentacion
                         key={vIdx}
-                        className="flex items-center justify-between bg-bg border border-line rounded-lg px-3 py-2 text-xs"
-                      >
-                        <div>
-                          <span className="font-bold text-fg">{v.size}</span>
-                          <span className="text-muted"> · {v.units}</span>
-                        </div>
-                        <span className="font-bold text-accent-strong">{precioDe(catalogo, v.codigo)}</span>
-                      </div>
+                        codigo={v.codigo}
+                        talla={v.size}
+                        unidades={v.units}
+                        variante={v.codigo === undefined ? undefined : catalogo.get(v.codigo)}
+                        cargando={cargando}
+                      />
                     ))}
                   </div>
                 </div>
 
                 <a
-                  href={`${WHATSAPP_BASE}${message}`}
+                  href={whatsappCon(`Hola Baby Caleb, me interesa: ${product.name}`)}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`Pedir ${product.name} por WhatsApp`}
