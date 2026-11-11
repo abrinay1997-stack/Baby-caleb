@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Seo from '../components/Seo';
 import { Section } from '../components/ui/Section';
@@ -10,8 +11,12 @@ import {
   rangoDePeso,
 } from '../seo/producto';
 import { getContentData } from '../data/content';
+import { useCarrito } from '../carrito/useCarrito';
 
 const WHATSAPP_BASE = 'https://wa.me/50767575065?text=';
+
+/** Cuánto se queda el «Agregado» antes de volver a su texto normal. */
+const AVISO_MS = 2000;
 
 /**
  * La ficha de una variante: `/productos/<slug>` (F3.7).
@@ -27,6 +32,26 @@ const WHATSAPP_BASE = 'https://wa.me/50767575065?text=';
 export default function FichaProducto() {
   const { slug } = useParams<{ slug: string }>();
   const catalogo = useCatalogo();
+  const { agregar } = useCarrito();
+
+  // Los hooks van ANTES del `return` temprano de más abajo: React exige que se
+  // llamen siempre y en el mismo orden, y una ficha sin variante sale por ahí.
+  const [agregado, setAgregado] = useState(false);
+
+  // El aviso se borra solo. El `clearTimeout` no es adorno: sin él, agregar y
+  // salir de la página deja un temporizador tocando un componente desmontado.
+  useEffect(() => {
+    if (!agregado) return;
+    const t = window.setTimeout(() => setAgregado(false), AVISO_MS);
+    return () => window.clearTimeout(t);
+  }, [agregado]);
+
+  // Cambiar de producto limpia el aviso: si no, la ficha siguiente abre
+  // diciendo «Agregado» de algo que no es lo que se está mirando.
+  useEffect(() => {
+    setAgregado(false);
+  }, [slug]);
+
   const variante = slug === undefined ? undefined : [...catalogo.values()].find((v) => v.slug === slug);
 
   // La foto sigue en content.json: se busca por el código de la variante.
@@ -130,15 +155,38 @@ export default function FichaProducto() {
                   : 'Disponible para entrega.'}
             </p>
 
-            <a
-              href={`${WHATSAPP_BASE}${mensaje}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Pedir ${variante.nombre} por WhatsApp`}
-              className={buttonVariants({ variant: agotado ? 'outline' : 'accent' })}
-            >
-              {agotado ? 'Avísenme cuando entre' : 'Pedir por WhatsApp'}
-            </a>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <a
+                href={`${WHATSAPP_BASE}${mensaje}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Pedir ${variante.nombre} por WhatsApp`}
+                className={buttonVariants({ variant: agotado ? 'outline' : 'accent' })}
+              >
+                {agotado ? 'Avísenme cuando entre' : 'Pedir por WhatsApp'}
+              </a>
+
+              {/* Agotado no se agrega: el carrito acabaría pidiendo algo que no
+                  hay, y quien lo descubre es la clienta al final. */}
+              {agotado ? null : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    agregar(variante.codigo);
+                    setAgregado(true);
+                  }}
+                  className={buttonVariants({ variant: 'outline' })}
+                >
+                  {agregado ? 'Agregado ✓' : 'Agregar al carrito'}
+                </button>
+              )}
+            </div>
+
+            {/* Se dice en texto además del botón: el número de la barra puede
+                quedar fuera de la vista si la página está desplazada. */}
+            <p aria-live="polite" className="text-muted min-h-5 text-xs">
+              {agregado ? 'Lo agregamos a tu carrito.' : ''}
+            </p>
 
             <p className="text-muted text-xs">
               El delivery va aparte del precio del producto y se cotiza por zona.
