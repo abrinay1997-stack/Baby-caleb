@@ -209,6 +209,37 @@ function resumenDeMuestra(nombre) {
   };
 }
 
+/**
+ * Un asiento del libro con sus líneas, para no repetir la forma ocho veces.
+ *
+ * `totalCents` es la suma de un lado —los dos dan lo mismo, porque cuadra— y
+ * se pasa a mano en vez de calcularlo: si un día una línea se escribe mal, el
+ * total deja de coincidir y la pantalla lo enseña, que es lo que se quiere de
+ * unos datos de muestra de contabilidad.
+ */
+const asiento = (id, fecha, descripcion, origen, hecho, totalCents, lineas, extra = {}) => ({
+  id,
+  fecha,
+  descripcion,
+  origen,
+  hecho,
+  referenciaTipo: null,
+  referenciaId: null,
+  revierteId: null,
+  revertido: false,
+  creadoPor: "yarielis@babycaleb.com",
+  creadoEn: Date.parse(`${fecha}T15:00:00Z`),
+  totalCents,
+  lineas: lineas.map(([codigo, cuenta, debeCents, haberCents]) => ({
+    codigo,
+    cuenta,
+    debeCents,
+    haberCents,
+    detalle: null,
+  })),
+  ...extra,
+});
+
 const RESPUESTAS = {
   "/api/yo": ok({
     usuario: {
@@ -296,6 +327,191 @@ const RESPUESTAS = {
         pagadoCents: 1000,
         estadoPedido: "entregado",
       },
+    ],
+  }),
+
+  /**
+   * `/contabilidad` y sus cuatro hermanas.
+   *
+   * Esta pantalla NUNCA se había renderizado aquí, y es la que más falta hacía:
+   * hasta que se engancharon los asientos, el libro diario de verdad salía
+   * vacío siempre, así que nadie —ni una prueba ni una persona— había visto la
+   * pantalla con datos dentro.
+   *
+   * LOS NÚMEROS CUADRAN ENTRE SÍ, Y ESO ES EL PUNTO. Son un mes de verdad:
+   * tres abonos, dos entregas con su costo y un saldo cobrado en efectivo.
+   * Ocho asientos. Si se inventan cifras sueltas, la pantalla sale bonita y no
+   * se puede ver si MIENTE — que es justo lo que una pantalla de contabilidad
+   * no puede hacer.
+   *
+   *   1101 Yappy      4 650   (abonos de BC-000412 y BC-000408)
+   *   1103 Efectivo   1 000   (abono de BC-000399)
+   *   1104-mot-01     3 150   (el saldo que cobró el motorizado y no ha entregado)
+   *   1201 Por cobrar 8 300   (BC-000399, entregado y sin cobrar)
+   *   1301 Inventario −5 700
+   *   2101 Anticipos  3 150   (el abono de BC-000408, que no ha salido)
+   *
+   *   Activo 11 400 = pasivo 3 150 + patrimonio 0 + resultado 8 250 ✓
+   *
+   * **El inventario en NEGATIVO es a propósito y es el estado real de hoy.**
+   * Salió mercancía que nunca entró en los libros, porque no hay asiento de
+   * apertura: la fecha de arranque y los costos de apertura siguen PENDIENTES
+   * de la dueña. Poner aquí un inventario positivo inventado escondería
+   * exactamente lo que hay que ver antes de empezar a usar esto en serio.
+   */
+  "/api/contabilidad": ok({
+    resumen: {
+      desde: "2026-11-01",
+      hasta: "2026-11-30",
+      dinero: [
+        { codigo: "1101", nombre: "Yappy Comercial (Banco General)", saldoCents: 4650 },
+        { codigo: "1103", nombre: "Efectivo en caja", saldoCents: 1000 },
+        { codigo: "1104-mot-01", nombre: "Caja de Luis", saldoCents: 3150 },
+      ],
+      dineroTotalCents: 8800,
+      teDebenCents: 8300,
+      debesCents: 3150,
+      inventarioCents: -5700,
+      resultados: {
+        ventasCents: 12950,
+        devolucionesCents: 0,
+        costoDeVentasCents: 5700,
+        mermasCents: 0,
+        gananciaBrutaCents: 7250,
+        ingresosEnvioCents: 1000,
+        gastosCents: 0,
+        gananciaNetaCents: 8250,
+        margenBrutoBp: 5598,
+        entregasSinCosto: 0,
+        porCuenta: [
+          { codigo: "4101", nombre: "Ventas", tipo: "ingreso", subtipo: null,
+            debeCents: 0, haberCents: 12950, saldoCents: 12950 },
+          { codigo: "4102", nombre: "Ingresos por envío", tipo: "ingreso", subtipo: null,
+            debeCents: 0, haberCents: 1000, saldoCents: 1000 },
+          { codigo: "5101", nombre: "Costo de lo vendido", tipo: "costo", subtipo: null,
+            debeCents: 5700, haberCents: 0, saldoCents: 5700 },
+        ],
+      },
+      balance: {
+        activoCents: 11400, pasivoCents: 3150, patrimonioCents: 0,
+        resultadoCents: 8250, diferenciaCents: 0, cuadra: true,
+      },
+      asientos: 8,
+      asientosSinCuadre: 0,
+      // Efectivo que está en la calle. A fin de mes tiene que estar en cero.
+      cajasConSaldo: [{ codigo: "1104-mot-01", nombre: "Caja de Luis", saldoCents: 3150 }],
+    },
+    huecos: [
+      { clave: "itbms", que: "Si los pañales, los wipes y los fulares llevan ITBMS, y a qué tasa cada uno.",
+        quien: "La dueña con su contadora.", estado: "abierto", nota: "Hoy la columna vale 0 en los 36 artículos.",
+        sinEsto: "El ITBMS no se cobra ni se separa, y la cuenta 2201 se queda vacía.",
+        fuente: "05-contabilidad §2" },
+      { clave: "banco", que: "En qué banco está la cuenta corriente del negocio.",
+        quien: "La dueña.", estado: "abierto", nota: null,
+        sinEsto: "La cuenta 1102 se sigue llamando «Banco (cuál: PENDIENTE)» en todos los informes.",
+        fuente: "05-contabilidad §2" },
+      { clave: "fecha_arranque", que: "El día 1 del mes en que la contabilidad arranca de verdad.",
+        quien: "La dueña.", estado: "abierto",
+        nota: "Mientras falte, el inventario sale en negativo: sale mercancía que nunca entró.",
+        sinEsto: "No hay asiento de apertura, y los meses anteriores no se pueden dar por cerrados.",
+        fuente: "05-contabilidad §7" },
+      { clave: "costos_apertura", que: "Cuánto costó cada talla que hay hoy en bodega.",
+        quien: "La contadora, con las facturas del proveedor.", estado: "lo_dice_una_persona", nota: null,
+        sinEsto: "Las entregas salen sin costo y el margen no se puede calcular.",
+        fuente: "05-contabilidad §7" },
+    ],
+  }),
+
+  // Los ocho asientos del mes, en el orden en que pasaron. Cada uno cuadra.
+  "/api/contabilidad/diario": ok({
+    asientos: [
+      asiento("01JBD1", "2026-11-03", "Abono recibido · Pedido BC-000412", "pago", "1", 1500,
+        [["1101", "Yappy Comercial (Banco General)", 1500, 0], ["2101", "Anticipos de clientas", 0, 1500]],
+        { referenciaTipo: "pago", referenciaId: "01JBCY0000000000000000001" }),
+      asiento("01JBD2", "2026-11-05", "Abono recibido · Pedido BC-000399", "pago", "1", 1000,
+        [["1103", "Efectivo en caja", 1000, 0], ["2101", "Anticipos de clientas", 0, 1000]],
+        { referenciaTipo: "pago", referenciaId: "01JBCY0000000000000000005" }),
+      asiento("01JBD3", "2026-11-07", "Entrega del pedido BC-000412", "entrega", "3", 4650,
+        [["2101", "Anticipos de clientas", 1500, 0], ["1201", "Cuentas por cobrar a clientas", 3150, 0],
+         ["4101", "Ventas", 0, 4150], ["4102", "Ingresos por envío", 0, 500]],
+        { referenciaTipo: "pedido", referenciaId: "01JBCP0000000000000000001" }),
+      asiento("01JBD4", "2026-11-07", "Costo de lo vendido del pedido BC-000412", "entrega", "3b", 1800,
+        [["5101", "Costo de lo vendido", 1800, 0], ["1301", "Inventario", 0, 1800]],
+        { referenciaTipo: "pedido", referenciaId: "01JBCP0000000000000000001" }),
+      asiento("01JBD5", "2026-11-07", "Cobro del saldo del pedido BC-000412", "cobro", "4", 3150,
+        [["1104-mot-01", "Caja de Luis", 3150, 0], ["1201", "Cuentas por cobrar a clientas", 0, 3150]],
+        { referenciaTipo: "pago", referenciaId: "01JBCY0000000000000000006" }),
+      asiento("01JBD6", "2026-11-09", "Entrega del pedido BC-000399", "entrega", "3", 9300,
+        [["2101", "Anticipos de clientas", 1000, 0], ["1201", "Cuentas por cobrar a clientas", 8300, 0],
+         ["4101", "Ventas", 0, 8800], ["4102", "Ingresos por envío", 0, 500]],
+        { referenciaTipo: "pedido", referenciaId: "01JBCP0000000000000000003" }),
+      asiento("01JBD7", "2026-11-09", "Costo de lo vendido del pedido BC-000399", "entrega", "3b", 3900,
+        [["5101", "Costo de lo vendido", 3900, 0], ["1301", "Inventario", 0, 3900]],
+        { referenciaTipo: "pedido", referenciaId: "01JBCP0000000000000000003" }),
+      asiento("01JBD8", "2026-11-10", "Abono recibido · Pedido BC-000408", "pago", "1", 3150,
+        [["1101", "Yappy Comercial (Banco General)", 3150, 0], ["2101", "Anticipos de clientas", 0, 3150]],
+        { referenciaTipo: "pago", referenciaId: "01JBCY0000000000000000002" }),
+    ],
+  }),
+
+  "/api/contabilidad/por-cobrar": ok({
+    al: "2026-11-30",
+    totalCents: 8300,
+    porTramo: { "0-7": 8300, "8-30": 0, "mas-de-30": 0 },
+    deudas: [
+      { pedidoId: "01JBCP0000000000000000003", numero: "BC-000399", cliente: null,
+        saldoCents: 8300, entregadoEl: "2026-11-09", dias: 2, tramo: "0-7" },
+    ],
+  }),
+
+  // El mayor de una cuenta: se abre tocando una del resumen.
+  "/api/contabilidad/cuentas/1201": ok({
+    codigo: "1201",
+    nombre: "Cuentas por cobrar a clientas",
+    apuntes: [
+      { asientoId: "01JBD3", fecha: "2026-11-07", descripcion: "Entrega del pedido BC-000412",
+        hecho: "3", debeCents: 3150, haberCents: 0, detalle: "Pedido BC-000412" },
+      { asientoId: "01JBD5", fecha: "2026-11-07", descripcion: "Cobro del saldo del pedido BC-000412",
+        hecho: "4", debeCents: 0, haberCents: 3150, detalle: "Pedido BC-000412" },
+      { asientoId: "01JBD6", fecha: "2026-11-09", descripcion: "Entrega del pedido BC-000399",
+        hecho: "3", debeCents: 8300, haberCents: 0, detalle: "Pedido BC-000399" },
+    ],
+  }),
+
+  /**
+   * El cierre, con la mezcla de estados que de verdad va a salir.
+   *
+   * No se puede cerrar, y por un motivo concreto: la caja del motorizado tiene
+   * $31.50 que él todavía no ha entregado. Es la casilla que hace que un
+   * cierre signifique algo.
+   */
+  "/api/contabilidad/cierre": ok({
+    mes: "2026-11",
+    estadoDelMes: "abierto",
+    sePuedeCerrar: false,
+    mesTerminado: false,
+    casillas: [
+      { clave: "extracto", titulo: "Extractos del mes importados y sin líneas por cruzar",
+        estado: "no_se_puede_comprobar",
+        detalle: "No se ha importado ningún extracto de este mes. La importación de CSV llega con la conciliación (F5.7)." },
+      { clave: "pagos", titulo: "Pagos aprobados sin conciliar", estado: "aviso",
+        detalle: "4 pagos aprobados que todavía no se han cruzado con un extracto." },
+      { clave: "liquidaciones", titulo: "Liquidaciones de las pasarelas recibidas",
+        estado: "no_se_puede_comprobar",
+        detalle: "Todavía no hay ninguna pasarela encendida: los trámites de Yappy, Tilopay y PayPal siguen en curso." },
+      { clave: "cajas", titulo: "Cajas de los motorizados en cero", estado: "falta",
+        detalle: "1 con saldo: Caja de Luis." },
+      { clave: "sin_costo", titulo: "Pedidos entregados sin costo", estado: "ok", detalle: "Ninguno." },
+      { clave: "facturas", titulo: "Compras recibidas sin factura adjunta",
+        estado: "no_se_puede_comprobar", detalle: "Las compras a proveedor llegan en otra parte del sistema (F5.4)." },
+      { clave: "existencias", titulo: "Las existencias cuadran con sus movimientos", estado: "ok", detalle: "Cuadran." },
+      { clave: "balance", titulo: "El balance cuadra", estado: "ok",
+        detalle: "Activos = pasivos + patrimonio + el resultado del periodo." },
+      { clave: "venta_sin_asiento", titulo: "Todas las entregas del mes tienen su asiento de venta",
+        estado: "ok", detalle: "Todas." },
+      { clave: "pago_sin_asiento", titulo: "Todo el dinero que entró tiene su asiento",
+        estado: "ok", detalle: "Todo." },
+      { clave: "cuadre", titulo: "Todos los asientos del mes tienen su cuadre", estado: "ok", detalle: "Todos." },
     ],
   }),
 

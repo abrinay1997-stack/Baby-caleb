@@ -434,6 +434,33 @@ function SeccionResumen({
                 valor={dinero(r.resultados.ventasCents)}
                 nota={`Del ${comoDia(r.desde)} al ${comoDia(r.hasta)}`}
               />
+              {/* Estas dos las calculaba el servidor y la pantalla las tiraba:
+                  estaban declaradas en el tipo y no se pintaban en ningún
+                  sitio. Y son de las que más dicen.
+
+                  «Usted debe» es lo abonado por pedidos que todavía no han
+                  salido: dinero que está en la cuenta y NO es suyo. Verlo
+                  junto a «dinero en cuentas» es lo que evita gastarlo.
+
+                  El inventario en NEGATIVO es la señal de que falta el asiento
+                  de apertura: salió mercancía que nunca entró en los libros.
+                  Mientras eso pase, el número es feo a propósito y tiene que
+                  verse, porque es lo que hay que arreglar antes de usar esto
+                  en serio. */}
+              <Cifra
+                etiqueta="Usted debe"
+                valor={dinero(r.debesCents)}
+                nota="Abonos de pedidos que no han salido"
+              />
+              <Cifra
+                etiqueta="Inventario"
+                valor={dinero(r.inventarioCents)}
+                nota={
+                  r.inventarioCents < 0
+                    ? "En negativo: falta el asiento de apertura"
+                    : `Al ${comoDia(r.hasta)}`
+                }
+              />
             </div>
 
             <Tarjeta>
