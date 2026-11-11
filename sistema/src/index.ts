@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { panel } from "./api/panel";
 import { vencerPendientes } from "./asistente/ejecutar";
+import { barrer } from "./db/archivos";
 import { MANEJADORES, atrasados, consumir, publicarPendientes } from "./eventos";
 import { conCabecerasDeSeguridad, encendido, superficieDe } from "./seguridad";
 
@@ -105,9 +106,9 @@ export default {
   },
 
   /**
-   * Crons. Por ahora uno: republicar lo que el outbox dejó sin publicar, cada
-   * 5 minutos (01-arquitectura.md §4). Los demás llegan con su fase
-   * (08-operacion §6: vencer reservas, conciliar pagos, cuadrar inventario).
+   * Crons, cada 5 minutos (01-arquitectura.md §4). Los que faltan llegan con su
+   * fase (08-operacion §6: vencer reservas, conciliar pagos, cuadrar
+   * inventario).
    */
   async scheduled(_evento: ScheduledController, env: Env): Promise<void> {
     const ahora = Date.now();
@@ -128,6 +129,15 @@ export default {
     const vencidas = await vencerPendientes(env.DB, ahora);
     if (vencidas > 0) {
       console.log(JSON.stringify({ evento: "cron_acciones_vencidas", cuantas: vencidas }));
+    }
+
+    // Los archivos que cumplieron su margen se van de R2 de verdad. Esto es lo
+    // único que borra multimedia en todo el sistema: ninguna pantalla lo hace
+    // en el momento, justo para que un fallo a mitad no deje basura ni se lleve
+    // una foto que todavía se podía recuperar.
+    const b = await barrer({ db: env.DB, r2: env.PRIVADO, ahora, actor: "cron" });
+    if (b.ok && (b.datos.borrados > 0 || b.datos.fallidos > 0)) {
+      console.log(JSON.stringify({ evento: "cron_barrido_archivos", ...b.datos }));
     }
   },
 } satisfies ExportedHandler<Env, unknown>;

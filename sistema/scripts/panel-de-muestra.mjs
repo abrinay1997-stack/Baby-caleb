@@ -88,21 +88,27 @@ const RESPUESTAS = {
     muestraCosto: true,
     variantes: [
       { codigo: "BC-001-03", nombre: "Body manga larga pima", talla: "0-3m", unidades_por_caja: 12,
-        precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, familia: "Ropa",
+        precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Ropa",
         producto: "Body manga larga algodón pima", costo_unidades: 23, costo_valor_cents: 14720 },
       { codigo: "BC-001-36", nombre: "Body manga larga pima", talla: "3-6m", unidades_por_caja: 12,
-        precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, familia: "Ropa",
+        precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Ropa",
         producto: "Body manga larga algodón pima", costo_unidades: 11, costo_valor_cents: 7040 },
       { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", talla: "Única", unidades_por_caja: 6,
-        precio_cents: 2890, tasa_itbms_bp: 700, publicado: 1, activo: 1, familia: "Textil",
+        precio_cents: 2890, tasa_itbms_bp: 700, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Textil",
         producto: "Set de 3 mantas de muselina", costo_unidades: 2, costo_valor_cents: 3020 },
       { codigo: "BC-003-RN", nombre: "Gorro de punto recién nacido", talla: "RN", unidades_por_caja: 24,
-        precio_cents: 790, tasa_itbms_bp: 0, publicado: 1, activo: 1, familia: "Accesorios",
+        precio_cents: 790, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Accesorios",
         producto: "Gorro de punto recién nacido", costo_unidades: 0, costo_valor_cents: 0 },
       { codigo: "BC-004-U", nombre: "Pañalera impermeable grande", talla: "Única", unidades_por_caja: 4,
-        precio_cents: 4550, tasa_itbms_bp: 700, publicado: 0, activo: 0, familia: "Bolsos",
+        precio_cents: 4550, tasa_itbms_bp: 700, publicado: 0, activo: 0, version: 1, imagen: null, es_combo: 0, familia: "Bolsos",
         producto: "Pañalera impermeable grande", costo_unidades: 11, costo_valor_cents: 26400 },
-    ],
+          {
+        codigo: "BC-COMBO-1", producto: "Combo recién nacido", nombre: "Combo recién nacido",
+        talla: null, unidades_por_caja: 1, precio_cents: 3500, tasa_itbms_bp: 0,
+        publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 1, familia: "Combos",
+        costo_unidades: null, costo_valor_cents: null,
+      },
+],
   }),
 
   // `/existencias`: codigo, nombre, bodega_id, bodega, fisico, reservado, libres, minimo.
@@ -184,6 +190,41 @@ const servidor = createServer(async (pet, res) => {
     res.end(RESPUESTAS[ruta]);
     return;
   }
+  // El veredicto de borrado, que la pantalla pide ANTES de enseñar el
+  // «¿seguro?». Se responde según el código para poder ver las DOS pantallas:
+  // la que borra de verdad y la que avisa de que solo se oculta. Sin esto, la
+  // confirmación más delicada del panel no la mira nunca nadie.
+  // La receta de un combo. Sin esto, la pantalla del combo —que es la que
+  // tiene la lógica de «cuál frena»— no la mira nunca nadie.
+  const receta = /^\/api\/catalogo\/variantes\/([^/]+)\/receta$/.exec(ruta);
+  if (receta !== null) {
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    res.end(
+      ok([
+        { codigo: "BC-001-03", nombre: "Body manga larga pima", cantidad: 2, libres: 18 },
+        { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", cantidad: 1, libres: 0 },
+      ]),
+    );
+    return;
+  }
+
+  const borrado = /^\/api\/catalogo\/variantes\/([^/]+)\/borrado$/.exec(ruta);
+  if (borrado !== null) {
+    const codigo = decodeURIComponent(borrado[1]);
+    // BC-001-03 es el que la auditoría abre: se deja con historia, que es el
+    // caso que hay que ver.
+    const tieneHistoria = codigo !== "BC-SIN-HISTORIA";
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    res.end(
+      ok(
+        tieneHistoria
+          ? { modo: "se_oculta", yaOculta: false, razones: ["está en 3 pedidos", "tiene 12 unidades en bodega"] }
+          : { modo: "se_borra", archivos: 1, razones: [] },
+      ),
+    );
+    return;
+  }
+
   if (ruta.startsWith("/api/")) {
     // Una ruta del API que no está en la muestra se dice, no se inventa: si una
     // pantalla pide algo que aquí no existe, hay que añadirlo arriba.

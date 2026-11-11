@@ -18,7 +18,10 @@ export interface Yo {
 export type Estado<T> =
   | { fase: "cargando" }
   | { fase: "listo"; datos: T }
-  | { fase: "error"; mensaje: string; codigo?: string };
+  // `detalle` es lo que dijo el SERVIDOR, tal cual. `mensaje` es lo que lee
+  // la dueña. Los dos, porque el primero sirve para reparar y el segundo
+  // para no asustarse: tirar el del servidor deja a quien repara a ciegas.
+  | { fase: "error"; mensaje: string; codigo?: string; detalle?: string };
 
 /** Lo que llega por el cable tiene la forma del contrato, bien o mal. */
 type Sobre<T> =
@@ -34,6 +37,14 @@ type Sobre<T> =
 function mensajeDeFallo(codigo: string | undefined, crudo: string | undefined): string {
   switch (codigo) {
     case "no_autorizado":
+      // El sistema todavía no tiene puerta. No es que la sesión se haya
+      // caído: es que Access no existe, y decirle a alguien «vuelva a entrar»
+      // cuando no hay dónde entrar le hace perder la tarde buscando el fallo
+      // en el sitio equivocado. Lo vio la primera persona que abrió el panel
+      // recién desplegado.
+      if (crudo?.includes("sin configurar") === true) {
+        return "El panel todavía no tiene puerta de entrada: falta configurar Cloudflare Access. Nadie puede entrar hasta entonces, y eso es a propósito. Avísele a Juan.";
+      }
       return "Su sesión no está activa o su cuenta no tiene acceso a esta parte. Vuelva a entrar; si sigue igual, avísele a Juan.";
     case "no_encontrado":
       return "Eso ya no está aquí. Quizá se borró desde otra pantalla.";
@@ -70,8 +81,11 @@ export async function pedir<T>(ruta: string, opciones: RequestInit = {}): Promis
 
   const codigo = sobre?.ok === false ? sobre.codigo : undefined;
   const mensaje = sobre?.ok === false ? sobre.mensaje : undefined;
-  const error: Error & { codigo?: string } = new Error(mensajeDeFallo(codigo, mensaje));
+  const error: Error & { codigo?: string; detalle?: string } = new Error(
+    mensajeDeFallo(codigo, mensaje),
+  );
   if (codigo !== undefined) error.codigo = codigo;
+  if (mensaje !== undefined && mensaje !== "") error.detalle = mensaje;
   throw error;
 }
 
@@ -94,11 +108,12 @@ export function useCarga<T>(ruta: string, dependencias: unknown[] = []): Estado<
       })
       .catch((e: unknown) => {
         if (!vivo) return;
-        const err = e as Error & { codigo?: string };
+        const err = e as Error & { codigo?: string; detalle?: string };
         setEstado({
           fase: "error",
           mensaje: err.message,
           ...(err.codigo === undefined ? {} : { codigo: err.codigo }),
+          ...(err.detalle === undefined ? {} : { detalle: err.detalle }),
         });
       });
     return () => {

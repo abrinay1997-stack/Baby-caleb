@@ -81,12 +81,44 @@ interface Fila {
 const CONSULTA = `
   SELECT v.codigo, p.slug AS slug_producto, v.nombre, v.talla,
          v.peso_min_lb, v.peso_max_lb, v.unidades_por_caja, v.precio_cents, v.version,
-         (SELECT SUM(e.fisico - e.reservado) FROM existencias e WHERE e.codigo = v.codigo) AS libres
+         -- Un combo no tiene existencias propias: caben tantos como permita
+         -- el componente que menos alcance. Es la MISMA regla que
+         -- src/dominio/combos.ts, escrita aqui porque el catalogo entero sale
+         -- en una consulta y traerse las recetas para calcularlo en
+         -- JavaScript serian N+1 consultas en el camino que mas se usa.
+         --
+         -- Dos copias de una regla acaban discrepando, asi que hay una prueba
+         -- (test/combos-catalogo.test.ts) que siembra combos en D1 y exige que
+         -- esta consulta y cuantosCombos den el MISMO numero.
+         --
+         -- MIN sobre un conjunto vacio da NULL, asi que un combo sin receta
+         -- sale con libres nulo y se lee como 0, que es lo que dice la regla
+         -- pura: sin componentes no se arma ninguno. Y la division de dos
+         -- enteros en SQLite trunca, igual que el Math.floor de alla.
+         CASE WHEN v.es_combo = 1 THEN (
+           SELECT MIN(
+             (SELECT COALESCE(SUM(e.fisico - e.reservado), 0)
+                FROM existencias e WHERE e.codigo = cc.codigo) / cc.cantidad
+           )
+           FROM combo_componentes cc WHERE cc.combo_codigo = v.codigo
+         ) ELSE (
+           SELECT SUM(e.fisico - e.reservado) FROM existencias e WHERE e.codigo = v.codigo
+         ) END AS libres
   FROM variantes v
   JOIN productos p ON p.id = v.producto_id
   WHERE v.activo = 1 AND v.publicado = 1 AND p.activo = 1`;
 
 function aPublica(f: Fila, cantidad?: number): VariantePublica {
+  // Aguas arriba `normalizarCantidad` ya rechaza un 0, un negativo o un
+  // decimal: si algo así llega hasta aquí es un error de programación, no una
+  // entrada mala. Y el error de programación que ya pasó una vez fue
+  // `results.map(aPublica)`, que cuela el índice del array como cantidad y
+  // hace que la cantidad exacta de inventario salga hacia fuera. Reventar
+  // aquí convierte esa fuga silenciosa en una prueba roja.
+  if (cantidad !== undefined && (!Number.isSafeInteger(cantidad) || cantidad < 1)) {
+    throw new Error(`aPublica: cantidad inválida (${cantidad}) — ¿se pasó aPublica a .map()?`);
+  }
+
   const libres = f.libres ?? 0;
   return {
     ...(cantidad === undefined
@@ -123,7 +155,11 @@ export async function catalogoPublico(db: D1Database, ahora: number): Promise<Ca
     // saber si su copia sirve todavía sin comparar el catálogo entero.
     version: results.reduce((maxima, f) => Math.max(maxima, f.version), 0),
     generadoEn: ahora,
-    variantes: results.map(aPublica),
+    // `results.map(aPublica)` NO: `Array.prototype.map` pasa
+    // `(elemento, indice, array)`, así que el índice se colaba como
+    // `cantidad` y la variante de la posición i con menos de i libres salía
+    // con `maximoDisponible` —la cantidad exacta— hacia el navegador.
+    variantes: results.map((f) => aPublica(f)),
   };
 }
 

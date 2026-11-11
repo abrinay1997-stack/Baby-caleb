@@ -1,15 +1,34 @@
 import { useEffect } from 'react';
+import { RUTAS, SITE_NAME, metaDe } from '../seo/rutas';
 
+/**
+ * El `<head>` al navegar DENTRO de la SPA.
+ *
+ * El Worker ya pone el `<head>` correcto en el HTML que manda (worker/head.ts),
+ * que es lo que leen WhatsApp y Meta. Pero al moverse entre páginas sin
+ * recargar no hay petición al servidor, así que el título lo tiene que cambiar
+ * el navegador: eso es esto.
+ *
+ * Los textos NO se pasan por propiedades: se piden por RUTA a `seo/rutas.ts`,
+ * que es el mismo archivo que lee el Worker. Antes vivían escritos en cada
+ * página, y eso significaba que el día que alguien cambiara uno, el enlace
+ * compartido por WhatsApp diría una cosa y la pestaña del navegador otra.
+ */
 interface SeoProps {
-  title: string;
-  description: string;
-  /** Ruta canónica, ej. "/productos". Por defecto la actual. */
-  path?: string;
-  /** JSON-LD adicional específico de la página (ej. FAQPage). */
+  /** La ruta, ej. "/productos". Sus textos salen de `seo/rutas.ts`. */
+  ruta: keyof typeof RUTAS | string;
+  /** JSON-LD específico de la página (ej. FAQPage, Product). */
   jsonLd?: Record<string, unknown>;
+  /**
+   * Título y descripción ya resueltos, para las páginas que NO están en la
+   * lista fija: las fichas de producto, cuyos textos salen del catálogo
+   * (F3.7). Si viene, manda sobre `rutas.ts`.
+   *
+   * Es la única forma de que la ficha diga lo mismo aquí que en el HTML que
+   * manda el Worker: los dos arman el texto con `metaDeProducto`.
+   */
+  meta?: { title: string; description: string };
 }
-
-const SITE_NAME = 'Baby Caleb Panamá';
 const JSONLD_ID = 'route-jsonld';
 
 function upsertMeta(attr: 'name' | 'property', key: string, content: string) {
@@ -32,11 +51,12 @@ function upsertCanonical(href: string) {
   el.setAttribute('href', href);
 }
 
-export default function Seo({ title, description, path, jsonLd }: SeoProps) {
+export default function Seo({ ruta, jsonLd, meta: metaDada }: SeoProps) {
   useEffect(() => {
-    const origin = window.location.origin;
-    const routePath = path ?? window.location.pathname;
-    const url = `${origin}${routePath}`;
+    const meta = metaDada ?? metaDe(ruta);
+    if (!meta) return;
+    const { title, description } = meta;
+    const url = `${window.location.origin}${ruta}`;
 
     document.title = title;
     upsertMeta('name', 'description', description);
@@ -59,7 +79,7 @@ export default function Seo({ title, description, path, jsonLd }: SeoProps) {
     return () => {
       script?.remove();
     };
-  }, [title, description, path, jsonLd]);
+  }, [ruta, jsonLd, metaDada]);
 
   return null;
 }

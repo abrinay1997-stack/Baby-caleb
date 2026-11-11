@@ -75,7 +75,7 @@ export function Ajustes() {
                 return (
                   <Fila key={clave}>
                     <Celda etiqueta="">{clave.replace(/_/g, " ")}</Celda>
-                    <Celda etiqueta="Valor">
+                    <Celda etiqueta="Valor" papel="clave">
                       {pendiente ? (
                         <Pastilla tono="aviso">Falta decidirlo</Pastilla>
                       ) : (

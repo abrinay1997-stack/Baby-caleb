@@ -67,9 +67,55 @@ describe("SistemaWeb · lo que llega a un navegador", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
-    const texto = JSON.stringify(r.datos);
+    // El sobre solo lleva la versión y el sello de tiempo. Se fija aquí la
+    // lista de sus campos: si alguien le cuelga uno nuevo, esta prueba se pone
+    // roja y hay que mirar a mano si eso puede salir a un navegador.
+    expect(Object.keys(r.datos).sort()).toEqual(["generadoEn", "variantes", "version"]);
+
+    // Y lo que se revisa letra por letra son las variantes, NO el sobre: el
+    // sello de tiempo es un número de 13 dígitos y a ciertas horas del día
+    // lleva un «20» dentro (1794276822015), con lo que la prueba pasaba o
+    // fallaba según el reloj en vez de según el código. Pasó en local y falló
+    // en CI por eso mismo.
+    const texto = JSON.stringify(r.datos.variantes);
     expect(texto).not.toMatch(/costo|fisico|reservado|libres/i);
+    // El físico de NAT-M que pone el beforeEach.
     expect(texto).not.toContain("20");
+  });
+
+  it("el catálogo de la web no trae NINGÚN «pedido», con una variante o con ocho", async () => {
+    // La web nunca pregunta «¿alcanza para 30?» —eso es del bot—, así que en
+    // su catálogo el campo `pedido` no tiene por qué existir. Y existía: el
+    // catálogo se armaba con `results.map(aPublica)`, y `.map` pasa el índice
+    // del array como segundo argumento, que en `aPublica` es la cantidad
+    // pedida. Resultado: la variante de la posición i con menos de i libres
+    // salía con `maximoDisponible`, que ES la cantidad exacta de inventario,
+    // hacia cualquier navegador.
+    //
+    // Con una sola variante publicada esto no se ve (índice 0 es el único
+    // caso que no filtra), y el `beforeEach` publica una sola. De ahí que
+    // haga falta publicar varias y darles existencias distintas y pequeñas,
+    // para que haya posiciones con menos libres que su propio índice.
+    const codigos = ["NAT-RN", "NAT-S", "NAT-M", "NAT-L", "NAT-XL", "NAT-XXL", "MOON-FUL"];
+    await real.DB.batch([
+      real.DB.prepare(
+        `UPDATE variantes SET publicado = 1 WHERE codigo IN (${codigos.map(() => "?").join(",")})`,
+      ).bind(...codigos),
+      // 0, 1 y 2 libres: por debajo del índice de casi todas las posiciones.
+      real.DB.prepare("UPDATE existencias SET fisico = 1 WHERE bodega_id = 'bod-1'"),
+      real.DB.prepare("UPDATE existencias SET fisico = 2 WHERE codigo = 'NAT-L'"),
+      real.DB.prepare("UPDATE existencias SET fisico = 0 WHERE codigo = 'NAT-XL'"),
+    ]);
+
+    const r = await web().catalogo();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    expect(r.datos.variantes.length).toBeGreaterThan(3);
+    for (const v of r.datos.variantes) {
+      expect(v, v.codigo).not.toHaveProperty("pedido");
+    }
+    expect(JSON.stringify(r.datos.variantes)).not.toMatch(/pedido|maximoDisponible|alcanza/);
   });
 
   it("lo NO publicado no sale, aunque esté activo y con existencias", async () => {

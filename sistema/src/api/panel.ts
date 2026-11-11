@@ -1,7 +1,28 @@
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { fallo, ok } from "../contrato/resultado";
 import { atrasados } from "../eventos";
-import { type Permiso, type Usuario, permisosDe, puedeVer, revisarPeticion, usuarioDeCorreo } from "../seguridad";
+import {
+  type Permiso,
+  type Usuario,
+  permisosDe,
+  puedeEditar,
+  puedeVer,
+  revisarPeticion,
+  usuarioDeCorreo,
+} from "../seguridad";
+import { EXTENSIONES, MAXIMO_BYTES, tipoDeImagen } from "../db/imagenes";
+import { claveDe, enunciadosParaBorrar, subir } from "../db/archivos";
+import {
+  borrarVariante,
+  comoSeBorra,
+  crearProducto,
+  crearProductoConVariante,
+  crearVariante,
+  editarVariante,
+  leerReceta,
+  ponerReceta,
+  explicar,
+} from "../db/catalogo-admin";
 
 /**
  * La API del panel.
@@ -44,7 +65,12 @@ const porAccess: ResolverUsuario = async (request, env) => {
   }
 
   const fila = await env.DB.prepare(
-    "SELECT id, correo, nombre, rol, activo FROM usuarios WHERE correo = ?",
+    // COLLATE NOCASE: Access entrega el correo en minúsculas, pero las filas
+    // de `usuarios` se escriben a mano y un «Yarielis@Gmail.com» tecleado con
+    // mayúscula dejaría a esa persona fuera para siempre, con un «no
+    // autorizado» que no explica nada. El índice único de la migración 0005
+    // impide además que existan dos filas que solo se diferencien en eso.
+    "SELECT id, correo, nombre, rol, activo FROM usuarios WHERE correo = ? COLLATE NOCASE",
   )
     .bind(puerta.identidad.correo)
     .first<{ id: string; correo: string; nombre: string; rol: string; activo: number }>();
@@ -93,6 +119,99 @@ function exige(permiso: Permiso): MiddlewareHandler<Entorno> {
     return;
   };
 }
+
+/**
+ * Corta la ruta si el rol puede MIRAR pero no CAMBIAR.
+ *
+ * `exige` usa `puedeVer` y vale para las pantallas de lectura. Escribir es otra
+ * cosa, y la diferencia es el pedido explícito del dueño: «que Juancito no
+ * venga y cambie los permisos y las políticas; eso lo hace solamente el
+ * administrador». Para `precios_y_stock`, `ajustes` y `cierre_de_mes` el único
+ * rol que puede editar es `duena` — hay una prueba en `roles.test.ts` que se
+ * cae si eso cambia.
+ *
+ * Esto NO sustituye a esconder el botón en el panel: esconder sin comprobar no
+ * es seguridad, y comprobar sin esconder es ofrecer algo que va a dar 403.
+ *
+ * Se exporta para poder probarlo CONTRA UN PERMISO DONDE VER Y EDITAR NO
+ * COINCIDEN. Hoy, sobre `precios_y_stock`, los tres roles del panel dan el
+ * mismo resultado con `puedeVer` y con `puedeEditar` —la dueña edita, las
+ * otras dos no ven— así que una prueba por las rutas del catálogo no distingue
+ * una puerta de la otra y pasaría igual con la equivocada. Lo comprobé
+ * cambiándola: la prueba seguía verde. La diferencia importa el día que exista
+ * un rol que mire precios sin tocarlos, y ese día nadie va a volver aquí.
+ */
+export function exigeEditar(permiso: Permiso): MiddlewareHandler<Entorno> {
+  return async (c, next) => {
+    const usuario = c.get("usuario");
+    if (!puedeEditar(usuario.rol, permiso)) {
+      return c.json(
+        fallo(
+          "no_autorizado",
+          `Su rol puede ver ${permiso.replace(/_/g, " ")}, pero no cambiarlo.`,
+        ),
+        403,
+      );
+    }
+    await next();
+    return;
+  };
+}
+
+/** El cuerpo de la petición, o `null` si no venía un objeto JSON. */
+async function cuerpo(c: { req: { json: () => Promise<unknown> } }): Promise<Record<string, unknown> | null> {
+  try {
+    const j = await c.req.json();
+    return typeof j === "object" && j !== null && !Array.isArray(j)
+      ? (j as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+const texto = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+
+/**
+ * El código del contrato decide el HTTP, no al revés.
+ *
+ * Los doce códigos son contrato con el CRM y quien llama actúa según el código,
+ * no según el número. Esto existe para que el navegador y los intermedios
+ * (cachés, proxys) no traten un conflicto como un éxito.
+ */
+function codigoHttp(codigo: string): 400 | 403 | 404 | 409 | 422 | 500 {
+  switch (codigo) {
+    case "entrada_invalida":
+      return 400;
+    case "no_autorizado":
+      return 403;
+    case "no_encontrado":
+      return 404;
+    // Repetido y conflicto de versión son los dos «alguien llegó antes»: 409 es
+    // justo lo que significa, y la pantalla sabe que toca recargar.
+    case "repetido":
+    case "conflicto_version":
+      return 409;
+    case "transicion_invalida":
+    case "sin_stock":
+      return 422;
+    default:
+      return 500;
+  }
+}
+
+/**
+ * El contexto que piden las operaciones de catálogo, con QUIÉN lo hizo.
+ *
+ * El actor es el correo del usuario y no un «panel» genérico: es lo que queda
+ * escrito en `precios_historial` cuando alguien pregunte quién cambió un
+ * precio, y «panel» no contesta esa pregunta.
+ */
+function contextoCatalogo(c: Context<Entorno>) {
+  return { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo };
+}
+const entero = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isSafeInteger(v) ? v : undefined;
 
 // ---------------------------------------------------------------------------
 
@@ -152,7 +271,7 @@ function registrarRutas(panel: Hono<Entorno>): void {
     // consulta.
     const { results } = await c.env.DB.prepare(
       `SELECT v.codigo, v.nombre, v.talla, v.unidades_por_caja, v.precio_cents,
-              v.tasa_itbms_bp, v.publicado, v.activo, p.familia, p.nombre AS producto
+              v.tasa_itbms_bp, v.publicado, v.activo, v.version, v.imagen, v.es_combo, p.familia, p.nombre AS producto
               ${conCosto ? ", vi.unidades AS costo_unidades, vi.valor_cents AS costo_valor_cents" : ""}
        FROM variantes v
        JOIN productos p ON p.id = v.producto_id
@@ -161,6 +280,247 @@ function registrarRutas(panel: Hono<Entorno>): void {
     ).all();
 
     return c.json(ok({ variantes: results, muestraCosto: conCosto }));
+  });
+
+  // -------------------------------------------------------------------------
+  // Catálogo: crear, editar y borrar (F4.19)
+  //
+  // Todas con `exigeEditar`: mirar el catálogo es una cosa y cambiar un precio
+  // es otra. El único rol que puede cambiarlo es `duena`.
+  // -------------------------------------------------------------------------
+
+  panel.post("/catalogo/productos", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await crearProducto(contextoCatalogo(c), {
+      familia: texto(b["familia"]) ?? "",
+      nombre: texto(b["nombre"]) ?? "",
+      slug: texto(b["slug"]) ?? "",
+      ...(texto(b["marca"]) === undefined ? {} : { marca: texto(b["marca"]) as string }),
+    });
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Producto y su primera presentación, de una sola vez.
+   *
+   * En dos llamadas, si la segunda falla queda un producto sin variantes — y
+   * ese no se puede ver ni arreglar desde el panel, porque la lista sale de
+   * `variantes JOIN productos`. Un batch de D1 es una transacción.
+   */
+  panel.post("/catalogo/altas", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await crearProductoConVariante(
+      contextoCatalogo(c),
+      {
+        familia: texto(b["familia"]) ?? "",
+        nombre: texto(b["nombre"]) ?? "",
+        slug: texto(b["slug"]) ?? "",
+      },
+      {
+        codigo: (texto(b["codigo"]) ?? "").trim().toUpperCase(),
+        nombre: texto(b["nombre"]) ?? "",
+        ...(texto(b["talla"]) === undefined ? {} : { talla: texto(b["talla"]) as string }),
+        unidadesPorCaja: entero(b["unidadesPorCaja"]) ?? 0,
+        precioCents: entero(b["precioCents"]) ?? 0,
+        ...(entero(b["tasaItbmsBp"]) === undefined
+          ? {}
+          : { tasaItbmsBp: entero(b["tasaItbmsBp"]) as number }),
+      },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  panel.post("/catalogo/variantes", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await crearVariante(contextoCatalogo(c), {
+      codigo: (texto(b["codigo"]) ?? "").trim().toUpperCase(),
+      productoId: texto(b["productoId"]) ?? "",
+      nombre: texto(b["nombre"]) ?? "",
+      ...(texto(b["talla"]) === undefined ? {} : { talla: texto(b["talla"]) as string }),
+      unidadesPorCaja: entero(b["unidadesPorCaja"]) ?? 0,
+      precioCents: entero(b["precioCents"]) ?? 0,
+      ...(entero(b["tasaItbmsBp"]) === undefined
+        ? {}
+        : { tasaItbmsBp: entero(b["tasaItbmsBp"]) as number }),
+    });
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  panel.patch("/catalogo/variantes/:codigo", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    // La versión es OBLIGATORIA y no se deduce: sin ella, dos personas editando
+    // a la vez se pisan y el último que guarda gana en silencio.
+    const version = entero(b["version"]);
+    if (version === undefined) {
+      return c.json(fallo("entrada_invalida", "falta la versión que se leyó"), 400);
+    }
+
+    const r = await editarVariante(
+      contextoCatalogo(c),
+      c.req.param("codigo"),
+      {
+        ...(texto(b["nombre"]) === undefined ? {} : { nombre: texto(b["nombre"]) as string }),
+        ...(b["talla"] === undefined ? {} : { talla: texto(b["talla"]) ?? null }),
+        ...(entero(b["unidadesPorCaja"]) === undefined
+          ? {}
+          : { unidadesPorCaja: entero(b["unidadesPorCaja"]) as number }),
+        ...(entero(b["precioCents"]) === undefined
+          ? {}
+          : { precioCents: entero(b["precioCents"]) as number }),
+        ...(b["tasaItbmsBp"] === undefined ? {} : { tasaItbmsBp: entero(b["tasaItbmsBp"]) ?? null }),
+        ...(typeof b["publicado"] === "boolean" ? { publicado: b["publicado"] } : {}),
+        ...(texto(b["motivo"]) === undefined ? {} : { motivo: texto(b["motivo"]) as string }),
+      },
+      version,
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Qué va a pasar de verdad si se borra. La pantalla lo pide ANTES de enseñar
+   * el «¿seguro?», para que la advertencia diga la verdad: hay productos que no
+   * se borran sino que se ocultan, y la persona tiene que saberlo antes y no
+   * después.
+   */
+  panel.get("/catalogo/variantes/:codigo/borrado", exigeEditar("precios_y_stock"), async (c) => {
+    const r = await comoSeBorra(contextoCatalogo(c), c.req.param("codigo"));
+    if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+    return c.json(
+      ok(
+        r.datos.modo === "se_borra"
+          ? { modo: r.datos.modo, archivos: r.datos.archivos.length, razones: [] }
+          : {
+              modo: r.datos.modo,
+              yaOculta: r.datos.yaOculta,
+              // En español y armadas aquí: el panel no debe inventarse la frase
+              // ni leer nombres de tablas.
+              razones: r.datos.rastros.map(explicar),
+            },
+      ),
+    );
+  });
+
+  /**
+   * La foto de un producto.
+   *
+   * El cuerpo son los bytes de la imagen, en crudo. El `Content-Type` que
+   * manda el navegador NO se usa para nada: el tipo sale de mirar los bytes
+   * (`tipoDeImagen`), porque la cabecera la escribe quien sube el archivo y
+   * guardarla tal cual permitiría colar un HTML con cara de imagen.
+   *
+   * La foto anterior se MARCA para borrar en el mismo batch que entra la
+   * nueva: así no quedan dos fotos ocupando por una que se ve, y si la subida
+   * se cae no se pierde la que había. Quitarla de R2 es cosa del barrido.
+   */
+  panel.put("/catalogo/variantes/:codigo/foto", exigeEditar("precios_y_stock"), async (c) => {
+    const codigo = c.req.param("codigo");
+    const existe = await c.env.DB.prepare("SELECT codigo, imagen FROM variantes WHERE codigo = ?")
+      .bind(codigo)
+      .first<{ codigo: string; imagen: string | null }>();
+    if (existe === null) return c.json(fallo("no_encontrado", "no existe esa variante"), 404);
+
+    const cuerpoBruto = await c.req.arrayBuffer();
+    if (cuerpoBruto.byteLength === 0) {
+      return c.json(fallo("entrada_invalida", "no llegó ninguna imagen"), 400);
+    }
+    if (cuerpoBruto.byteLength > MAXIMO_BYTES) {
+      return c.json(
+        fallo(
+          "limite",
+          `La imagen pesa ${Math.round(cuerpoBruto.byteLength / 1024 / 1024)} MB y el tope son 5 MB.`,
+        ),
+        413,
+      );
+    }
+
+    const tipo = tipoDeImagen(cuerpoBruto);
+    if (tipo === null) {
+      return c.json(
+        fallo("entrada_invalida", "Ese archivo no es una imagen (se aceptan JPG, PNG, WebP y AVIF)."),
+        400,
+      );
+    }
+
+    const ahora = Date.now();
+    const ctx = { db: c.env.DB, r2: c.env.PRIVADO, ahora, actor: c.get("usuario").correo };
+    const clave = claveDe("catalogo", codigo, EXTENSIONES[tipo], ahora);
+
+    const r = await subir(ctx, clave, cuerpoBruto, {
+      tipo: "catalogo",
+      mime: tipo,
+      bytes: cuerpoBruto.byteLength,
+      // La foto de un pañal no es un dato de nadie. Es lo ÚNICO que se marca
+      // así, y es lo que la deja salir por `/img/` sin sesión.
+      sensible: false,
+      referenciaTipo: "variante",
+      referenciaId: codigo,
+    });
+    if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+
+    // La fila apunta a la nueva y la vieja se marca, en un solo batch: si esto
+    // fallara a medias, o el producto se queda con la foto vieja o con la
+    // nueva, nunca sin ninguna.
+    const enunciados = [
+      c.env.DB.prepare(
+        "UPDATE variantes SET imagen = ?, version = version + 1, actualizado_en = ? WHERE codigo = ?",
+      ).bind(`/foto/${clave}`, ahora, codigo),
+    ];
+    if (existe.imagen !== null && existe.imagen.startsWith("/foto/")) {
+      enunciados.push(
+        ...enunciadosParaBorrar({ db: c.env.DB, ahora }, [existe.imagen.slice("/foto/".length)]),
+      );
+    }
+    await c.env.DB.batch(enunciados);
+
+    return c.json(ok({ imagen: `/foto/${clave}`, mime: tipo, bytes: cuerpoBruto.byteLength }), 201);
+  });
+
+  /** La receta de un combo, con lo que hay de cada pieza. */
+  panel.get("/catalogo/variantes/:codigo/receta", exige("pedidos"), async (c) => {
+    const r = await leerReceta(contextoCatalogo(c), c.req.param("codigo"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Reemplaza la receta ENTERA.
+   *
+   * Entera y no por partes: editar ingrediente a ingrediente deja recetas a
+   * medias, y quien venda justo en ese momento aparta de menos.
+   */
+  panel.put("/catalogo/variantes/:codigo/receta", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    const bruta = b === null ? null : b["receta"];
+    if (!Array.isArray(bruta)) {
+      return c.json(fallo("entrada_invalida", "falta la receta"), 400);
+    }
+
+    const receta = bruta.map((x) => {
+      const o = (typeof x === "object" && x !== null ? x : {}) as Record<string, unknown>;
+      return { codigo: texto(o["codigo"]) ?? "", cantidad: entero(o["cantidad"]) ?? 0 };
+    });
+
+    const r = await ponerReceta(contextoCatalogo(c), c.req.param("codigo"), receta);
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.delete("/catalogo/variantes/:codigo", exigeEditar("precios_y_stock"), async (c) => {
+    const r = await borrarVariante(contextoCatalogo(c), c.req.param("codigo"));
+    if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+    return c.json(
+      ok({
+        modo: r.datos.modo,
+        archivos: r.datos.archivos.length,
+        razones: r.datos.rastros.map(explicar),
+      }),
+    );
   });
 
   panel.get("/existencias", exige("pedidos"), async (c) => {

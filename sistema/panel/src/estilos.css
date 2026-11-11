@@ -138,20 +138,105 @@ select {
   grid-template-columns: 1fr;
 }
 
-.celda::before {
-  content: attr(data-etiqueta);
-  display: block;
-  font-size: var(--t-apoyo);
-  color: var(--muted);
-  margin-bottom: 2px;
-}
-/* La celda identificadora no lleva etiqueta y pesa como un titular. */
-.celda[data-etiqueta=""]::before {
-  display: none;
-}
-.celda[data-etiqueta=""] {
-  font-weight: 700;
-  font-size: var(--t-titulo);
+/* ---------------------------------------------------------------------------
+   La fila en el TELÉFONO.
+
+   Apilar cada celda como par etiqueta/valor es lo que sale solo, y gastaba
+   catorce líneas por producto para decir siete datos. Aquí cada celda dice qué
+   papel juega (`data-papel`, lo pone `Celda`) y la fila se arma en tres
+   renglones:
+
+       Body manga larga pima            $12.50     ← titulo + clave
+       Talla 0-3m · Por caja 12 · ITBMS 0 %        ← meta, plegado
+       [En la web]                                 ← estado
+
+   Catorce líneas pasan a tres. En escritorio no cambia nada: desde 768 px la
+   fila vuelve a ser `display: contents` y la cuadrícula manda.
+   --------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  .filas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+    row-gap: 2px;
+  }
+
+  /* El orden del DOM es el de la tabla de escritorio (título, talla, por caja,
+     precio, costo…). En el teléfono la cifra que se viene a buscar tiene que
+     ir ARRIBA A LA DERECHA, no donde caiga. Sin esto, `margin-left: auto`
+     empuja el precio dentro de la línea en la que aterrice, y queda flotando
+     entre dos datos sueltos. Lo vi en la captura, no razonándolo. */
+  .celda[data-papel="titulo"] {
+    order: 1;
+  }
+  .celda[data-papel="clave"] {
+    order: 2;
+  }
+  .celda[data-papel="meta"] {
+    order: 3;
+  }
+  .celda[data-papel="estado"] {
+    order: 4;
+  }
+
+  .celda[data-papel="titulo"] {
+    flex: 1 1 auto;
+    font-weight: 700;
+    font-size: var(--t-titulo);
+    /* Un nombre largo parte de línea en vez de empujar el precio fuera. */
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .celda[data-papel="clave"] {
+    margin-left: auto;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .celda[data-papel="estado"] {
+    flex-basis: 100%;
+    margin-top: 4px;
+  }
+
+  .celda[data-papel="meta"] {
+    flex: 0 1 auto;
+    font-size: var(--t-apoyo);
+    color: var(--muted);
+  }
+
+  /* La etiqueta va DELANTE del valor y en la misma línea: «Talla 0-3m». El
+     punto solo aparece entre dos metas seguidas, así que la primera no empieza
+     con un punto suelto. */
+  .celda[data-papel="meta"]::before {
+    content: "·\00a0" attr(data-etiqueta) "\00a0";
+  }
+  /* El primero no lleva punto delante. Se marca en el componente y no con
+     `:first-of-type`: con `order` el primero que se VE no tiene por qué ser el
+     primero del DOM, y el selector miraría el DOM. */
+  .celda[data-papel="meta"][data-primero]::before {
+    content: attr(data-etiqueta) "\00a0";
+  }
+
+  .celda[data-papel="titulo"]::before,
+  .celda[data-papel="clave"]::before,
+  .celda[data-papel="estado"]::before {
+    content: "";
+  }
+
+  /* La clave y el estado sí dicen qué son para quien no ve la pantalla: sin
+     esto el lector lee «12.50» a secas, sin saber de qué. */
+  .celda[data-papel="clave"]::after,
+  .celda[data-papel="estado"]::after {
+    content: " (" attr(data-etiqueta) ")";
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 @media (min-width: 768px) {
@@ -195,5 +280,61 @@ select {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   La hoja de editar (`<dialog>`).
+
+   En el teléfono sube desde abajo y ocupa el ancho: es donde llega el pulgar.
+   En escritorio queda centrada y con ancho de lectura. Lo decide el CSS y no
+   JavaScript midiendo la pantalla — medir con JavaScript falla al girar el
+   teléfono y al abrir el teclado, que son justo los dos momentos en que esto
+   está en uso.
+
+   Nada de `100vh`: en el teléfono la barra del navegador se come una parte y
+   el pie de la hoja —donde están Guardar y Borrar— queda fuera de la pantalla
+   (§7h). `dvh` sí sigue a la barra.
+   --------------------------------------------------------------------------- */
+.hoja {
+  padding: 0;
+  border: none;
+  background: var(--surface);
+  color: var(--fg);
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.hoja:not([open]) {
+  display: none;
+}
+
+.hoja::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+/* El cuerpo es lo único que hace scroll: la cabecera y el pie se quedan, así
+   que Guardar está siempre a la vista por larga que sea la lista de campos. */
+.hoja-cuerpo {
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+@media (max-width: 767px) {
+  .hoja {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 0 auto;
+    position: fixed;
+    inset: auto 0 0 0;
+    border-radius: var(--radio) var(--radio) 0 0;
+  }
+}
+
+@media (min-width: 768px) {
+  .hoja {
+    width: min(560px, calc(100vw - 48px));
+    border-radius: var(--radio);
   }
 }

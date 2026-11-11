@@ -50,6 +50,11 @@ jobs:
       # `lint` es `tsc --noEmit`: la web no tiene reglas de estilo todavía.
       - run: npm run lint
 
+      # Las pruebas del Worker, dentro de workerd. Van ANTES del build: lo que
+      # prueban —el <head> que reescribe el borde— no depende de `dist/`, y así
+      # un fallo se ve en 20 segundos y no después de construir el sitio.
+      - run: npm test
+
       - run: npm run build
 
       # Abre las siete páginas en un navegador de verdad y mide el contraste
@@ -60,8 +65,31 @@ jobs:
       # El 2026-11-09 esto encontró 55 fallos, entre ellos el titular del
       # llamado a la acción (1.75:1) y el botón con el que se compra (2.20:1).
       # Está aquí para que no vuelvan.
+      # El navegador pesa ~170 MB y tardaba 2m40s EN CADA EJECUCIÓN. Guardado
+      # en caché baja a segundos. La llave lleva la versión de Playwright: si
+      # se actualiza, la caché vieja deja de valer sola y se descarga el
+      # navegador que esa versión espera —una caché que sobrevive a la
+      # actualización es peor que no tenerla, porque falla raro.
+      - name: Versión de Playwright
+        id: pw
+        run: echo "v=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Caché del navegador
+        id: cache-navegador
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.v }}
+
+      # Con caché, solo faltan las librerías del sistema (apt), que no se
+      # guardan: `--with-deps` sin `install` del navegador es rápido.
       - name: Instalar el navegador
-        run: npx playwright install --with-deps chromium
+        run: |
+          if [ "${{ steps.cache-navegador.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Contraste (WCAG AA)
         run: npm run contraste
@@ -97,3 +125,52 @@ jobs:
             exit 1
           fi
           echo "✓ el buzón existe"
+
+  # ── Despliegue a Cloudflare ────────────────────────────────────────────────
+  #
+  # La web SIGUE sirviéndose desde Netlify: esto publica `babycaleb-web` en
+  # workers.dev, que es la copia con la que se compara píxel a píxel (F1.6)
+  # antes de tocar el DNS (F1.9). Mientras nadie apunte el dominio aquí, este
+  # despliegue no afecta a ninguna clienta.
+  desplegar:
+    name: Desplegar a Cloudflare
+    needs: construye
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Desplegar
+        id: desplegar
+        run: |
+          # `pipefail` o el despliegue miente: en bash el código de salida de
+          # una tubería es el del ÚLTIMO comando, así que sin esto `wrangler`
+          # puede fallar y el paso se da por bueno porque `tee` salió bien.
+          # Pasó de verdad en el primer despliegue del sistema.
+          set -o pipefail
+          npx wrangler deploy --var VERSION:"$GITHUB_SHA" | tee salida.txt
+          url="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' salida.txt | head -1)"
+          if [ -z "$url" ]; then
+            echo "::error::el despliegue no imprimió ninguna URL de workers.dev"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "✓ $url"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Esto NO comprueba «que algo contesta»: comprueba que el WORKER corrió.
+      # La SPA trae un <head> de fábrica igual en las siete páginas, y lo que
+      # hace el Worker es reescribirlo por ruta. Si /faq devolviera el mismo
+      # título que la portada, el sitio estaría en pie y el Worker no estaría
+      # haciendo su trabajo — que es exactamente el fallo silencioso que un
+      # «200 OK» no vería.
+      - name: El Worker reescribe el head
+        run: .github/scripts/web-salud.sh "${{ steps.desplegar.outputs.url }}" "${{ github.sha }}"

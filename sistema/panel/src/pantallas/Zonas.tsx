@@ -59,7 +59,7 @@ export function Zonas() {
                       </span>
                     ) : null}
                   </Celda>
-                  <Celda etiqueta="Tarifa">
+                  <Celda etiqueta="Tarifa" papel="clave">
                     {z.tarifa_cents === null ? (
                       <Pastilla tono="neutro">Se cotiza</Pastilla>
                     ) : (
@@ -73,7 +73,7 @@ export function Zonas() {
                       <span className="text-muted">Admite abono</span>
                     )}
                   </Celda>
-                  <Celda etiqueta="Estado">
+                  <Celda etiqueta="Estado" papel="estado">
                     {z.activa === 1 ? (
                       <Pastilla tono="bien">Entregando</Pastilla>
                     ) : (

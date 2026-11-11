@@ -3,11 +3,13 @@ import { getContentData } from '../data/content';
 import { useGsapContext } from '../hooks/useGsapContext';
 import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
+import { useCatalogo, precioDe } from '../hooks/useCatalogo';
 
 const WHATSAPP_BASE = 'https://wa.me/50767575065?text=';
 
 export default function S10Gallery() {
-  const data = getContentData().products;
+  const catalogo = useCatalogo();
+  const data = getContentData().products.filter((p) => p.descatalogado !== true);
 
   const containerRef = useGsapContext(() => {
     gsap.from('.gallery-item', {
@@ -38,10 +40,12 @@ export default function S10Gallery() {
 
       <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
         {items.map((item, idx) => {
-          const priceLabel = item.price != null ? `$${item.price}` : 'Consultar';
+          const priceLabel = precioDe(catalogo, item.codigo);
+          // El precio entra en el mensaje de WhatsApp solo si se sabe: mandar
+          // «por Consultar» es peor que no mandar precio.
           const message = encodeURIComponent(
             `Hola Baby Caleb, quiero pedir: ${item.productName} — ${item.size} (${item.units})${
-              item.price != null ? ` por $${item.price}` : ''
+              priceLabel === 'Consultar' ? '' : ` por ${priceLabel}`
             }`
           );
           return (

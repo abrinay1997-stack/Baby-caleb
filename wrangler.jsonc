@@ -1,0 +1,106 @@
+{
+  // `babycaleb-web`: la web servida desde Cloudflare (F1 del plan).
+  //
+  // `SISTEMA` entra aquí en F3.5: es por donde la web pide el catálogo. `CRM`
+  // sigue sin estar y entra en F3.6, cuando el chat pase a `CanalWeb`: un
+  // binding a un entrypoint que no existe impide desplegar, así que cada uno
+  // llega con la fase que lo crea.
+  //
+  // Apunta a `babycaleb-sistema-staging` A PROPÓSITO: `babycaleb-sistema` (el
+  // de producción) todavía no existe, y esta web vive en workers.dev como
+  // copia de prueba. Se cambia en el traspaso (F3.4), junto con el DNS.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "babycaleb-web",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "services": [
+    { "binding": "SISTEMA", "service": "babycaleb-sistema-staging", "entrypoint": "SistemaWeb" }
+  ],
+
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // La web es una SPA: cualquier ruta que no sea un archivo devuelve
+    // index.html y el enrutador del navegador decide qué pintar.
+    "not_found_handling": "single-page-application",
+    // El Worker corre primero SOLO donde hace falta. Todo lo demás —imágenes,
+    // JavaScript, hojas de estilo— sale directo del borde sin pagar un Worker.
+    "run_worker_first": [
+      "/api/*",
+      // Las fotos del catálogo, las que suben desde el panel.
+      //
+      // `/foto/` y NO `/img/`: `/img/` ya es de las imágenes del sitio (las 26
+      // de `public/img/`), y ponerle el Worker delante las dejó TODAS rotas en
+      // producción — las buscaba en R2, donde no están. Un prefijo propio no
+      // se comparte con nadie.
+      //
+      // Hace falta estar en esta lista: sin ella la petición la atiende
+      // primero el servidor de archivos estáticos, no encuentra nada, cae en
+      // `single-page-application` y devuelve el index.html de la web. Cada
+      // foto llegaría como una página HTML, con un 200 y todo.
+      "/foto/*",
+      "/",
+      "/productos",
+      "/productos/*",
+      "/beneficios",
+      "/historia",
+      "/tips",
+      "/como-comprar",
+      "/faq",
+      "/privacidad",
+      "/terminos",
+      "/seguimiento/*",
+      "/carrito",
+      "/mi-cuenta/*",
+      "/pedido/*"
+    ]
+  },
+
+  // babycaleb.com, conectado el 2026-11-10. `www` NO entra aquí: el Worker lo
+  // redirige con un 301 a la raíz (F1.9), porque dos direcciones con el mismo
+  // contenido reparten entre ellas lo que debería ir a una sola.
+  // La raíz como dominio propio, y `www` como RUTA.
+  //
+  // La diferencia importa: un dominio propio necesita crear su registro DNS, y
+  // en `www` ya hay un CNAME que apunta a la raíz. Con el Worker en la raíz,
+  // Cloudflare intenta usarla como el servidor que hay detrás y se queda
+  // esperando: error 522. Una ruta no crea ningún registro — intercepta lo que
+  // ya pasa por ahí, porque ese CNAME está proxiado—, así que convive con él y
+  // el Worker contesta su 301 a la raíz (F1.9).
+  "routes": [
+    { "pattern": "babycaleb.com", "custom_domain": true },
+    { "pattern": "www.babycaleb.com/*", "zone_name": "babycaleb.com" }
+  ],
+
+  // SITE_URL manda sobre el `Host` de la petición: con el Host, el canónico de
+  // una vista previa apuntaría a la vista previa y Google indexaría esa.
+  // CF_ANALYTICS_TOKEN: el identificador de Cloudflare Web Analytics (F1.8).
+  // Vacío, no se inyecta nada — que es lo que se quiere mientras esto sea una
+  // vista previa, para no contar visitas de prueba como si fueran clientas.
+  //
+  // INDEXABLE: APAGADO a propósito. El dominio se conectó ANTES de estar listo
+  // para buscadores —los precios salen todavía de la base de PRUEBAS y no
+  // existen las páginas legales— así que el sitio sirve pero Google no lo
+  // guarda. Se enciende poniendo "si", y entonces entra a Google todo el SEO
+  // que ya está hecho: fichas por producto, JSON-LD, sitemap y <head> por ruta.
+  //
+  // Condiciones para encenderlo, las tres:
+  //   1. `babycaleb-sistema` (producción) existe y la web apunta a él;
+  //   2. Yarielis aprobó los precios y el catálogo está publicado;
+  //   3. existen las páginas legales (Ley 81).
+  //
+  // El estado sale en /api/salud y el chequeo del despliegue lo dice en voz
+  // alta cada vez: un sitio lanzado y olvidado en «oculto» no da ningún
+  // síntoma, simplemente no llega nadie.
+  "vars": {
+    "VERSION": "dev",
+    "SITE_URL": "https://babycaleb.com",
+    "CF_ANALYTICS_TOKEN": "",
+    "INDEXABLE": ""
+  }
+
+  // Secretos: GROQ_API_KEY (wrangler secret put GROQ_API_KEY)
+}

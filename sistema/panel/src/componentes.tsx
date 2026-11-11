@@ -1,3 +1,4 @@
+import { Children, cloneElement, isValidElement } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { Estado } from "./api";
 
@@ -141,28 +142,70 @@ export function Rejilla({
 }
 
 export function Fila({ children }: { children: ReactNode }) {
+  // El primer `meta` se marca para que no empiece con un punto suelto. Se
+  // calcula aquí y no con `:first-of-type` en CSS porque en el teléfono las
+  // celdas se reordenan con `order`: el primero que se VE no tiene por qué ser
+  // el primero del DOM, y el selector miraría el DOM.
+  let yaHuboMeta = false;
+  const hijos = Children.map(children, (hijo: ReactNode) => {
+    if (!isValidElement<{ papel?: string; etiqueta?: string }>(hijo)) return hijo;
+    const papel = hijo.props.papel ?? (hijo.props.etiqueta === "" ? "titulo" : "meta");
+    if (papel !== "meta") return hijo;
+    if (yaHuboMeta) return hijo;
+    yaHuboMeta = true;
+    return cloneElement(hijo as React.ReactElement<{ primero?: boolean }>, { primero: true });
+  });
+
   return (
     <div
       role="row"
       className="filas mb-2 grid gap-1 rounded-[14px] border border-line bg-surface p-3 md:mb-0 md:gap-0 md:rounded-none md:border-0 md:border-b md:bg-transparent md:p-0 md:pb-2"
     >
-      {children}
+      {hijos}
     </div>
   );
 }
 
+/**
+ * Qué papel juega esta celda EN EL TELÉFONO. En escritorio no cambia nada: la
+ * cuadrícula sigue siendo una tabla con sus columnas.
+ *
+ * Existe porque apilar cada celda como par etiqueta/valor —la solución obvia
+ * para una tabla en un teléfono— gastaba CATORCE líneas por producto para
+ * decir siete datos. Doce productos eran ciento setenta líneas de scroll para
+ * ver un catálogo de doce cosas. Es correcto y es inusable.
+ *
+ *   titulo   el nombre. Grande, sin etiqueta.
+ *   clave    el dato que se viene a buscar (el precio, lo que queda). Va a la
+ *            derecha del título, en la misma línea y en negrita.
+ *   estado   la pastilla. Línea propia, debajo.
+ *   meta     todo lo demás, plegado en UNA línea separada por puntos.
+ */
+export type PapelEnTelefono = "titulo" | "clave" | "estado" | "meta";
+
 export function Celda({
   etiqueta,
   children,
+  papel,
+  primero,
   className = "",
 }: {
   /** Vacía = es la celda identificadora de la fila. */
   etiqueta: string;
   children: ReactNode;
+  papel?: PapelEnTelefono;
+  /** Lo pone `Fila`: el primer `meta` no lleva punto separador delante. */
+  primero?: boolean;
   className?: string;
 }) {
+  // Sin etiqueta es el nombre de la fila: ese es el título y no hace falta
+  // decirlo dos veces en cada pantalla.
+  const papelReal: PapelEnTelefono = papel ?? (etiqueta === "" ? "titulo" : "meta");
   return (
-    <div role="cell" className={`celda ${className}`} data-etiqueta={etiqueta}>
+    <div role="cell" className={`celda ${className}`} data-etiqueta={etiqueta}
+      data-papel={papelReal}
+      {...(primero ? { "data-primero": "" } : {})}
+    >
       {children}
     </div>
   );

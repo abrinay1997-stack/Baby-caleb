@@ -94,7 +94,11 @@ export function Armazon({ yo }: { yo: Yo }) {
                 de ella. Y la `key` con la ruta la remonta al navegar, que es lo
                 que hace que irse a otra pestaña arregle la pantalla rota. */}
             <Frontera key={pathname} donde={actual?.nombre ?? pathname}>
-              <Outlet />
+              {/* `yo` baja por aquí y no por una consulta de cada pantalla: el
+                  rol ya se pidió una vez al abrir, y volver a pedirlo en cada
+                  pantalla es una llamada de más que además puede contestar algo
+                  distinto a media sesión. */}
+              <Outlet context={yo} />
             </Frontera>
           </main>
         </div>

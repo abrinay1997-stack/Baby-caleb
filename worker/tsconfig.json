@@ -1,0 +1,23 @@
+{
+  // El Worker vive en otro mundo que la web: ahí no hay `document` ni
+  // `window`, y sí hay `HTMLRewriter`, `Fetcher` y `caches.default`. Por eso
+  // tiene su propio tsconfig con los tipos de Workers y sin la librería DOM.
+  //
+  // Comparte `src/seo/rutas.ts` con la web, que es dato puro y no toca ninguno
+  // de los dos entornos: por eso se puede leer desde aquí.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["./**/*.ts", "../src/seo/**/*.ts"]
+}

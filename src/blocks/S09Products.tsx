@@ -4,11 +4,16 @@ import { useGsapContext } from '../hooks/useGsapContext';
 import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
 import { buttonVariants } from '../components/ui/Button';
+import { useCatalogo, precioDe, desdeDe } from '../hooks/useCatalogo';
 
 const WHATSAPP_BASE = 'https://wa.me/50767575065?text=';
 
 export default function S09Products() {
-  const data = getContentData().products;
+  const catalogo = useCatalogo();
+  // Lo descatalogado no se pinta: vender lo que no existe acaba en un pedido
+  // que nadie puede cumplir, y en un bot diciéndole a la clienta lo contrario
+  // que la web.
+  const data = getContentData().products.filter((p) => p.descatalogado !== true);
 
   const containerRef = useGsapContext(() => {
     gsap.from('.product-card', {
@@ -47,7 +52,7 @@ export default function S09Products() {
                   decoding="async"
                 />
                 <span className="absolute top-4 left-4 bg-bg/90 backdrop-blur text-fg font-bold text-xs px-3 py-1.5 rounded-pill border border-line">
-                  {product.priceFrom != null ? `Desde $${product.priceFrom}` : 'Consultar'}
+                  {desdeDe(catalogo, product.variants.map((v) => v.codigo))}
                 </span>
               </div>
               <div className="p-8 flex flex-col flex-grow">
@@ -68,7 +73,7 @@ export default function S09Products() {
                           <span className="font-bold text-fg">{v.size}</span>
                           <span className="text-muted"> · {v.units}</span>
                         </div>
-                        <span className="font-bold text-accent-strong">{v.price != null ? `$${v.price}` : 'Consultar'}</span>
+                        <span className="font-bold text-accent-strong">{precioDe(catalogo, v.codigo)}</span>
                       </div>
                     ))}
                   </div>

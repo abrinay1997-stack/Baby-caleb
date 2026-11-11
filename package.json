@@ -8,8 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit",
-    "contraste": "node scripts/auditar-contraste.mjs"
+    "lint": "tsc --noEmit && tsc --noEmit -p worker",
+    "contraste": "node scripts/auditar-contraste.mjs",
+    "test": "vitest run && vitest run --config vitest.node.config.ts",
+    "catalogo:respaldo": "node scripts/catalogo-respaldo.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -33,16 +35,20 @@
     "vite": "^6.2.3"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.6.1",
+    "@cloudflare/workers-types": "^5.20261110.1",
     "@netlify/functions": "^5.3.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "playwright": "^1.65.0",
     "sharp": "^0.35.3",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
-    "playwright": "^1.65.0"
+    "vitest": "^5.1.0",
+    "wrangler": "^4.159.0"
   }
 }

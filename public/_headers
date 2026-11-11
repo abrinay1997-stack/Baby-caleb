@@ -1,0 +1,17 @@
+# Cabeceras de los archivos estáticos, servidos por Cloudflare.
+#
+# Es lo mismo que hoy pone `netlify.toml`, en el formato que entiende
+# Cloudflare. Se queda en `public/` para que el build lo copie a `dist/`.
+#
+# CUIDADO: esto NO se aplica a lo que responde el Worker —ni al HTML que
+# reescribe ni a `/api/*`—. Esas cabeceras se ponen en el código
+# (`worker/index.ts`), y tienen que decir lo mismo. Es la razón de que estén
+# en dos sitios: no es un descuido.
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

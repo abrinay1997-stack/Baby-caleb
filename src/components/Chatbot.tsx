@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Heart, MessageSquare } from 'lucide-react';
+import { sesionDelChat } from '../chat/sesion';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -47,6 +48,11 @@ export default function Chatbot() {
         body: JSON.stringify({
           // Send messages history except for the initial greeting to keep the prompt clean and lightweight
           messages: newMessages.slice(1),
+          // La sesión agrupa los mensajes en UNA conversación del CRM (F3.6),
+          // en vez de abrir una nueva con cada pregunta. El historial se sigue
+          // mandando porque el camino viejo (Groq) todavía lo necesita; cuando
+          // se apague, el CRM lleva su propia memoria y esto sobra.
+          sesion: sesionDelChat(),
         }),
       });
 

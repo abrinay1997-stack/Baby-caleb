@@ -9,11 +9,7 @@ import Seo from '../components/Seo';
 export default function Home() {
   return (
     <main id="main-content">
-      <Seo
-        title="Baby Caleb Panamá | Pañales y Wipes Nateen hipoalergénicos"
-        description="Pañales Nateen hipoalergénicos de bambú, sin cloro, sin perfumes. Tallas RN a XXL en caja para todo el mes. Venta online con delivery en Ciudad de Panamá."
-        path="/"
-      />
+      <Seo ruta="/" />
       <S02Hero />
       <S04Trust />
       <S03Education />

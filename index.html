@@ -101,6 +101,37 @@
     </script>
   </head>
   <body>
+    <!--
+      El filtro del vidrio líquido del navbar.
+
+      Vive AQUÍ, en el HTML y fuera de #root, por una razón concreta: así
+      existe antes de que arranque React, en cada carga, y React no lo monta
+      ni lo desmonta nunca. Nada que se pierda al cambiar de página.
+
+      (En D'CASA este mismo efecto se aplica desde JavaScript, porque el
+      empaquetador de Odoo reescribe url(#…) en el CSS como si fuera la ruta
+      de un archivo. Vite NO lo hace —está comprobado—, así que aquí no hay
+      ninguna razón para meter JavaScript de por medio. Y es justo ese
+      JavaScript el que hace que el efecto se caiga al navegar: lo pone al
+      montar y lo QUITA al desmontar.)
+
+      El movimiento es SMIL (<animate> dentro del SVG): lo mueve el navegador,
+      sin una línea de código.
+    -->
+    <svg class="bc-filtros" width="0" height="0" aria-hidden="true" focusable="false">
+      <filter id="bc-liquido" x="-10%" y="-40%" width="120%" height="180%"
+              color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.009 0.022" numOctaves="2"
+                      seed="7" result="ruido">
+          <animate attributeName="baseFrequency" dur="18s" repeatCount="indefinite"
+                   values="0.009 0.022;0.012 0.018;0.009 0.022"/>
+        </feTurbulence>
+        <feGaussianBlur in="ruido" stdDeviation="1.5" result="ruido_suave"/>
+        <feDisplacementMap in="SourceGraphic" in2="ruido_suave" scale="38"
+                           xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </svg>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

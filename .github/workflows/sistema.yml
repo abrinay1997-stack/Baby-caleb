@@ -152,12 +152,30 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # `wrangler deploy` no crea las colas: si falta una, se niega a desplegar.
+      # Crearlas a mano es justo lo que se olvida —y se olvidó—, así que las
+      # crea el flujo. Es idempotente.
+      - name: Colas
+        run: ../.github/scripts/colas.sh staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Desplegar
         id: desplegar
         run: |
+          # `pipefail` o el despliegue miente. En bash, el código de salida de
+          # una tubería es el del ÚLTIMO comando: sin esto, `wrangler deploy`
+          # puede fallar y el paso se da por bueno porque `tee` salió bien.
+          # Pasó de verdad en el primer intento a staging.
+          set -o pipefail
           npx wrangler deploy --env staging \
             --var VERSION:"$GITHUB_SHA" | tee salida.txt
           url="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' salida.txt | head -1)"
+          if [ -z "$url" ]; then
+            echo "::error::el despliegue no imprimió ninguna URL de workers.dev"
+            exit 1
+          fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -165,6 +183,14 @@ jobs:
 
       - name: Comprobar /salud
         run: ../.github/scripts/salud.sh "${{ steps.desplegar.outputs.url }}" "$GITHUB_SHA"
+        env:
+          # Credencial de servicio para pasar Cloudflare Access. En workers.dev
+          # Access cubre el Worker ENTERO —ese dominio no es nuestro, así que no
+          # hay recorte por ruta—, de modo que /salud no se puede dejar pública
+          # y el despliegue tiene que entrar con credencial propia. Si los
+          # secretos no están, el guion no manda cabeceras y lo dice.
+          ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
 
   produccion:
     name: Desplegar a producción
@@ -215,6 +241,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Colas
+        run: ../.github/scripts/colas.sh production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Desplegar
         run: npx wrangler deploy --env production --var VERSION:"$GITHUB_SHA"
         env:
@@ -223,6 +255,14 @@ jobs:
 
       - name: Comprobar /salud
         run: ../.github/scripts/salud.sh "https://panel.babycaleb.com" "$GITHUB_SHA"
+        env:
+          # Credencial de servicio para pasar Cloudflare Access. En workers.dev
+          # Access cubre el Worker ENTERO —ese dominio no es nuestro, así que no
+          # hay recorte por ruta—, de modo que /salud no se puede dejar pública
+          # y el despliegue tiene que entrar con credencial propia. Si los
+          # secretos no están, el guion no manda cabeceras y lo dice.
+          ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
 
       - name: Resumen
         if: always()

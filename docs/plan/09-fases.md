@@ -114,7 +114,7 @@ de producción responde que no existe; el simulacro restaura; `/salud` sano en s
 |---|---|---|
 | F3.1 | Carga inicial | Bodegas (`SUCURSALES` del CRM), productos y variantes con slug, peso y talla siguiente; zonas de envío desde `member/zonas-envio.ts` con alias |
 | F3.2 | Entrypoints | `SistemaWeb` (catálogo, zonas) y `SistemaCRM` (catálogo, stock, venta, devolución, ajuste, deshacer, movimientos, cliente por identidad, cotizar envío) |
-| F3.3 | Cambios en el CRM | `FuenteCatalogo` con interruptor `CATALOGO_FUENTE`, cliente RPC, contrato con huella; `catalogQuery`, inventario de la consola, pestaña Catálogo y `cotizarEnvio` usan la fuente; `auditar-verdad.ts` audita el sistema |
+| F3.3 | Cambios en el CRM | `FuenteCatalogo` con interruptor `CATALOGO_FUENTE`, cliente RPC, contrato con huella; `catalogQuery`, ~~inventario de la consola~~ (ver nota ⚠️), pestaña Catálogo y `cotizarEnvio` usan la fuente; `auditar-verdad.ts` audita el sistema |
 | F3.4 | Traspaso | Runbook de [08 §7](08-operacion.md#7-runbooks); omite `DESCATALOGADOS` de `test/babycaleb/verdad-del-cliente.ts` (hoy: solo `NAT-WIP` — ver nota ⚠️ abajo); movimiento `apertura` por bodega |
 | F3.5 | La web lee el catálogo | `/api/catalogo` con caché de 60 s; `content.json` gana `codigo` y pierde `price`/`priceFrom`; copia de respaldo en el build; prueba que falla si vuelve un precio |
 | F3.6 | Canal web del CRM | `CanalWeb` en el CRM; el widget de la web llama a `/api/chat` → `CRM.mensajeWeb()`; misma KB, revisor y trato de usted; se apaga Groq y se borra `netlify/functions/` |
@@ -128,6 +128,20 @@ bot iguales antes y después (`busqueda-catalogo.test.ts`); prueba de la web con
 `pnpm auditar` del CRM pasa contra el sistema; el chat de la web habla de usted y crea tickets.
 **La dueña ve:** su catálogo en el panel; la web y el bot dicen lo mismo.
 **Riesgo:** romper la atención. Mitigación: interruptor, staging del CRM y ventana de traspaso.
+
+> ⚠️ **Al hacer F3.3 (2026-11-10): «inventario de la consola» no tenía nada que
+> convertir.** La consola de la dueña no existe todavía en el CRM — no hay
+> `src/owner/`, no hay comandos de inventario, y [03 §Archivos](03-contratos.md)
+> sitúa `src/owner/cerebro.ts` en **F6**. Así que ese punto no se omitió: no
+> había código que apuntara a `catalog_items`. Cuando se construya la consola,
+> nace leyendo de `fuenteDeCatalogo` y no hay nada que migrar.
+>
+> Lo que sí se decidió al hacerlo: la pestaña Catálogo **no** se queda como
+> editor cuando el dueño del dato es el sistema. Pasa a solo lectura con un
+> guardia que falla cerrado, porque leer de la fuente y seguir escribiendo en la
+> D1 del CRM significa que la dueña ve «Guardado» y el bot sigue cotizando otro
+> precio. Es el «interruptor del CRM en solo lectura» de
+> [08 §Traspaso del catálogo](08-operacion.md).
 
 > ⚠️ **Corrección del 2026-11-09 (al hacer F3.1).** Esta tabla decía que
 > `DANY-AW1200` estaba descatalogado. No lo está: en

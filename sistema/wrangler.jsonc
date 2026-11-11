@@ -112,7 +112,25 @@
         { "name": "LIMITE_CHECKOUT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
         { "name": "LIMITE_CODIGOS", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
       ],
-      "vars": { "ENTORNO": "staging", "VERSION": "dev", "HSTS": "no", "ACCESS_EQUIPO": "", "ACCESS_AUD": "" }
+      // La aplicación de Access de staging, creada el 2026-11-10.
+      //
+      // ACCESS_EQUIPO lleva el `https://` delante: `access.ts` lo exige y lo
+      // valida. El dominio del equipo se lee tal cual en el panel SIN el
+      // protocolo, así que pegarlo como viene es el error fácil — y el
+      // síntoma sería un 403 en todo, idéntico a no tener Access.
+      //
+      // Ninguno de los dos es un secreto: son identificadores públicos. Lo
+      // secreto es la llave privada con la que Cloudflare firma, que no sale
+      // de Cloudflare. ACCESS_AUD dice QUÉ aplicación firmó: sin él,
+      // cualquier token válido de esta cuenta de Zero Trust —de cualquier
+      // aplicación— abriría el panel.
+      "vars": {
+        "ENTORNO": "staging",
+        "VERSION": "dev",
+        "HSTS": "no",
+        "ACCESS_EQUIPO": "https://long-heart-eb45.cloudflareaccess.com",
+        "ACCESS_AUD": "df32d7a5fc4f83b82feca1661b1c50777be3e773ed4832758f375d647d263837"
+      }
     },
 
     "production": {
