@@ -378,6 +378,67 @@ describe("registrar una venta", () => {
     expect(e?.fisico).toBe(20);
   });
 
+  it("la misma clave con OTRA venta se rechaza, no se da por hecha", async () => {
+    // El fallo que esto cierra era peor que una venta doble.
+    //
+    // La búsqueda miraba solo clave y ruta, nunca la entrada, y
+    // `huella_entrada` se guardaba vacía. Así, reusar una clave por error en
+    // una venta DISTINTA devolvía la respuesta de la primera con `ok: true`:
+    // el inventario no se movía y el sistema decía que la venta estaba hecha.
+    // Una venta perdida reportada como cumplida es peor que un error, porque
+    // nadie la va a buscar.
+    //
+    // El contrato ya lo decía —«misma clave con otra entrada → repetido»— y el
+    // código no lo cumplía.
+    const k = clave();
+    const antes = await real.DB.prepare(
+      "SELECT fisico FROM existencias WHERE codigo = 'NAT-M' AND bodega_id = 'bod-1'",
+    ).first<{ fisico: number }>();
+
+    const uno = await crm().registrarVenta(DUENA, {
+      idempotencia: k,
+      lineas: [{ codigo: "NAT-M", cantidad: 2 }],
+      pagado: "todo",
+    });
+    expect(uno.ok).toBe(true);
+
+    // Misma clave, OTRA cantidad.
+    const dos = await crm().registrarVenta(DUENA, {
+      idempotencia: k,
+      lineas: [{ codigo: "NAT-M", cantidad: 5 }],
+      pagado: "todo",
+    });
+    expect(dos.ok, "una venta distinta con la misma clave NO puede decir que sí").toBe(false);
+    if (!dos.ok) expect(dos.codigo).toBe("repetido");
+
+    // Y se descontaron 2, no 7 ni 2 y pico: la segunda no ocurrió.
+    const despues = await real.DB.prepare(
+      "SELECT fisico FROM existencias WHERE codigo = 'NAT-M' AND bodega_id = 'bod-1'",
+    ).first<{ fisico: number }>();
+    expect((antes?.fisico ?? 0) - (despues?.fisico ?? 0)).toBe(2);
+  });
+
+  it("el orden de las claves del objeto no cuenta como otra entrada", async () => {
+    // Un reintento legítimo puede llegar con el objeto construido en otro
+    // orden. Si la huella dependiera del orden, ese reintento se tomaría por
+    // un choque de claves y el bot recibiría un «repetido» por una petición
+    // idéntica — que es el fallo contrario, igual de malo.
+    const k = clave();
+    const uno = await crm().registrarVenta(DUENA, {
+      idempotencia: k,
+      lineas: [{ codigo: "NAT-M", cantidad: 1 }],
+      pagado: "todo",
+    });
+    const dos = await crm().registrarVenta(DUENA, {
+      pagado: "todo",
+      lineas: [{ cantidad: 1, codigo: "NAT-M" }],
+      idempotencia: k,
+    });
+    expect(uno.ok && dos.ok, "el mismo pedido en otro orden tiene que seguir siendo el mismo").toBe(
+      true,
+    );
+  });
+
   it("la misma idempotencia no descuenta dos veces", async () => {
     // La consola reintenta, la red se corta y un botón se toca dos veces.
     const k = clave();
