@@ -95,8 +95,11 @@ jobs:
       # calculado en un navegador de verdad. Esta auditoría encontró tres
       # pantallas que se desbordaban de lado en el teléfono cuando el typecheck
       # y las 522 pruebas estaban verdes.
+      # Con reintentos: `--with-deps` baja librerías por apt desde los espejos
+      # de Ubuntu, y esa es la parte frágil. Ver el guion para por qué un
+      # reintento AQUÍ es correcto y por qué no debe envolver nada más.
       - name: Navegador para la auditoría
-        run: npx playwright install --with-deps chromium
+        run: ../.github/scripts/navegador.sh
 
       - name: Auditar el panel (§7 del sistema de diseño)
         run: |
