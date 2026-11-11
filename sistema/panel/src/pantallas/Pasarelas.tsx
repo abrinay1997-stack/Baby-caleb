@@ -106,11 +106,20 @@ export interface LineaDelLibro {
   creado_en: number;
 }
 
+export interface CambioDeEncendidas {
+  version: number;
+  encendidas: Pasarela[];
+  cuando: number;
+  quien: string;
+  motivo: string | null;
+}
+
 export interface EstadoDeLasPasarelas {
   pasarelas: EstadoDePasarela[];
   llave_maestra_puesta: boolean;
   llave_maestra_problema: string | null;
   libro: LineaDelLibro[];
+  encendidas_historial: CambioDeEncendidas[];
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +151,17 @@ export function comoSeLeeLaLinea(l: LineaDelLibro): string {
     case "modo_cambiado":
       return `${donde} pasó a ${ETIQUETAS_MODO[l.modo].toLowerCase()}`;
   }
+}
+
+/**
+ * Qué pasarelas quedaron encendidas tras un cambio.
+ *
+ * «Ninguna» y no una línea en blanco: apagarlas todas es una decisión, y una
+ * celda vacía parece un dato que falta.
+ */
+export function comoSeLeenLasEncendidas(c: CambioDeEncendidas): string {
+  if (c.encendidas.length === 0) return "Quedaron apagadas todas";
+  return `Quedaron encendidas: ${c.encendidas.map((p) => CONECTORES[p]?.titulo ?? p).join(", ")}`;
 }
 
 // Las clases, copiadas de `Ajustes` para que los formularios del panel se vean
@@ -805,6 +825,31 @@ export function Pasarelas() {
                 Este libro no se edita ni se borra, y nunca guarda el valor de una credencial: solo
                 cuál se cambió, quién y por qué.
               </p>
+
+              {/* Encender y apagar NO están en el libro de arriba: eso cambia
+                  el ajuste «Pasarelas encendidas», que tiene su propio
+                  historial. Se lee de ahí en vez de copiarse, para que no haya
+                  dos relatos del mismo hecho. Por eso van en dos listas y no
+                  mezclados: son dos registros distintos, y juntarlos daría a
+                  entender que los escribe lo mismo. */}
+              <h3 className="m-0 mt-4 text-[14px] font-bold uppercase tracking-wide text-muted">
+                Encendidas y apagadas
+              </h3>
+              {d.encendidas_historial.length === 0 ? (
+                <p className="m-0 mt-2 text-muted">Nunca se ha encendido ninguna.</p>
+              ) : (
+                <ul className="m-0 mt-2 list-none p-0">
+                  {d.encendidas_historial.map((c) => (
+                    <li key={c.version} className="border-b border-line py-2 last:border-0">
+                      <span className="block font-bold">{comoSeLeenLasEncendidas(c)}</span>
+                      <span className="block text-[12px] text-muted">
+                        {fecha(c.cuando)} · {c.quien}
+                        {c.motivo === null ? "" : ` · ${c.motivo}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </details>
           </Tarjeta>
 

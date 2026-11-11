@@ -128,6 +128,10 @@ async function ejecutarTodasDeLectura(codigo: string): Promise<Map<string, unkno
   return salidas;
 }
 
+/** `64321` dentro de `1796432100000` no es un costo: es una fecha. */
+const sueltoEn = (texto: string, n: number): boolean =>
+  new RegExp(`(?<!\\d)${n}(?!\\d)`).test(texto);
+
 /** Caminos del resultado cuyo nombre o cuyo valor delata un costo. */
 function dondeHayCosto(valor: unknown): string[] {
   const encontrados: string[] = [];
@@ -140,7 +144,14 @@ function dondeHayCosto(valor: unknown): string[] {
       return;
     }
     if (typeof v === "string") {
-      if (v.includes(String(COSTO_UNITARIO_CENTS)) || v.includes(String(VALOR_INVENTARIO_CENTS))) {
+      // El número tiene que estar SUELTO, no dentro de otro número.
+      //
+      // Los códigos y los identificadores de la siembra llevan la fecha en
+      // milisegundos dentro, y una fecha de trece cifras puede contener por
+      // casualidad las cinco del centinela. Sin los bordes, esta prueba se
+      // pondría roja sola a ciertas horas y nadie entendería por qué —ya pasó
+      // en este repo con el sello de tiempo del catálogo—.
+      if (sueltoEn(v, COSTO_UNITARIO_CENTS) || sueltoEn(v, VALOR_INVENTARIO_CENTS)) {
         encontrados.push(`${camino} (dentro del texto)`);
       }
       return;
@@ -191,6 +202,9 @@ describe("el costo no sale por ninguna herramienta", () => {
     expect(dondeHayCosto({ margenCents: 1 })).not.toEqual([]);
     // Y no grita con lo que sí puede ir: el precio de venta es público.
     expect(dondeHayCosto({ precioCents: 1250, libres: 12, hay: "disponible" })).toEqual([]);
+    // Ni con el centinela metido dentro de otro número, que es lo que pasa con
+    // los códigos que llevan la fecha en milisegundos.
+    expect(dondeHayCosto({ codigo: `FR-179${COSTO_UNITARIO_CENTS}0000-3` })).toEqual([]);
   });
 });
 

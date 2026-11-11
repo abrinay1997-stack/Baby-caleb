@@ -538,6 +538,36 @@ describe("encender y apagar", () => {
     expect((await unaDe("yappy")).incoherente).toBe(false);
   });
 
+  /**
+   * El historial de encendidas no lo escribe mi libro: sale del historial de
+   * `ajustes.pasarelas_activas`, que es su dueño. Esto comprueba que la
+   * pantalla lo puede leer de ahí — si no, «¿quién encendió Yappy?» no tendría
+   * respuesta en ningún sitio que alguien vaya a mirar.
+   *
+   * Mutación: devolviendo `encendidas_historial: []` fijo, se cae.
+   */
+  it("el estado trae quién encendió y apagó, leído del historial del ajuste", async () => {
+    await ponerYappyCompleta();
+    await encender(ctx, { pasarela: "yappy", motivo: "el cobro de $1 salió bien" });
+    await apagar(ctx, { pasarela: "yappy", motivo: "Yappy está caído" });
+
+    const r = await estado(ctx);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // De la más nueva a la más vieja, como el historial de ajustes.
+    expect(r.datos.encendidas_historial.map((c) => c.encendidas)).toEqual([[], ["yappy"]]);
+    expect(r.datos.encendidas_historial.map((c) => c.motivo)).toEqual([
+      "Yappy está caído",
+      "el cobro de $1 salió bien",
+    ]);
+    expect(r.datos.encendidas_historial.every((c) => c.quien === "yarielis@babycaleb.com")).toBe(
+      true,
+    );
+    // Y encender/apagar NO ensucian el libro de las credenciales: son dos
+    // registros distintos y cada hecho está en uno solo.
+    expect((await lineasDeEstaPrueba()).every((l) => l.accion !== "modo_cambiado")).toBe(true);
+  });
+
   it("encender dos veces no escribe una versión de más", async () => {
     await ponerYappyCompleta();
     await encender(ctx, { pasarela: "yappy", motivo: "ya probé" });

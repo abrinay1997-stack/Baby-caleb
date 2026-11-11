@@ -8,6 +8,7 @@ import {
   balance,
   codigoDeCaja,
   cobroDelSaldo,
+  ajusteDeRedondeo,
   entregaDelPedido,
   fechaContable,
   gasto,
@@ -15,6 +16,7 @@ import {
 } from "../dominio/contabilidad";
 import {
   type ContextoContable,
+  ajustarRedondeoDeInventario,
   cerrarMes,
   cuentaDeMotorizado,
   entregasSinCosto,
@@ -635,6 +637,154 @@ describe("la caja de un motorizado", () => {
 
 // ---------------------------------------------------------------------------
 
+describe("el residuo del costo promedio (asiento 18)", () => {
+  /** Una variante con unidades y valor propios. */
+  async function conValor(unidades: number, valorCents: number): Promise<string> {
+    const s = await sembrar();
+    const codigo = id("RD").toUpperCase();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO variantes (codigo,producto_id,nombre,unidades_por_caja,precio_cents,
+           publicado,activo,version,actualizado_en) VALUES (?,?,?,1,5000,0,1,1,?)`,
+      ).bind(codigo, s.productoId, `pieza ${codigo}`, Date.now()),
+      env.DB.prepare(
+        "INSERT INTO valor_inventario (codigo,unidades,valor_cents) VALUES (?,?,?)",
+      ).bind(codigo, unidades, valorCents),
+    ]);
+    return codigo;
+  }
+
+  it("pasa al costo de lo vendido lo que quedó cuando ya no hay unidades", async () => {
+    const codigo = await conValor(0, 3);
+    const r = debeSerOk(await ajustarRedondeoDeInventario(ctx()));
+    const mio = r.ajustes.find((a) => a.codigo === codigo)!;
+    expect(mio.residuoCents).toBe(3);
+
+    const { results: lineas } = await env.DB.prepare(
+      `SELECT c.codigo, l.debe_cents, l.haber_cents FROM asiento_lineas l
+         JOIN cuentas c ON c.id = l.cuenta_id WHERE l.asiento_id = ? ORDER BY l.id`,
+    )
+      .bind(mio.asientoId)
+      .all<{ codigo: string; debe_cents: number; haber_cents: number }>();
+    expect(lineas).toEqual([
+      { codigo: "5101", debe_cents: 3, haber_cents: 0 },
+      { codigo: "1301", debe_cents: 0, haber_cents: 3 },
+    ]);
+
+    const v = await env.DB.prepare("SELECT valor_cents FROM valor_inventario WHERE codigo = ?")
+      .bind(codigo)
+      .first<{ valor_cents: number }>();
+    expect(v?.valor_cents).toBe(0);
+  });
+
+  it("no toca una variante que todavía tiene unidades", async () => {
+    const codigo = await conValor(5, 1500);
+    const r = debeSerOk(await ajustarRedondeoDeInventario(ctx()));
+    expect(r.ajustes.some((a) => a.codigo === codigo)).toBe(false);
+
+    const v = await env.DB.prepare("SELECT valor_cents FROM valor_inventario WHERE codigo = ?")
+      .bind(codigo)
+      .first<{ valor_cents: number }>();
+    expect(v?.valor_cents).toBe(1500);
+  });
+
+  it("correr dos veces no escribe dos asientos", async () => {
+    const codigo = await conValor(0, 7);
+    debeSerOk(await ajustarRedondeoDeInventario(ctx()));
+    const segunda = debeSerOk(await ajustarRedondeoDeInventario(ctx()));
+    expect(segunda.ajustes.some((a) => a.codigo === codigo)).toBe(false);
+
+    const n = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM asientos WHERE referencia_tipo = 'variante' AND referencia_id = ?",
+    )
+      .bind(codigo)
+      .first<{ n: number }>();
+    expect(n?.n).toBe(1);
+  });
+
+  it("si llega una compra en medio, el ajuste no entra solo", async () => {
+    // La carrera: se leyó un residuo con cero unidades y, antes del batch,
+    // entró una compra. El UPDATE no casa —y un UPDATE que no casa no falla—,
+    // así que sin la fila de control el asiento entraría descontando del
+    // inventario un residuo que sigue puesto.
+    const codigo = await conValor(0, 5);
+    const ctxViejo = ctx();
+    await env.DB.prepare("UPDATE valor_inventario SET unidades = 10 WHERE codigo = ?")
+      .bind(codigo)
+      .run();
+
+    // Se vuelve a pedir el ajuste con el residuo que se leyó antes, como lo
+    // haría el batch que ya iba en camino.
+    const propuesta = debeSerOk(
+      ajusteDeRedondeo({
+        fecha: fechaContable(ctxViejo.ahora),
+        referencia: { tipo: "variante", id: codigo },
+        residuoCents: 5,
+        codigo,
+      }),
+    );
+    const { asientoId, enunciados } = enunciadosDeAsiento(ctxViejo, propuesta);
+    await expect(
+      env.DB.batch([
+        ...enunciados,
+        env.DB.prepare(
+          "UPDATE valor_inventario SET valor_cents = valor_cents - ? WHERE codigo = ? AND unidades = 0",
+        ).bind(5, codigo),
+        env.DB.prepare(
+          `INSERT INTO controles (id, regla, ok, creado_en)
+           VALUES (?, 'inventario:residuo',
+                   (SELECT COUNT(*) FROM valor_inventario
+                     WHERE codigo = ? AND unidades = 0 AND valor_cents = 0), ?)`,
+        ).bind(ulid(Date.now()), codigo, Date.now()),
+      ]),
+    ).rejects.toThrow(/CHECK|constraint/i);
+
+    const quedo = await env.DB.prepare("SELECT COUNT(*) AS n FROM asientos WHERE id = ?")
+      .bind(asientoId)
+      .first<{ n: number }>();
+    expect(quedo?.n).toBe(0);
+    const v = await env.DB.prepare("SELECT valor_cents FROM valor_inventario WHERE codigo = ?")
+      .bind(codigo)
+      .first<{ valor_cents: number }>();
+    expect(v?.valor_cents).toBe(5);
+  });
+
+  it("si otro limpió el mismo residuo antes, lo tumba el CHECK de la tabla", async () => {
+    // La otra carrera: la variante sigue en cero unidades pero el residuo ya se
+    // limpió. Aquí no hace falta control: restar de más deja `valor_cents` en
+    // negativo y el CHECK de la tabla tumba el batch.
+    const codigo = await conValor(0, 4);
+    await env.DB.prepare("UPDATE valor_inventario SET valor_cents = 0 WHERE codigo = ?")
+      .bind(codigo)
+      .run();
+
+    const propuesta = debeSerOk(
+      ajusteDeRedondeo({
+        fecha: fechaContable(Date.now()),
+        referencia: { tipo: "variante", id: codigo },
+        residuoCents: 4,
+        codigo,
+      }),
+    );
+    const { asientoId, enunciados } = enunciadosDeAsiento(ctx(), propuesta);
+    await expect(
+      env.DB.batch([
+        ...enunciados,
+        env.DB.prepare(
+          "UPDATE valor_inventario SET valor_cents = valor_cents - ? WHERE codigo = ? AND unidades = 0",
+        ).bind(4, codigo),
+      ]),
+    ).rejects.toThrow(/CHECK|constraint/i);
+
+    const quedo = await env.DB.prepare("SELECT COUNT(*) AS n FROM asientos WHERE id = ?")
+      .bind(asientoId)
+      .first<{ n: number }>();
+    expect(quedo?.n).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe("leer los saldos", () => {
   it("un saldo es «al día X» y no cuenta lo de después", async () => {
     const v = ventana();
@@ -691,6 +841,10 @@ describe("leer los saldos", () => {
     const mayor = debeSerOk(await mayorDeCuenta(ctx(), "6199", v));
     expect(mayor.nombre).toBe("Otros gastos");
     expect(mayor.apuntes.map((ap) => ap.debeCents)).toEqual([1234]);
+    // Y cada apunte dice de qué asiento viene: es lo que la contadora sigue
+    // cuando un número no le cuadra.
+    expect(mayor.apuntes[0]!.asientoId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(mayor.apuntes[0]!.hecho).toBe("manual");
 
     expect((await mayorDeCuenta(ctx(), "9999", v)).ok).toBe(false);
   });

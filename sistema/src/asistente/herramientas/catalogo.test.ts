@@ -244,11 +244,43 @@ describe("buscar_articulo · de lo que dice la clienta a lo que sabe la base", (
     // una promesa. Lo que no se tiene no se puede soltar.
     const { codigo } = await sembrar({ fisico: 37, unidadesPorCaja: 11, precioCents: 1300 });
     const r = await buscarArticulo.ejecutar(ctx(), { texto: codigo, cuantos: 5 });
+    const articulo = r.articulos[0];
 
-    expect(r.articulos[0]?.hay).toBe("disponible");
-    const texto = JSON.stringify(r.articulos[0]);
-    expect(texto, "se escapó la cantidad exacta").not.toContain("37");
-    expect(texto).not.toMatch(/libres|fisico|reservado|comprometido/i);
+    expect(articulo?.hay).toBe("disponible");
+
+    // Se fija la LISTA DE CAMPOS, y no se busca «37» dentro del JSON.
+    //
+    // Buscar el número a pelo falla según la hora: el código de la siembra
+    // lleva la fecha en milisegundos dentro («ZZ-1794368237314-38» contiene un
+    // 37), así que la prueba pasaba sola y se ponía roja al rato sin que
+    // cambiara una línea de código. Ya está anotado el mismo tropiezo en
+    // crm.test.ts con el sello de tiempo, y aquí se repitió.
+    //
+    // Fijar los campos es además más estricto: cualquier campo nuevo —se llame
+    // `libres`, `quedan` o `n`— pone esto rojo y obliga a venir a mirar si eso
+    // puede salir hacia una clienta.
+    expect(Object.keys(articulo ?? {}).sort()).toEqual([
+      "activo",
+      "codigo",
+      "esCombo",
+      "hay",
+      "laSiguienteTalla",
+      "nombre",
+      "peso",
+      "pesoDesdeLb",
+      "pesoHastaLb",
+      "precio",
+      "precioCents",
+      "producto",
+      "seVendeEnLaWeb",
+      "talla",
+      "unidadesPorCaja",
+    ]);
+
+    // Y por si un campo con nombre inocente trajera la cifra: ningún valor
+    // numérico es la cantidad sembrada.
+    const numeros = Object.values(articulo ?? {}).filter((v) => typeof v === "number");
+    expect(numeros, "algún campo trae la cantidad exacta").not.toContain(37);
   });
 
   it("y tampoco el costo", async () => {

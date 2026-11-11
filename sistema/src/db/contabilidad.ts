@@ -10,6 +10,7 @@ import {
   type SaldoDeCuenta,
   type Tramo,
   HUECOS,
+  ajusteDeRedondeo,
   asientoContrario,
   balance,
   codigoDeCaja,
@@ -308,6 +309,89 @@ export async function revertirAsiento(
 }
 
 // ---------------------------------------------------------------------------
+// El residuo del costo promedio (asiento 18)
+// ---------------------------------------------------------------------------
+
+export interface RedondeoAjustado {
+  readonly codigo: string;
+  readonly residuoCents: number;
+  readonly asientoId: string;
+}
+
+/**
+ * Limpia los centavos de redondeo que dejó el costo promedio.
+ *
+ * El costo de una salida es `round(valor_cents × q / unidades)` (05 §4), así
+ * que cuando las unidades de una variante llegan a cero puede quedar un residuo
+ * en `valor_cents`: inventario que ya no existe. `marcarEntregada` lo deja ahí a
+ * propósito —«los centavos de redondeo los ajusta el asiento 18»— porque
+ * inventarse un ajuste en medio de una entrega sería meterle al costo de esa
+ * venta un centavo que no es suyo.
+ *
+ * Aquí se pasa al costo de lo vendido, que es por donde se fue la mercancía, y
+ * se pone el valor en cero. Es idempotente: si no queda residuo, no hay nada
+ * que ajustar y no se escribe ningún asiento.
+ *
+ * ## Las dos carreras, y qué cierra cada una
+ *
+ * **Otro proceso limpió el mismo residuo primero.** La resta va sin guarda en
+ * el `WHERE`: `valor_cents = valor_cents - residuo`. Si ya estaba en cero, la
+ * resta lo deja en negativo y el `CHECK (valor_cents >= 0)` de la tabla tumba el
+ * batch entero, asiento incluido. La tabla es más fiable que un `WHERE` porque
+ * no se puede olvidar.
+ *
+ * **Llegó una compra en medio y ya no está en cero unidades.** Ahí el `WHERE`
+ * no casa, el UPDATE cambia cero filas —y un UPDATE que no casa NO falla— así
+ * que el asiento entraría solo, descontando del inventario un residuo que sigue
+ * puesto. Eso lo caza la fila de control, que mira lo que ESTE batch escribió:
+ * esa variante en cero unidades y cero valor.
+ */
+export async function ajustarRedondeoDeInventario(
+  ctx: ContextoContable,
+): Promise<Resultado<{ ajustes: RedondeoAjustado[] }>> {
+  const { results } = await ctx.db
+    .prepare(
+      "SELECT codigo, valor_cents FROM valor_inventario WHERE unidades = 0 AND valor_cents <> 0",
+    )
+    .all<{ codigo: string; valor_cents: number }>();
+
+  const fecha = fechaContable(ctx.ahora);
+  const ajustes: RedondeoAjustado[] = [];
+
+  for (const v of results) {
+    const propuesta = ajusteDeRedondeo({
+      fecha,
+      referencia: { tipo: "variante", id: v.codigo },
+      residuoCents: v.valor_cents,
+      codigo: v.codigo,
+    });
+    if (!propuesta.ok) return propuesta;
+
+    const { asientoId, enunciados } = enunciadosDeAsiento(ctx, propuesta.datos);
+    try {
+      await ctx.db.batch([
+        ...enunciados,
+        ctx.db
+
+        ctx.db
+          .prepare(
+            `INSERT INTO controles (id, regla, ok, creado_en)
+             VALUES (?, 'inventario:residuo',
+                     (SELECT COUNT(*) FROM valor_inventario
+                       WHERE codigo = ? AND unidades = 0 AND valor_cents = 0), ?)`,
+          )
+          .bind(ulid(ctx.ahora), v.codigo, ctx.ahora),
+      ]);
+    } catch (err) {
+      return comoSeLee(err);
+    }
+    ajustes.push({ codigo: v.codigo, residuoCents: v.valor_cents, asientoId });
+  }
+
+  return ok({ ajustes });
+}
+
+// ---------------------------------------------------------------------------
 // Leer · saldos y movimientos
 // ---------------------------------------------------------------------------
 
@@ -523,12 +607,30 @@ export async function libroDiario(
   }));
 }
 
+/**
+ * Un apunte del mayor: la línea de una cuenta CON el asiento del que viene.
+ *
+ * Lleva el id del asiento a propósito. Es lo que hace que una cifra de la
+ * pantalla pueda decir de dónde sale: sin eso, la contadora ve un importe y no
+ * tiene por dónde empezar a buscar. Una cifra que no puede decir de dónde viene
+ * invita a creérsela.
+ */
+export interface ApunteDeMayor {
+  readonly asientoId: string;
+  readonly fecha: string;
+  readonly descripcion: string;
+  readonly hecho: Hecho;
+  readonly debeCents: number;
+  readonly haberCents: number;
+  readonly detalle: string | null;
+}
+
 /** El mayor de una cuenta: sus apuntes del periodo, para cuadrar con el banco. */
 export async function mayorDeCuenta(
   ctx: ContextoDeLectura,
   codigo: string,
   r: { desde: string; hasta: string; limite?: number },
-): Promise<Resultado<{ codigo: string; nombre: string; apuntes: readonly LineaDelLibro[] }>> {
+): Promise<Resultado<{ codigo: string; nombre: string; apuntes: readonly ApunteDeMayor[] }>> {
   if (cuentaDelPlan(codigo) === null) {
     return fallo("no_encontrado", `la cuenta ${codigo} no está en el plan de cuentas`);
   }
@@ -562,8 +664,10 @@ export async function mayorDeCuenta(
     codigo,
     nombre: cuenta.nombre,
     apuntes: results.map((f) => ({
-      codigo: f.asiento_id,
-      cuenta: `${f.fecha} · ${f.descripcion}`,
+      asientoId: f.asiento_id,
+      fecha: f.fecha,
+      descripcion: f.descripcion,
+      hecho: f.hecho as Hecho,
       debeCents: f.debe_cents,
       haberCents: f.haber_cents,
       detalle: f.detalle,

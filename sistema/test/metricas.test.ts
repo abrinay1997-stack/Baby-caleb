@@ -83,6 +83,7 @@ async function limpiar(): Promise<void> {
     env.DB.prepare("DELETE FROM pedidos"),
     env.DB.prepare("DELETE FROM clientes"),
     env.DB.prepare("DELETE FROM motorizados"),
+    env.DB.prepare("DELETE FROM eventos_salida"),
     env.DB.prepare("UPDATE existencias SET fisico = 0, reservado = 0, minimo = NULL"),
     // Una prueba apaga bodegas y variantes para comprobar que no cuentan; aquí
     // se vuelven a encender, que es como las dejó la carga inicial.
@@ -307,6 +308,41 @@ describe("lo que necesita atención", () => {
   });
 });
 
+describe("los avisos a las clientas", () => {
+  it("dice cuántos llevan sin salir y desde cuándo", async () => {
+    // Es la única señal de que los mensajes a las clientas no están llegando, y
+    // no sale de ninguna otra pantalla. Sin esta prueba, el contador se podía
+    // dejar clavado en cero sin que nada fallara: lo destapó una mutación.
+    await env.DB.batch([
+      env.DB
+        .prepare(
+          `INSERT INTO eventos_salida (id,cola,tipo,version,datos_json,creado_en,publicado_en)
+           VALUES (?,'bc-avisos','prueba',1,'{}',?,NULL)`,
+        )
+        .bind(id("ev"), AHORA - 25 * 60_000),
+      env.DB
+        .prepare(
+          `INSERT INTO eventos_salida (id,cola,tipo,version,datos_json,creado_en,publicado_en)
+           VALUES (?,'bc-avisos','prueba',1,'{}',?,NULL)`,
+        )
+        .bind(id("ev"), AHORA - 5 * 60_000),
+      // Este ya salió: no es un atraso.
+      env.DB
+        .prepare(
+          `INSERT INTO eventos_salida (id,cola,tipo,version,datos_json,creado_en,publicado_en)
+           VALUES (?,'bc-avisos','prueba',1,'{}',?,?)`,
+        )
+        .bind(id("ev"), AHORA - 60 * 60_000, AHORA - 59 * 60_000),
+    ]);
+
+    expect((await resumen(ctx())).avisos).toEqual({
+      sinPublicar: 2,
+      // El más viejo, que es lo que dice si esto lleva media hora trabado.
+      masViejo: AHORA - 25 * 60_000,
+    });
+  });
+});
+
 describe("el inventario", () => {
   it("una vez cargado, separa lo agotado de lo que se está acabando", async () => {
     const codigos = (
@@ -364,8 +400,37 @@ describe("el inventario", () => {
 
     await env.DB.prepare("UPDATE bodegas SET activa = 0 WHERE id <> ?").bind(bodegaId).run();
     await env.DB.prepare("UPDATE variantes SET activo = 0 WHERE codigo <> ?").bind(codigo).run();
+
+    const inv = (await resumen(ctx())).inventario!;
+    if (!inv.cargado) throw new Error("tenía que estar cargado");
     // Jubilar un producto no tiene que hacer crecer la alarma del día.
-    expect((await resumen(ctx())).inventario?.filas).toBe(1);
+    expect(inv.filas).toBe(1);
+    expect(inv.agotadas).toBe(0);
+    // Y tampoco la LISTA: sin esto, quitarle el filtro de activo a la consulta
+    // de la lista no rompía ninguna prueba, y la pantalla mandaría a reponer
+    // tallas retiradas. Lo destapó una mutación.
+    expect(inv.lista.map((f) => f.codigo)).toEqual([codigo]);
+    expect(inv.listaTruncada).toBe(false);
+  });
+
+  it("pone primero lo agotado, que es lo que ya está costando ventas", async () => {
+    await todoConHolgura();
+    const codigos = (
+      await env.DB.prepare("SELECT codigo FROM variantes ORDER BY codigo").all<{ codigo: string }>()
+    ).results.map((r) => r.codigo);
+    // El agotado es el ÚLTIMO por código y el que le sigue es el primero: así,
+    // si la lista saliera ordenada por código en vez de por lo que queda, el
+    // orden saldría al revés. Esta prueba existe porque una mutación quitó el
+    // «ORDER BY libres» y nadie se enteró: con las treinta y seis filas en cero,
+    // los dos órdenes daban lo mismo.
+    await cargarInventario(0, { codigo: codigos.at(-1)!, minimo: 1 });
+    await cargarInventario(3, { codigo: codigos[0]!, minimo: 5 });
+
+    const inv = (await resumen(ctx())).inventario!;
+    if (!inv.cargado) throw new Error("tenía que estar cargado");
+    expect(inv.lista.map((f) => f.codigo)).toEqual([codigos.at(-1), codigos[0]]);
+    expect(inv.lista.map((f) => f.libres)).toEqual([0, 3]);
+    expect(inv.listaTruncada).toBe(false);
   });
 
   it("corta la lista y lo dice en vez de darla por completa", async () => {
@@ -378,11 +443,11 @@ describe("el inventario", () => {
 
     const inv = (await resumen(ctx())).inventario!;
     if (!inv.cargado) throw new Error("tenía que estar cargado");
-    // Treinta y seis filas en cero no caben en una pantalla de teléfono.
+    // Treinta y seis filas en cero no caben en una pantalla de teléfono, y una
+    // lista cortada que se presenta como completa es peor que una lista corta.
     expect(inv.lista.length).toBe(12);
     expect(inv.listaTruncada).toBe(true);
-    // Lo agotado primero: es lo que ya está costando ventas.
-    expect(inv.lista[0]!.libres).toBe(0);
+    expect(inv.agotadas).toBe(36);
   });
 });
 

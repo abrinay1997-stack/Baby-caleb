@@ -113,15 +113,25 @@ describe("lo entregado", () => {
     const viejo = await pedido({ estado: "entregado", total: 9900, creadoEn: SEMANA_1 - 3 * DIA });
     await evento(viejo, "entregado", SEMANA_1 - 2 * DIA);
 
+    // Y una devolución de anteayer, que tampoco es de hoy. Sin esta, quitarle
+    // la ventana a la cuenta de devoluciones no rompía ninguna prueba: lo
+    // destapó una mutación.
+    const otroDevuelto = await pedido({
+      estado: "devuelto",
+      total: 1500,
+      creadoEn: SEMANA_1 - 3 * DIA,
+    });
+    await evento(otroDevuelto, "entregado", SEMANA_1 - 2 * DIA);
+    await evento(otroDevuelto, "devuelto", SEMANA_1 - 2 * DIA + HORA);
+
     const d = (await resumen(SEMANA_1)).dinero!;
     expect(d.entregado).toEqual({ total: 8000, pedidos: 1 });
     expect(d.devueltos).toBe(1);
 
-    // Y en la semana entran los dos, porque el lunes fue el 9.
-    expect((await resumen(SEMANA_1, "semana")).dinero?.entregado).toEqual({
-      total: 17_900,
-      pedidos: 2,
-    });
+    // Y en la semana entran los tres, porque el lunes fue el 9.
+    const semana = (await resumen(SEMANA_1, "semana")).dinero!;
+    expect(semana.entregado).toEqual({ total: 19_400, pedidos: 3 });
+    expect(semana.devueltos).toBe(2);
   });
 
   it("se compara contra una ventana del mismo largo", async () => {

@@ -1,6 +1,6 @@
 import { ulid } from "../ids";
 import { fallo, ok, type Resultado } from "../contrato/resultado";
-import { guardar, leerVigentes } from "./ajustes";
+import { guardar, historial, leerVigentes } from "./ajustes";
 import {
   CONECTORES,
   MODOS,
@@ -151,6 +151,24 @@ export interface LineaDelLibro {
   readonly creado_en: number;
 }
 
+/**
+ * Una vez que alguien encendió o apagó pasarelas.
+ *
+ * Sale del historial de `ajustes.pasarelas_activas` y NO de mi libro, porque
+ * encender es cambiar ese ajuste y ese ajuste ya tiene su propio historial con
+ * firma y motivo. Copiarlo a `pasarela_bitacora` en otro lote crearía dos
+ * relatos del mismo hecho que pueden discrepar —y en lotes distintos
+ * discreparían el día que uno de los dos falle—, así que se LEE de donde está
+ * en vez de duplicarse.
+ */
+export interface CambioDeEncendidas {
+  readonly version: number;
+  readonly encendidas: readonly Pasarela[];
+  readonly cuando: number;
+  readonly quien: string;
+  readonly motivo: string | null;
+}
+
 export interface EstadoDeLasPasarelas {
   readonly pasarelas: readonly EstadoDePasarela[];
   /** Si el sistema puede cifrar. No se dice nada más de la llave. */
@@ -158,6 +176,8 @@ export interface EstadoDeLasPasarelas {
   /** Qué le pasa a la llave maestra, si le pasa algo. Sin su valor. */
   readonly llave_maestra_problema: string | null;
   readonly libro: readonly LineaDelLibro[];
+  /** Quién encendió o apagó qué, de la más nueva a la más vieja. */
+  readonly encendidas_historial: readonly CambioDeEncendidas[];
 }
 
 interface FilaPasarela {
@@ -282,11 +302,26 @@ export async function estado(
     };
   });
 
+  // El historial de encendidas es CONTEXTO: si no se puede leer, la pantalla
+  // sigue sirviendo para configurar. Fallar la pantalla entera por no poder
+  // enseñar quién encendió Yappy en marzo sería cambiar algo útil por nada.
+  const cambios = await historial(ctx, CLAVE_ENCENDIDAS);
+  const encendidasHistorial: CambioDeEncendidas[] = cambios.ok
+    ? cambios.datos.versiones.map((v) => ({
+        version: v.version,
+        encendidas: Array.isArray(v.valor) ? v.valor.filter(esPasarela) : [],
+        cuando: v.vigente_desde,
+        quien: v.cambiado_por,
+        motivo: v.motivo,
+      }))
+    : [];
+
   return ok({
     pasarelas,
     llave_maestra_puesta: llave.ok,
     llave_maestra_problema: llave.ok ? null : llave.mensaje,
     libro,
+    encendidas_historial: encendidasHistorial,
   });
 }
 
