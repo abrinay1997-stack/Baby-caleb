@@ -288,14 +288,25 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # Se comprueba por ruta.babycaleb.com y NO por panel.babycaleb.com, que es
+      # el host que uno escribiría. Los dos sirven el MISMO Worker, el mismo
+      # despliegue y la misma migración, así que la comprobación vale igual.
+      # La diferencia es la puerta: panel está dentro de la aplicación de
+      # Cloudflare Access, que contesta un 302 al dominio del equipo ANTES de
+      # que el Worker corra, de modo que el chequeo no llegaba nunca y el
+      # despliegue quedaba rojo para siempre aunque hubiera salido bien.
+      #
+      # ruta es la superficie de los motorizados, que entran con código al
+      # celular y no por Access, así que no tiene esa puerta delante y /salud
+      # ya era público ahí. Mirar ahí no expone nada que no estuviera expuesto.
+      #
+      # Si algún día se le pone Access a ruta, esto vuelve a romperse: entonces
+      # toca un Service Token con política Service Auth (ACCESS_CLIENT_ID y
+      # ACCESS_CLIENT_SECRET, que este paso ya sabe mandar) o una política
+      # Bypass solo para /salud.
       - name: Comprobar /salud
-        run: ../.github/scripts/salud.sh "https://panel.babycaleb.com" "$GITHUB_SHA"
+        run: ../.github/scripts/salud.sh "https://ruta.babycaleb.com" "$GITHUB_SHA"
         env:
-          # Credencial de servicio para pasar Cloudflare Access. En workers.dev
-          # Access cubre el Worker ENTERO —ese dominio no es nuestro, así que no
-          # hay recorte por ruta—, de modo que /salud no se puede dejar pública
-          # y el despliegue tiene que entrar con credencial propia. Si los
-          # secretos no están, el guion no manda cabeceras y lo dice.
           ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
           ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
 
