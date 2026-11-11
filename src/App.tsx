@@ -20,6 +20,8 @@ import FAQ from './pages/FAQ';
 import Historia from './pages/Historia';
 import Tips from './pages/Tips';
 import CarritoPagina from './pages/Carrito';
+import Privacidad from './pages/Privacidad';
+import Terminos from './pages/Terminos';
 import { ProveedorCarrito } from './carrito/useCarrito';
 
 function ScrollToTop() {
@@ -63,6 +65,12 @@ export default function App() {
           {/* No se indexa: ya está en SIN_INDEXAR de seo/rutas.ts, porque un
               carrito es de una persona y no del público. */}
           <Route path="/carrito" element={<CarritoPagina />} />
+          {/* Las legales SÍ se indexan: un aviso de privacidad que Google no
+              encuentra no sirve de aviso, y la Ley 81 pide que la persona
+              pueda leerlo ANTES de dar sus datos. Por eso están en RUTAS de
+              seo/rutas.ts y no en SIN_INDEXAR. */}
+          <Route path="/privacidad" element={<Privacidad />} />
+          <Route path="/terminos" element={<Terminos />} />
         </Routes>
         <Chatbot />
         <S20Footer />

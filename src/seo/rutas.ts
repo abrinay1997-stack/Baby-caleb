@@ -19,7 +19,7 @@ export interface MetaDeRuta {
 }
 
 /**
- * Las siete rutas que se renderizan con `<head>` propio.
+ * Las rutas que se renderizan con `<head>` propio.
  *
  * Las claves son el camino exacto. Lo que no esté aquí —`/carrito`,
  * `/mi-cuenta`, `/seguimiento/...`— sale con el `<head>` de `index.html` y sin
@@ -60,6 +60,24 @@ export const RUTAS: Record<string, MetaDeRuta> = {
     title: "Preguntas frecuentes | Baby Caleb Panamá",
     description:
       "Tallas por peso de RN a XXL, diferencia entre hipoalergénico y sin cloro, ingredientes de los wipes y cómo funciona el delivery. Resolvemos tus dudas.",
+  },
+
+  // Las páginas legales (F1.7). Entran en esta lista y no en `SIN_INDEXAR`
+  // porque son públicas a propósito: un aviso de privacidad que Google no
+  // encuentra no sirve de aviso, y la Ley 81 pide que la persona pueda leerlo
+  // antes de dar sus datos. Estar aquí es también lo que las mete en el
+  // sitemap (`vite.config.ts` lee las claves de este objeto) y lo que hace que
+  // el Worker les ponga su propio <head> — para eso tienen que estar además
+  // en `run_worker_first` de `wrangler.jsonc`.
+  "/privacidad": {
+    title: "Política de privacidad | Baby Caleb Panamá",
+    description:
+      "Qué datos recoge esta página, qué pasa con lo que usted escribe en el chat de inteligencia artificial, con quién se comparte y cómo pedir que se borren (Ley 81 de 2019).",
+  },
+  "/terminos": {
+    title: "Términos y condiciones | Baby Caleb Panamá",
+    description:
+      "Cómo funciona comprar en Baby Caleb Panamá: los pedidos se cierran por WhatsApp, los precios y la disponibilidad del catálogo, entregas en Ciudad de Panamá y reclamos.",
   },
 };
 

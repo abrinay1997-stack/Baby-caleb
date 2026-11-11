@@ -48,6 +48,17 @@ export default function S20Footer() {
         
         <div className="pt-8 border-t border-line flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-muted">
           <p>© {new Date().getFullYear()} {legal.company}. Todos los derechos reservados.</p>
+          {/* Aquí y no escondidas: la Ley 81 pide que la persona pueda leer el
+              aviso ANTES de dar sus datos, y el chat de esta página recoge lo
+              que escriba. Un aviso al que no se llega no es un aviso. */}
+          <nav aria-label="Enlaces legales" className="flex gap-4">
+            <Link to={legal.privacyUrl} className="hover:text-accent-strong transition-colors">
+              Privacidad
+            </Link>
+            <Link to="/terminos" className="hover:text-accent-strong transition-colors">
+              Términos
+            </Link>
+          </nav>
         </div>
       </div>
     </footer>
