@@ -1,3 +1,4 @@
+import { PROVINCIAS } from "./provincias";
 import { type Zona, buscarZona, sugerirZonas } from "./zonas";
 
 /**
@@ -63,23 +64,6 @@ export interface DireccionAproximada {
   /** El texto completo tal cual, para enseñarlo como confirmación. */
   etiqueta: string;
 }
-
-/** Las nueve provincias más las tres comarcas, escritas como se escriben. */
-const PROVINCIAS = [
-  "Bocas del Toro",
-  "Coclé",
-  "Colón",
-  "Chiriquí",
-  "Darién",
-  "Herrera",
-  "Los Santos",
-  "Panamá",
-  "Panamá Oeste",
-  "Veraguas",
-  "Emberá-Wounaan",
-  "Guna Yala",
-  "Ngäbe-Buglé",
-] as const;
 
 function primeroConTexto(...candidatos: (string | undefined)[]): string {
   for (const c of candidatos) {

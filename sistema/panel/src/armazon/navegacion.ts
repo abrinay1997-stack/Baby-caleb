@@ -56,6 +56,12 @@ export const SECCIONES: Seccion[] = [
         permiso: "cobros",
       },
       {
+        ruta: "/clientas",
+        nombre: "Clientas",
+        descripcion: "Sus datos: lo que falta para cobrarle con tarjeta y para facturarle",
+        permiso: "pedidos",
+      },
+      {
         ruta: "/catalogo",
         nombre: "Catálogo",
         descripcion: "Productos, tallas y precios",

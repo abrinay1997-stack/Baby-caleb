@@ -19,6 +19,7 @@ export * from "./estado-envio";
 export * from "./abonos";
 export * from "./geo";
 export * from "./zonas";
+export * from "./provincias";
 export * from "./direccion";
 export * from "./rutas";
 export * from "./motorizado";

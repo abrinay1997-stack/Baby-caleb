@@ -38,6 +38,11 @@ const PANTALLAS = [
   ["pedidos", "/pedidos"],
   ["entregas", "/entregas"],
   ["pasarelas", "/pasarelas"],
+  // Clientas sale DOS veces: aquí vacía —que es lo primero que ve la dueña al
+  // entrar, porque la lista no se enseña sin buscar— y más abajo con
+  // resultados y con la hoja abierta. Medir solo una de las dos diría que la
+  // pantalla está bien habiendo mirado la mitad.
+  ["clientas", "/clientas"],
   ["catalogo", "/catalogo"],
   ["existencias", "/existencias"],
   ["bodegas", "/bodegas"],
@@ -342,6 +347,51 @@ for (const [nombreVista, tamano] of VISTAS) {
       await pagina.keyboard.press("Escape");
       void abridor;
     }
+
+    // Clientas con resultados y con la ficha abierta. La lista no sale hasta
+    // que se escribe algo —es a propósito: nombres y teléfonos de personas no
+    // se listan solos— así que aquí se escribe, igual que haría la dueña.
+    //
+    // La hoja de la ficha es la que TIENE los campos: el apellido, la cédula y
+    // la dirección de facturación. Medirla a ojo es dejar que el teléfono haga
+    // zoom al escribir una cédula.
+    await pagina.goto(`${BASE}/clientas`, { waitUntil: "networkidle" });
+    const buscador = pagina.getByPlaceholder(/Celular o nombre/i).first();
+    if ((await buscador.count()) > 0) {
+      await buscador.fill("muestra");
+      await pagina.waitForTimeout(400);
+      const conResultados = await pagina.evaluate(medir);
+      revisadas += 1;
+      for (const f of conResultados) {
+        todas.push({ vista: nombreVista, pantalla: "clientas-buscada", ...f });
+      }
+      if (!soloMedir) {
+        await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-clientas-buscada.png`, fullPage: true });
+      }
+
+      const unaClienta = pagina.getByRole("button", { name: /Clienta De Muestra Villarreal/ }).first();
+      if ((await unaClienta.count()) > 0) {
+        await unaClienta.click();
+        await pagina.waitForTimeout(400);
+        const deLaFicha = await pagina.evaluate(medir);
+        revisadas += 1;
+        for (const f of deLaFicha) {
+          todas.push({ vista: nombreVista, pantalla: "hoja-ficha-clienta", ...f });
+        }
+        if (!soloMedir) {
+          await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-ficha-clienta.png` });
+        }
+        await pagina.keyboard.press("Escape");
+        await pagina.waitForTimeout(150);
+      }
+    }
+
+    // El cajón otra vez, que es lo que miden las comprobaciones de abajo: las
+    // pantallas de arriba lo dejaron cerrado.
+    await pagina.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    await pagina.waitForSelector("h1");
+    await pagina.getByRole("button", { name: /men/i }).first().click();
+    await pagina.waitForTimeout(300);
 
     if (aria.titulos < 2) {
       todas.push({
