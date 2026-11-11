@@ -100,7 +100,10 @@ export default function S01Nav() {
               traductor es solo el caso que lo destapó: cualquier texto más
               largo (otro idioma, un nombre más largo) haría lo mismo.
               `shrink-0` para que la barra encoja los enlaces y no la marca. */}
-          <span className="font-display font-bold text-xl text-fg tracking-tight whitespace-nowrap shrink-0">
+          <span
+            translate="no"
+            className="font-display font-bold text-xl text-fg tracking-tight whitespace-nowrap shrink-0"
+          >
             Baby Caleb
           </span>
         </Link>

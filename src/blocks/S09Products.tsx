@@ -56,7 +56,8 @@ export default function S09Products() {
                 </span>
               </div>
               <div className="p-8 flex flex-col flex-grow">
-                <h3 className="text-2xl text-fg mb-3 leading-tight">{product.name}</h3>
+                {/* Nombre de producto: no se traduce (ver FichaProducto). */}
+                <h3 translate="no" className="text-2xl text-fg mb-3 leading-tight">{product.name}</h3>
                 <p className="text-muted text-sm mb-6 leading-relaxed">
                   {product.description}
                 </p>
