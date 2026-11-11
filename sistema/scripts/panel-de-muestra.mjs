@@ -674,26 +674,52 @@ const RESPUESTAS = {
   }),
 
   // `/zonas`: ya con `alias` como lista (el Worker desarma `alias_json`).
+  //
+  // `region` y `metodo` son los del CHECK de `zonas_envio` —'ciudad' /
+  // 'interior' y 'motorizado' / 'ferguson' / 'otro'— y no los que suenan bien.
+  // Antes decían «Panamá Oeste» y «encomienda», que no existen: la pantalla
+  // los pintaba igual porque solo los mostraba, pero la hoja de editar elige
+  // entre las opciones de verdad y con un valor inventado no quedaría ninguna
+  // marcada. Una muestra que miente sobre los valores aprueba una pantalla que
+  // en producción sale distinta.
+  //
+  // `bodega_preferida_id` además del nombre: es lo que la hoja necesita para
+  // dejar marcada la bodega que ya estaba.
   "/api/zonas": ok({
     zonas: [
-      { id: "z1", nombre: "Ciudad de Panamá — centro", region: "Panamá", metodo: "motorizado",
-        tarifa_cents: 350, requiere_pago_total: 0, activa: 1, bodega_preferida: "Principal",
+      { id: "z1", nombre: "Ciudad de Panamá — centro", region: "ciudad", metodo: "motorizado",
+        tarifa_cents: 350, requiere_pago_total: 0, activa: 1,
+        bodega_preferida: "Principal", bodega_preferida_id: "b1",
         alias: ["San Francisco", "Obarrio", "Bella Vista", "El Cangrejo"] },
-      { id: "z2", nombre: "Panamá Oeste", region: "Panamá Oeste", metodo: "motorizado",
-        tarifa_cents: 600, requiere_pago_total: 0, activa: 1, bodega_preferida: "Principal",
+      { id: "z2", nombre: "Panamá Oeste", region: "ciudad", metodo: "motorizado",
+        tarifa_cents: 600, requiere_pago_total: 0, activa: 1,
+        bodega_preferida: "Principal", bodega_preferida_id: "b1",
         alias: ["Arraiján", "La Chorrera", "Vista Alegre"] },
-      { id: "z3", nombre: "Interior", region: "Interior", metodo: "encomienda",
-        tarifa_cents: 900, requiere_pago_total: 1, activa: 1, bodega_preferida: null,
+      // Tarifa nula: «se cotiza a mano». Es el caso que la pantalla tiene que
+      // enseñar con palabras y no con un hueco, y sin una fila así no se mira
+      // nunca.
+      { id: "z3", nombre: "Interior", region: "interior", metodo: "ferguson",
+        tarifa_cents: null, requiere_pago_total: 1, activa: 1,
+        bodega_preferida: null, bodega_preferida_id: null,
         alias: ["Chitré", "David", "Santiago", "Las Tablas"] },
-      // Sin alias: la celda tiene que decir algo, no quedarse vacía.
-      { id: "z4", nombre: "Retiro en tienda", region: "Panamá", metodo: "retiro",
-        tarifa_cents: 0, requiere_pago_total: 0, activa: 1, bodega_preferida: "Principal", alias: [] },
+      // Sin alias, y con tarifa CERO: el envío no se cobra. Al lado de la de
+      // arriba se ve la diferencia entre «gratis» y «todavía no se sabe».
+      { id: "z4", nombre: "Retiro en tienda", region: "ciudad", metodo: "otro",
+        tarifa_cents: 0, requiere_pago_total: 0, activa: 1,
+        bodega_preferida: "Principal", bodega_preferida_id: "b1", alias: [] },
+      // Pausada: el otro estado de la pastilla.
+      { id: "z5", nombre: "Colón", region: "interior", metodo: "otro",
+        tarifa_cents: null, requiere_pago_total: 1, activa: 0,
+        bodega_preferida: null, bodega_preferida_id: null, alias: ["Colon"] },
     ],
   }),
 
+  // `/usuarios`: el `id` de Yarielis es el MISMO que devuelve `/api/yo`. La
+  // hoja compara los dos para avisar «es su propia cuenta», y con ids
+  // distintos ese aviso no se ve nunca en la auditoría.
   "/api/usuarios": ok({
     usuarios: [
-      { id: "u1", correo: "duena@babycaleb.com", nombre: "Yarielis", rol: "duena",
+      { id: "01JBCX7K2M0000000000000000", correo: "duena@babycaleb.com", nombre: "Yarielis", rol: "duena",
         telegram_chat_id: "123456", activo: 1, creado_en: Date.now() - 60 * dia },
       { id: "u2", correo: "tienda@babycaleb.com", nombre: "Asistente de tienda", rol: "asistente",
         telegram_chat_id: null, activo: 1, creado_en: Date.now() - 20 * dia },

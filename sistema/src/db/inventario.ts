@@ -418,6 +418,129 @@ export async function registrar(
 }
 
 /**
+ * Mover mercancía de una bodega a otra.
+ *
+ * Son DOS movimientos —`traslado_salida` y `traslado_entrada`— en el MISMO
+ * batch de `aplicar`. Si se escribieran por separado, un fallo en medio
+ * dejaría la mercancía existiendo en ninguna parte: ya salió de una y todavía
+ * no entró en la otra, y el libro no diría dónde está.
+ *
+ * No pasa por `registrar()` y no es un descuido: `registrar` toma UN `tipo`
+ * para todos sus renglones, y aquí los dos renglones son de tipos distintos a
+ * propósito. Lo que se reusa es el motor, que es donde viven la fila de
+ * control y la invariante de que el físico no queda por debajo de lo
+ * reservado. Un segundo camino hacia `movimientos_inventario` sería un
+ * segundo sitio donde olvidarse del control.
+ *
+ * Las comprobaciones de aquí arriba NO son la defensa —esa es la fila de
+ * control de `aplicar`, que mira el estado ya cambiado y aguanta una venta
+ * simultánea—: son para que el mensaje diga qué pasó. Sin ellas, mandar un
+ * artículo a una bodega donde no está dado de alta devuelve «no alcanza el
+ * inventario», que manda a contar cajas cuando el problema era otro.
+ */
+export async function trasladar(
+  ctx: Contexto,
+  peticion: {
+    readonly codigo: string;
+    readonly desdeId: string;
+    readonly haciaId: string;
+    readonly cantidad: number;
+    readonly motivo?: string;
+  },
+): Promise<Resultado<{ deshacerId: string; codigo: string; cantidad: number }>> {
+  const { codigo, desdeId, haciaId, cantidad } = peticion;
+
+  if (typeof codigo !== "string" || codigo.trim() === "") {
+    return fallo("entrada_invalida", "diga qué artículo se traslada");
+  }
+  if (typeof desdeId !== "string" || desdeId.trim() === "") {
+    return fallo("entrada_invalida", "diga de qué bodega sale");
+  }
+  if (typeof haciaId !== "string" || haciaId.trim() === "") {
+    return fallo("entrada_invalida", "diga a qué bodega entra");
+  }
+  if (desdeId === haciaId) {
+    return fallo("entrada_invalida", "el origen y el destino son la misma bodega");
+  }
+  if (!Number.isSafeInteger(cantidad) || cantidad <= 0) {
+    return fallo("entrada_invalida", "la cantidad a trasladar tiene que ser un entero positivo");
+  }
+
+  // Las dos bodegas y el casillero del artículo en cada una, de una vez. El
+  // LEFT JOIN es lo que distingue «la bodega no existe» de «la bodega existe y
+  // ese artículo no está dado de alta ahí», que son dos arreglos distintos.
+  const { results } = await ctx.db
+    .prepare(
+      `SELECT b.id, b.nombre, b.activa, e.fisico, e.reservado
+         FROM bodegas b
+         LEFT JOIN existencias e ON e.bodega_id = b.id AND e.codigo = ?
+        WHERE b.id IN (?, ?)`,
+    )
+    .bind(codigo, desdeId, haciaId)
+    .all<{
+      id: string;
+      nombre: string;
+      activa: number;
+      fisico: number | null;
+      reservado: number | null;
+    }>();
+
+  const origen = results.find((b) => b.id === desdeId);
+  const destino = results.find((b) => b.id === haciaId);
+  if (origen === undefined) return fallo("no_encontrado", "no existe la bodega de origen");
+  if (destino === undefined) return fallo("no_encontrado", "no existe la bodega de destino");
+
+  // Entrar mercancía en una bodega que ya no se usa es esconderla: nada va a
+  // salir de ahí, porque `bodegaConExistencia` solo mira las activas. Salir de
+  // una apagada SÍ se permite, y es justo como se vacía antes de retirarla.
+  if (destino.activa !== 1) {
+    return fallo(
+      "entrada_invalida",
+      `«${destino.nombre}» no está en uso: vuelva a ponerla en uso antes de mandarle mercancía`,
+    );
+  }
+
+  if (origen.fisico === null) {
+    return fallo("no_encontrado", `«${codigo}» no está dado de alta en «${origen.nombre}»`);
+  }
+  if (destino.fisico === null) {
+    return fallo("no_encontrado", `«${codigo}» no está dado de alta en «${destino.nombre}»`);
+  }
+
+  const libres = origen.fisico - (origen.reservado ?? 0);
+  if (libres < cantidad) {
+    return fallo(
+      "sin_stock",
+      `en «${origen.nombre}» quedan ${libres} libres de ${codigo} y quiere mover ${cantidad}`,
+    );
+  }
+
+  const r = await aplicar(
+    ctx,
+    [
+      {
+        codigo,
+        bodegaId: desdeId,
+        delta: -cantidad,
+        tipo: "traslado_salida",
+        ...(peticion.motivo === undefined ? {} : { motivo: peticion.motivo }),
+      },
+      {
+        codigo,
+        bodegaId: haciaId,
+        delta: cantidad,
+        tipo: "traslado_entrada",
+        ...(peticion.motivo === undefined ? {} : { motivo: peticion.motivo }),
+      },
+    ],
+    { tipo: "traslado", id: ulid(ctx.ahora) },
+  );
+  if (!r.ok) return r;
+
+  return ok({ deshacerId: r.datos.deshacerId, codigo, cantidad });
+}
+
+/**
  * En qué bodega hay con qué.
  *
  * Elige la que más libre tenga, no la primera: repartir las salidas por donde

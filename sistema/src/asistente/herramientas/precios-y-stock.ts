@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { aplicar, bodegaPorNombre } from "../../db/inventario";
+import { aplicar, bodegaPorNombre, trasladar } from "../../db/inventario";
 import { ulid } from "../../ids";
 import { definir } from "../registro";
 
@@ -157,35 +157,25 @@ export const trasladarStock = definir({
   roles: ["duena"],
 
   async ejecutar(ctx, args) {
-    if (args.desde === args.hacia) throw new Error("el origen y el destino son la misma bodega");
-
+    // El asistente habla de bodegas por su nombre y el motor por su id: esta
+    // es la única traducción. El traslado en sí lo hace `trasladar`, el mismo
+    // que llama el panel — dos caminos distintos hacia el inventario acabarían
+    // discrepando, y el que se equivoque del lado flojo es el que nadie
+    // revisa.
     const origen = await bodegaPorNombre(ctx.db, args.desde);
     const destino = await bodegaPorNombre(ctx.db, args.hacia);
     if (origen === null) throw new Error(`no existe la bodega «${args.desde}»`);
     if (destino === null) throw new Error(`no existe la bodega «${args.hacia}»`);
 
-    // Dos movimientos en el MISMO batch: o salen de una y entran en la otra, o
-    // no pasa nada. Si se escribieran por separado, un fallo en medio dejaría
-    // la mercancía existiendo en ninguna parte.
-    const r = await aplicar(
+    const r = await trasladar(
       { db: ctx.db, actor: ctx.usuario.id, ahora: ctx.ahora },
-      [
-        {
-          codigo: args.codigo,
-          bodegaId: origen.id,
-          delta: -args.cantidad,
-          tipo: "traslado_salida",
-          motivo: args.motivo,
-        },
-        {
-          codigo: args.codigo,
-          bodegaId: destino.id,
-          delta: args.cantidad,
-          tipo: "traslado_entrada",
-          motivo: args.motivo,
-        },
-      ],
-      { tipo: "traslado", id: ulid(ctx.ahora) },
+      {
+        codigo: args.codigo,
+        desdeId: origen.id,
+        haciaId: destino.id,
+        cantidad: args.cantidad,
+        motivo: args.motivo,
+      },
     );
     if (!r.ok) throw new Error(r.mensaje);
 
