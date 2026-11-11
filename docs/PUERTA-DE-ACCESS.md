@@ -88,3 +88,86 @@ motivo «sin configurar». Falla **cerrado**.
 
 Y producción lleva `workers_dev: false` y `preview_urls: false`: no hay puerta
 trasera. La única entrada es el subdominio, por Access. Es a propósito.
+
+---
+
+# Instrucción para añadir correos a una puerta que ya existe
+
+La de arriba crea la puerta. Esta **añade gente a una que ya está creada**, que
+es lo que hace falta cada vez que entra alguien nuevo al negocio.
+
+Son dos cerrojos y hacen falta los dos:
+
+| | Qué hace | Dónde se toca |
+|---|---|---|
+| Política de Access | La puerta de la calle. Sin esto Cloudflare ni la deja llegar. | Zero Trust (esta instrucción) |
+| Tabla `usuarios` | Dice quién es y qué puede tocar. | La D1 del sistema |
+
+Si solo se hace uno de los dos, la persona ve un error sin explicación:
+con Access pero sin fila, pasa la puerta y el panel la rechaza; con fila pero
+sin Access, no llega ni a ver el panel.
+
+## El bloque para pegar
+
+```
+Necesito que añadas unos correos a una aplicación de Cloudflare Access que YA
+EXISTE. Ya tengo la sesión abierta en esta pestaña.
+
+ANTES QUE NADA, LAS REGLAS. Esta es la cuenta real de Cloudflare del negocio:
+
+- Solo vas a EDITAR la política de UNA aplicación que ya existe.
+- No crees aplicaciones nuevas. No borres ni archives ninguna.
+- No toques DNS, ni Workers, ni ajustes de la cuenta.
+- No quites ningún correo que ya esté en la lista. Solo añades.
+- Si algo no coincide con lo que te digo más abajo, PARA y cuéntamelo en vez
+  de improvisar.
+
+LO QUE HAY QUE HACER
+
+Ve a Zero Trust › Access › Applications y abre la aplicación que se llama
+«Panel Baby Caleb» (la del host panel.babycaleb.com).
+
+Entra a su pestaña de políticas (Policies) y abre la política que ya tiene.
+
+PRIMERO, COMPRUEBA ALGO IMPORTANTE
+
+Mira la regla de inclusión (Include). Tiene que decir «Emails» con una lista
+de correos.
+
+Si dice «Everyone» o «Todos los usuarios autenticados», ESO ESTÁ MAL y es un
+agujero: significa que cualquiera con un correo de Google puede entrar al
+panel del negocio. Cámbialo a «Emails» y deja SOLO los cuatro correos de
+abajo. Avísame de que lo encontraste así.
+
+LOS CUATRO CORREOS QUE TIENEN QUE QUEDAR EN LA LISTA
+
+  yulilkajudith@gmail.com
+  juanarrietabusiness@gmail.com
+  juandavidarrieta99@gmail.com
+  abrinay1997@gmail.com
+
+El selector es «Emails» (correos sueltos), NO «Email domain»: con el dominio
+entrarían todos los de @gmail.com, que es todo el mundo.
+
+Guarda la política.
+
+CUANDO TERMINES, CUÉNTAME
+
+  1. Cómo estaba la regla de inclusión ANTES (¿«Emails» o «Everyone»?).
+  2. La lista completa de correos que quedó, tal como se ve en pantalla.
+  3. Si la aplicación tiene más de una política, dime cuántas y cómo se
+     llaman — no toques las demás, solo dímelo.
+  4. Cualquier aviso o error que te haya salido al guardar.
+
+No me pegues tokens, claves ni secretos en el chat. Nada de lo que te pido
+aquí lo es, así que si algo te parece un secreto, no lo copies: descríbemelo.
+```
+
+## Después
+
+El correo nuevo entra en la siguiente petición. No hay que redesplegar nada:
+el Worker cruza el correo firmado con `usuarios` en cada petición, así que
+tanto dar de alta como dar de baja tienen efecto inmediato.
+
+Lo que SÍ hay que hacer es la otra mitad: la fila en `usuarios`. Sin ella,
+Access deja pasar a alguien que el panel no conoce.
