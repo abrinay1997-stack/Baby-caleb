@@ -249,6 +249,30 @@ for (const [nombreVista, tamano] of VISTAS) {
       revisadas += 1;
       for (const f of deLaHoja) todas.push({ vista: nombreVista, pantalla: "hoja-editar", ...f });
 
+      // La hoja de mover existencias es la otra que tiene campos, y además
+      // seis opciones que se tocan con el pulgar: el §7 pide 44 px en cada
+      // una. Se mide abierta, igual que la de editar.
+      await pagina.goto(`${BASE}/existencias`, { waitUntil: "networkidle" });
+      const filaStock = pagina
+        .getByRole("button", { name: /Set de 3 mantas de muselina/ })
+        .first();
+      if ((await filaStock.count()) > 0) {
+        await filaStock.click();
+        await pagina.waitForTimeout(300);
+        const deLaHojaStock = await pagina.evaluate(medir);
+        revisadas += 1;
+        for (const f of deLaHojaStock) {
+          todas.push({ vista: nombreVista, pantalla: "hoja-mover-stock", ...f });
+        }
+        if (!soloMedir) {
+          await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-mover-stock.png` });
+        }
+        await pagina.keyboard.press("Escape");
+      }
+      await pagina.goto(`${BASE}/catalogo`, { waitUntil: "networkidle" });
+      await fila.click();
+      await pagina.waitForTimeout(200);
+
       // La hoja tiene que ser un <dialog> ABIERTO CON showModal: solo así trae
       // la trampa de foco y el fondo inerte. Un <dialog open> puesto a mano se
       // ve igual y no hace nada de eso.

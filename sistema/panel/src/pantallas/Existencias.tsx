@@ -1,5 +1,8 @@
-import { useCarga } from "../api";
+import { useState } from "react";
+import { useOutletContext } from "react-router-dom";
+import { type Yo, useCarga } from "../api";
 import { Carga, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
+import { MoverExistencias } from "./MoverExistencias";
 import { UMBRAL_POCAS, disponibilidad } from "../../../src/dominio/existencias";
 
 interface Existencia {
@@ -27,7 +30,17 @@ interface Existencia {
  * cosa y el bot le dice otra a la clienta.
  */
 export function Existencias() {
-  const estado = useCarga<{ existencias: Existencia[] }>("/api/existencias");
+  const yo = useOutletContext<Yo>();
+  // Cambia al registrar un movimiento, y eso hace que `useCarga` vuelva a
+  // pedir la lista: sin esto la pantalla seguiría enseñando el número viejo.
+  const [recarga, setRecarga] = useState(0);
+  const estado = useCarga<{ existencias: Existencia[] }>("/api/existencias", [recarga]);
+  const [moviendo, setMoviendo] = useState<Existencia | null>(null);
+
+  // Mirar cuánto hay es una cosa y cambiarlo es otra: según la matriz de roles
+  // solo la dueña mueve inventario. Ofrecer el botón a quien no puede no es
+  // amable, es enseñarle a ignorar los errores. El servidor lo comprueba igual.
+  const puedeTocar = yo.permisos["precios_y_stock"] === "editar";
 
   return (
     <Carga estado={estado} que="las existencias">
@@ -35,7 +48,7 @@ export function Existencias() {
         d.existencias.length === 0 ? (
           <Vacio
             titulo="Todavía no hay existencias"
-            detalle="Se cargan en F3.1, con un movimiento de apertura por bodega. A partir de ahí, cada entrada y cada salida deja su movimiento y el número de aquí sale de ellos."
+            detalle="Aparecen aquí en cuanto el catálogo tenga productos. Entonces se toca cada uno y se registra la carga inicial: lo que ya había en la bodega el día que arrancó el sistema."
           />
         ) : (
           <div className="grid gap-4">
@@ -44,6 +57,9 @@ export function Existencias() {
                 «Libres» es lo físico menos lo que está comprometido en pedidos sin entregar. Es lo
                 que de verdad se puede vender. La columna de la derecha es lo único que ven la web
                 y el bot: nunca la cifra.
+                {puedeTocar
+                  ? " Toque un producto para registrar lo que entró, lo que salió o lo que contó."
+                  : " Su rol puede ver las existencias, pero no moverlas."}
               </p>
             </Tarjeta>
 
@@ -53,8 +69,24 @@ export function Existencias() {
               {d.existencias.map((e) => (
                 <Fila key={`${e.codigo}-${e.bodega_id}`}>
                   <Celda etiqueta="">
-                    {e.nombre}
-                    <span className="block text-[12px] font-normal text-muted">{e.codigo}</span>
+                    {puedeTocar ? (
+                      // El nombre ES el botón: en un teléfono, un lápiz de
+                      // 24 px al lado de cada fila se falla con el pulgar.
+                      <button
+                        type="button"
+                        onClick={() => setMoviendo(e)}
+                        className="m-0 block w-full cursor-pointer border-0 bg-transparent p-0 text-left font-bold text-fg underline decoration-line underline-offset-4 focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2"
+                      >
+                        {e.nombre}
+                        <span className="block text-[12px] font-normal text-muted">{e.codigo}</span>
+                        <span className="sr-only"> — tocar para registrar un movimiento</span>
+                      </button>
+                    ) : (
+                      <>
+                        {e.nombre}
+                        <span className="block text-[12px] font-normal text-muted">{e.codigo}</span>
+                      </>
+                    )}
                   </Celda>
                   <Celda etiqueta="Bodega">{e.bodega}</Celda>
                   <Celda etiqueta="Físico">{e.fisico}</Celda>
@@ -84,6 +116,12 @@ export function Existencias() {
                 </Fila>
               ))}
             </Rejilla>
+
+            <MoverExistencias
+              fila={moviendo}
+              alCerrar={() => setMoviendo(null)}
+              alGuardar={() => setRecarga((n) => n + 1)}
+            />
           </div>
         )
       }
