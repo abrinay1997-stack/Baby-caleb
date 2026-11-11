@@ -420,22 +420,34 @@ describe("el asiento de un pago", () => {
     }
   });
 
-  it("un método sin cuenta en el plan cobra igual y NO inventa un asiento", async () => {
-    // `nequi` está en la lista de métodos manuales y no tiene cuenta: no está
-    // en el plan, no está en `MetodoDePago` del contrato y no aparece en
-    // ningún documento del negocio. Parece heredado del proyecto del que sale
-    // este código.
+  it("un método que este código no conoce cobra igual y NO inventa un asiento", async () => {
+    // `pagos.metodo` es una columna de texto SIN CHECK, así que una fila con
+    // un método que este código no conoce puede existir: una importación, una
+    // fila escrita a mano, o —como pasó— un método que se deja de aceptar.
+    // Aquí estuvo `nequi` hasta que Juan confirmó que ya no es un método de
+    // pago en Panamá; se quitó de la lista y no quedaba ni un pago con él.
     //
-    // Lo que NO se hace: darle una cuenta a ojo. Lo que sí: aceptar el pago
-    // (el dinero entró de verdad) y dejar que la casilla «todo el dinero que
-    // entró tiene su asiento» del cierre lo cante hasta que alguien decida.
+    // Lo que se vigila es que leer esa fila no reviente y no se invente una
+    // cuenta: el dinero entró de verdad, así que el pago se confirma y el
+    // pedido avanza, pero sin asiento. La casilla «todo el dinero que entró
+    // tiene su asiento» del cierre lo canta hasta que alguien lo anote.
+    //
+    // Se inserta directo porque `registrarComprobante` rechaza un método que
+    // no es manual, que es correcto: por la puerta de entrada esto no pasa.
     const p = await unPedido();
-    const c = await comprobante(p.id, 2000, { metodo: "nequi" });
-    if (!c.ok) throw new Error(c.mensaje);
-    expect((await confirmarPago(ctx(), c.datos.pagoId)).ok).toBe(true);
+    const pagoId = `pago-raro-${Date.now()}-${n++}`;
+    await env.DB.prepare(
+      `INSERT INTO pagos (id,pedido_id,proveedor,metodo,tipo,estado,monto_cents,
+         intento_ref,creado_en,actualizado_en)
+       VALUES (?,?,'manual','cheque','abono','confirmando',2000,?,?,?)`,
+    )
+      .bind(pagoId, p.id, `raro-${pagoId}`, ahora(), ahora())
+      .run();
+
+    expect((await confirmarPago(ctx(), pagoId)).ok).toBe(true);
 
     expect((await estadoDe(p.id))?.pagado_cents).toBe(2000);
-    expect(await asientoDelPago(c.datos.pagoId)).toBeNull();
+    expect(await asientoDelPago(pagoId)).toBeNull();
   });
 
   it("un comprobante rechazado no deja asiento: no entró dinero", async () => {

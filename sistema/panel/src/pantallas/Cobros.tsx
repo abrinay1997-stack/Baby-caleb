@@ -58,7 +58,6 @@ const NOMBRE_METODO: Record<string, string> = {
   yappy: "Yappy",
   transferencia: "Transferencia",
   efectivo: "Efectivo",
-  nequi: "Nequi",
 };
 
 const NOMBRE_TIPO: Record<string, string> = {
@@ -77,14 +76,27 @@ const NOMBRE_ESTADO: Record<string, string> = {
 };
 
 /**
- * Los métodos que todavía no tienen cuenta en el plan de cuentas.
+ * ¿Este cobro va a quedar en los libros?
  *
  * Se avisa EN LA FICHA, antes de confirmar, y no después: el pago se va a
- * cobrar igual —el dinero entró— pero no va a quedar asiento, y eso es algo
- * que quien confirma tiene derecho a saber antes de pulsar. Avisarlo después
+ * cobrar igual —el dinero entró— pero puede no quedar asiento, y eso es algo
+ * que quien confirma tiene derecho a saber ANTES de pulsar. Avisarlo después
  * sería contarle un problema que ya no puede evitar.
+ *
+ * El caso es el de un pedido YA ENTREGADO. Antes de entregar, los tres
+ * métodos entran como anticipo y los tres tienen cuenta. Después de entregar
+ * lo que se cobra es el saldo, y de eso los dieciocho asientos del documento
+ * solo contemplan Yappy —que es como pagan las clientas que se quedaron
+ * debiendo—. Un efectivo o una transferencia que llegan después de la entrega
+ * no tienen asiento, y el diecinueve no se inventa aquí: lo decide la dueña
+ * con su contadora.
+ *
+ * Aquí vivía además una lista de métodos sin cuenta, que tenía dentro a
+ * `nequi`. Juan confirmó que Nequi ya no es un método de pago en Panamá, así
+ * que se quitó del sistema entero en vez de buscarle cuenta.
  */
-const SIN_CUENTA = new Set(["nequi"]);
+const sinAsiento = (c: Comprobante): boolean =>
+  c.estadoPedido === "entregado" && c.metodo !== "yappy";
 
 /** Cuántos días lleva esperando. Un comprobante sin mirar envejece. */
 function esperando(creadoEn: number): { texto: string; viejo: boolean } {
@@ -112,7 +124,7 @@ function Ficha({
 
   const espera = esperando(c.creadoEn);
   const quedaDespues = c.totalCents - c.pagadoCents - c.montoCents;
-  const sinCuenta = SIN_CUENTA.has(c.metodo);
+  const noQuedaAsiento = sinAsiento(c);
 
   async function mandar(ruta: string, cuerpo: Record<string, unknown>) {
     setTrabajando(true);
@@ -184,12 +196,13 @@ function Ficha({
         </p>
       ) : null}
 
-      {sinCuenta ? (
+      {noQuedaAsiento ? (
         <p className="m-0 mt-2 rounded-[10px] border border-line bg-bg px-3 py-2 text-[13px]">
-          <strong>{NOMBRE_METODO[c.metodo] ?? c.metodo}</strong> todavía no tiene cuenta en
-          la contabilidad. El cobro se registra y el pedido avanza, pero no va a quedar
-          asiento: aparecerá en «todo el dinero que entró tiene su asiento» al cerrar el
-          mes, para anotar a mano a dónde fue.
+          Este pedido <strong>ya se entregó</strong>, y un cobro por{" "}
+          {NOMBRE_METODO[c.metodo] ?? c.metodo} después de la entrega todavía no tiene
+          asiento definido (de este caso solo está decidido Yappy). El cobro se registra y
+          el pedido avanza, pero va a aparecer en «todo el dinero que entró tiene su
+          asiento» al cerrar el mes, para anotar a mano a dónde fue.
         </p>
       ) : null}
 

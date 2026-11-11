@@ -35,7 +35,7 @@ export interface ContextoPago {
 }
 
 /** Los métodos que se cobran a mano. Los de pasarela llegan en F4b. */
-export const METODOS_MANUALES = ["yappy", "transferencia", "efectivo", "nequi"] as const;
+export const METODOS_MANUALES = ["yappy", "transferencia", "efectivo"] as const;
 export type MetodoManual = (typeof METODOS_MANUALES)[number];
 
 export const esMetodoManual = (v: string): v is MetodoManual =>
@@ -48,20 +48,21 @@ export const esMetodoManual = (v: string): v is MetodoManual =>
  * Baby Caleb y el plan de cuentas, y el dominio no tiene que saber que esta
  * tienda cobra por Yappy.
  *
- * `nequi` en `null`, y conviene decir por qué en vez de dejarlo pasar: no
- * tiene cuenta en el plan, no está en `MetodoDePago` del contrato, y no
- * aparece en ningún documento del negocio. Nequi es colombiano y Baby Caleb
- * cobra en Panamá, así que lo más probable es que venga heredado del proyecto
- * del que sale este código. Quitarlo de la lista sería dejar de aceptar un
- * método sin preguntarle a la dueña; darle una cuenta a ojo es peor. Así que
- * se acepta el pago y no se escribe asiento, y la casilla «pagos aprobados
- * sin asiento» del cierre lo canta hasta que alguien decida.
+ * Aquí estuvo `nequi`, heredado del proyecto del que sale este código, sin
+ * cuenta en el plan y sin aparecer en ningún documento del negocio. Juan lo
+ * confirmó: **Nequi ya no es un método de pago en Panamá**, así que no se le
+ * busca cuenta — se quita. No quedaba ni un pago con ese método en ninguna de
+ * las dos bases, así que no hay historia que arrastrar.
+ *
+ * Los tres que quedan tienen cuenta, así que este mapa no tiene huecos. El
+ * `null` del lado de quien llama no desaparece por eso: `pagos.metodo` es una
+ * columna de texto sin CHECK, y una fila con un método que este código no
+ * conoce tiene que poder leerse sin reventar.
  */
-const CUENTA_DEL_METODO: Record<MetodoManual, string | null> = {
+const CUENTA_DEL_METODO: Record<MetodoManual, string> = {
   yappy: "1101",
   transferencia: "1102",
   efectivo: "1103",
-  nequi: null,
 };
 
 export interface ComprobanteNuevo {

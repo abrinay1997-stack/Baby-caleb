@@ -263,10 +263,10 @@ const RESPUESTAS = {
    * pantalla tiene que saber pintar distinto.
    *
    * Uno viejo (que pide atención), uno sin captura (que avisa de que no se
-   * puede comprobar mirando), uno por un método sin cuenta en la contabilidad
-   * (que avisa de que no va a quedar asiento) y uno que se pasaría del total
-   * (que es la señal de que la captura puede ser de otro pedido). Con un solo
-   * caso bonito, los avisos no se ven nunca y nadie los revisa.
+   * puede comprobar mirando), uno de un pedido YA ENTREGADO por un método que
+   * todavía no tiene asiento para ese caso, y uno que se pasaría del total
+   * (la señal de que la captura puede ser de otro pedido). Con un solo caso
+   * bonito, los avisos no se ven nunca y nadie los revisa.
    */
   "/api/cobros": ok({
     hayMas: false,
@@ -305,13 +305,15 @@ const RESPUESTAS = {
         numero: "BC-000399",
         cliente: null,
         montoCents: 2000,
-        metodo: "nequi",
-        tipo: "abono",
+        metodo: "transferencia",
+        tipo: "saldo",
         comprobanteR2: "comprobantes/sin-nombre.jpg",
         creadoEn: Date.now() - 20 * 60 * 1000,
         totalCents: 9300,
         pagadoCents: 1000,
-        estadoPedido: "por_abonar",
+        // Entregado: por eso este saldo no va a dejar asiento, y la ficha lo
+        // avisa antes de confirmar.
+        estadoPedido: "entregado",
       },
       {
         pagoId: "01JBCY0000000000000000004",
