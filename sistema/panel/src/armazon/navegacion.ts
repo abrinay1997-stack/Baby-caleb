@@ -67,6 +67,12 @@ export const SECCIONES: Seccion[] = [
     titulo: "Entregas",
     destinos: [
       {
+        ruta: "/entregas",
+        nombre: "Entregas del día",
+        descripcion: "Qué sale hoy, quién lo lleva y qué se cobró",
+        permiso: "pedidos",
+      },
+      {
         ruta: "/zonas",
         nombre: "Zonas de envío",
         descripcion: "A dónde se entrega y cuánto cuesta",

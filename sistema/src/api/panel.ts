@@ -24,6 +24,20 @@ import {
   explicar,
 } from "../db/catalogo-admin";
 import { guardar as guardarAjuste, historial, leerVigentes } from "../db/ajustes";
+import {
+  armarRuta,
+  cancelarRuta,
+  cerrarRuta,
+  crearEnvio,
+  despacharRuta,
+  devolverParada,
+  entregasDelDia,
+  fechaDePanama,
+  guardarPrueba,
+  marcarEntregada,
+  marcarFallida,
+  sugerirParaEnvio,
+} from "../db/entregas";
 
 /**
  * La API del panel.
@@ -208,6 +222,27 @@ function codigoHttp(codigo: string): 400 | 403 | 404 | 409 | 422 | 500 {
  * escrito en `precios_historial` cuando alguien pregunte quién cambió un
  * precio, y «panel» no contesta esa pregunta.
  */
+
+/** El contexto que piden las funciones de entregas. */
+function contextoEntrega(c: Context<Entorno>) {
+  return { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo };
+}
+
+/**
+ * Un punto del mapa que llegue en el cuerpo, o nada.
+ *
+ * Media coordenada no es un punto: el esquema tiene un CHECK que lo rechaza,
+ * y mandarle medio par sería hacerle reventar el batch por algo que se puede
+ * mirar aquí.
+ */
+function puntoDe(v: unknown): { lat: number; lng: number } | undefined {
+  if (v === null || typeof v !== "object") return undefined;
+  const { lat, lng } = v as { lat?: unknown; lng?: unknown };
+  if (typeof lat !== "number" || typeof lng !== "number") return undefined;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+  return { lat, lng };
+}
+
 function contextoCatalogo(c: Context<Entorno>) {
   return { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo };
 }
@@ -569,6 +604,238 @@ function registrarRutas(panel: Hono<Entorno>): void {
     });
 
     return c.json(ok({ zonas }));
+  });
+
+
+  // ---------------------------------------------------------------------------
+  // Entregas (F4.5)
+  //
+  // TODAS entran por el panel, que está detrás de Cloudflare Access. El
+  // motorizado NO tiene cuenta de Access y por lo tanto hoy NO puede usar
+  // ninguna de estas: las toca quien despacha, desde el panel. La puerta del
+  // motorizado —celular + PIN, con su propia sesión— es una superficie pública
+  // nueva y se decide despierto, no de madrugada. Las piezas ya existen
+  // (`dominio/motorizado.ts`, `seguridad/pin.ts`, `seguridad/sesion.ts`).
+  // ---------------------------------------------------------------------------
+
+  /** La ruta del día: lo que falta por entregar, lo que ya salió y lo cobrado. */
+  panel.get("/entregas", exige("pedidos"), async (c) => {
+    const ahora = Date.now();
+    const pedida = texto(c.req.query("fecha"));
+    const r = await entregasDelDia(c.env.DB, pedida ?? fechaDePanama(ahora), ahora);
+    if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+
+    // La pantalla necesita a quién puede asignarle la ruta. Va aquí y no en
+    // `entregasDelDia` porque es de la pantalla, no del día: quien consulte el
+    // día desde otro sitio no necesita la lista de motorizados.
+    const { results: motorizados } = await c.env.DB.prepare(
+      "SELECT id, nombre, estado FROM motorizados WHERE estado <> 'inactivo' ORDER BY nombre",
+    ).all<{ id: string; nombre: string; estado: string }>();
+
+    return c.json(ok({ ...r.datos, motorizados }));
+  });
+
+  /** Preparar un pedido agendado para salir. */
+  panel.post("/entregas/pedidos/:pedidoId", exigeEditar("pedidos"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const programadoPara = texto(b["programadoPara"]);
+    const ventana = texto(b["ventana"]);
+    const r = await crearEnvio(contextoEntrega(c), {
+      pedidoId: c.req.param("pedidoId"),
+      ...(programadoPara === undefined ? {} : { programadoPara }),
+      ...(ventana === undefined ? {} : { ventana }),
+    });
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /** A quién le queda mejor esta entrega. */
+  panel.get("/entregas/:envioId/candidatos", exige("pedidos"), async (c) => {
+    const r = await sugerirParaEnvio(c.env.DB, c.req.param("envioId"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Armar la ruta del día de un motorizado. */
+  panel.post("/entregas/rutas", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const ids = b["envioIds"];
+    if (!Array.isArray(ids) || !ids.every((x) => typeof x === "string")) {
+      return c.json(fallo("entrada_invalida", "hay que decir qué entregas lleva la ruta"), 400);
+    }
+    const fecha = texto(b["fecha"]);
+    const origen = puntoDe(b["origen"]);
+
+    const r = await armarRuta(contextoEntrega(c), {
+      motorizadoId: texto(b["motorizadoId"]) ?? "",
+      bodegaId: texto(b["bodegaId"]) ?? "",
+      envioIds: ids as string[],
+      ...(fecha === undefined ? {} : { fecha }),
+      ...(origen === undefined ? {} : { origen }),
+    });
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /** La ruta sale a la calle. */
+  panel.post("/entregas/rutas/:rutaId/despachar", exigeEditar("pedidos"), async (c) => {
+    const r = await despacharRuta(contextoEntrega(c), c.req.param("rutaId"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** La ruta vuelve: se cierra y se cuenta lo cobrado. */
+  panel.post("/entregas/rutas/:rutaId/cerrar", exigeEditar("pedidos"), async (c) => {
+    const r = await cerrarRuta(contextoEntrega(c), c.req.param("rutaId"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Deshacer una ruta que todavía no salió. */
+  panel.post("/entregas/rutas/:rutaId/cancelar", exigeEditar("pedidos"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await cancelarRuta(
+      contextoEntrega(c),
+      c.req.param("rutaId"),
+      texto(b["motivo"]) ?? "",
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Entregada.
+   *
+   * Dos cosas que esta ruta decide y no delega:
+   *
+   * **1. El permiso depende del PEDIDO, no solo de la ruta.** Marcar entregado
+   * mueve dinero cuando queda saldo por cobrar en la puerta, y eso ya no es
+   * «mover un pedido», es cobrar. Un middleware no puede saberlo porque la
+   * respuesta depende de la fila. Así que la puerta es `pedidos` y aquí dentro
+   * se mira el saldo: si lo hay, hace falta además poder editar `cobros`. Con
+   * la matriz de hoy eso significa que la asistente puede cerrar una entrega ya
+   * pagada y no una con saldo.
+   *
+   * **2. `motorizadoId` NO se acepta del cuerpo.** Ese parámetro existe para
+   * que quien reparte solo pueda cerrar lo suyo; si llegara del cliente,
+   * cualquiera cerraría la parada de cualquiera. Desde el panel no se manda, y
+   * el día que exista la puerta del motorizado saldrá del sujeto de su sesión.
+   */
+  panel.post("/entregas/:envioId/entregada", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const envioId = c.req.param("envioId");
+
+    const saldo = await c.env.DB.prepare(
+      `SELECT (p.total_cents - p.pagado_cents) AS saldo
+         FROM envios e JOIN pedidos p ON p.id = e.pedido_id
+        WHERE e.id = ?`,
+    )
+      .bind(envioId)
+      .first<{ saldo: number }>();
+
+    if ((saldo?.saldo ?? 0) > 0 && !puedeEditar(c.get("usuario").rol, "cobros")) {
+      return c.json(
+        fallo(
+          "no_autorizado",
+          "esta entrega lleva saldo por cobrar y usted no puede registrar cobros",
+        ),
+        403,
+      );
+    }
+
+    const metodoCobro = texto(b["metodoCobro"]);
+    const montoCents = entero(b["montoCents"]);
+    const pruebaR2 = texto(b["pruebaR2"]);
+    const nota = texto(b["nota"]);
+    const punto = puntoDe(b["punto"]);
+
+    const r = await marcarEntregada(contextoEntrega(c), {
+      idempotencia: texto(b["idempotencia"]) ?? "",
+      envioId,
+      ...(metodoCobro === undefined ? {} : { metodoCobro: metodoCobro as never }),
+      ...(montoCents === undefined ? {} : { montoCents }),
+      ...(pruebaR2 === undefined ? {} : { pruebaR2 }),
+      ...(nota === undefined ? {} : { nota }),
+      ...(punto === undefined ? {} : { punto }),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** No se pudo entregar. */
+  panel.post("/entregas/:envioId/fallida", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const punto = puntoDe(b["punto"]);
+    const r = await marcarFallida(contextoEntrega(c), {
+      idempotencia: texto(b["idempotencia"]) ?? "",
+      envioId: c.req.param("envioId"),
+      motivo: texto(b["motivo"]) ?? "",
+      ...(punto === undefined ? {} : { punto }),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Vuelve a la bodega: se libera lo que se había apartado. */
+  panel.post("/entregas/:envioId/devolucion", exigeEditar("pedidos"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await devolverParada(
+      contextoEntrega(c),
+      c.req.param("envioId"),
+      texto(b["motivo"]) ?? "",
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** La foto de la entrega. Los bytes van crudos, como la foto del catálogo. */
+  panel.put("/entregas/:envioId/prueba", exigeEditar("pedidos"), async (c) => {
+    const datos = await c.req.arrayBuffer();
+    const r = await guardarPrueba(
+      { ...contextoEntrega(c), r2: c.env.PRIVADO },
+      c.req.param("envioId"),
+      datos,
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * VER la foto de una entrega.
+   *
+   * No sale por el camino público de `leerPublico` y no es un descuido: una
+   * foto de entrega es la puerta de la casa de una clienta, entra marcada como
+   * sensible, y ese camino se niega a servirla — correctamente. Para verla hace
+   * falta pasar por aquí, que está detrás de Access.
+   *
+   * La clave de R2 no sale nunca hacia la pantalla: `entregasDelDia` solo dice
+   * si hay foto o no. Se pide por el id del envío y es esta ruta la que mira
+   * qué clave le toca.
+   */
+  panel.get("/entregas/:envioId/prueba", exige("pedidos"), async (c) => {
+    const fila = await c.env.DB.prepare("SELECT foto_r2 FROM envios WHERE id = ?")
+      .bind(c.req.param("envioId"))
+      .first<{ foto_r2: string | null }>();
+    if (fila?.foto_r2 == null) {
+      return c.json(fallo("no_encontrado", "esa entrega no tiene foto"), 404);
+    }
+
+    const a = await c.env.PRIVADO.get(fila.foto_r2);
+    if (a === null) {
+      // La fila dice que hay foto y en R2 no está. Es una avería, no un 404:
+      // confundirlos manda al siguiente que lo mire a buscar la foto en vez de
+      // mirar el almacenamiento.
+      return c.json(fallo("interno", "la foto está registrada pero no se pudo leer"), 500);
+    }
+
+    const mime = await c.env.DB.prepare("SELECT mime FROM archivos WHERE r2_key = ?")
+      .bind(fila.foto_r2)
+      .first<{ mime: string }>();
+
+    return new Response(a.body, {
+      headers: {
+        "content-type": mime?.mime ?? "application/octet-stream",
+        // Que el navegador no adivine el tipo, y que esto NO se guarde en
+        // ninguna caché compartida: es la casa de una clienta.
+        "x-content-type-options": "nosniff",
+        "cache-control": "private, no-store",
+        "content-disposition": "inline",
+      },
+    });
   });
 
   panel.get("/usuarios", exige("ajustes"), async (c) => {

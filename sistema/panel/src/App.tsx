@@ -6,6 +6,7 @@ import { Frontera } from "./Frontera";
 import { Ajustes } from "./pantallas/Ajustes";
 import { Bodegas } from "./pantallas/Bodegas";
 import { Catalogo } from "./pantallas/Catalogo";
+import { Entregas } from "./pantallas/Entregas";
 import { Existencias } from "./pantallas/Existencias";
 import { Resumen } from "./pantallas/Resumen";
 import { Usuarios } from "./pantallas/Usuarios";
@@ -60,6 +61,7 @@ export function App() {
             <Route index element={<Resumen />} />
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="existencias" element={<Existencias />} />
+            <Route path="entregas" element={<Entregas />} />
             <Route path="bodegas" element={<Bodegas />} />
             <Route path="zonas" element={<Zonas />} />
             <Route path="ajustes" element={<Ajustes />} />

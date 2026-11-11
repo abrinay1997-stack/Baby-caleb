@@ -23,6 +23,23 @@ async function pedir(app: ReturnType<typeof crearPanel>, ruta: string) {
   return { estado: r.status, cuerpo: (await r.json()) as Record<string, unknown> };
 }
 
+/** Un POST con cuerpo JSON. */
+async function postJson(
+  app: ReturnType<typeof crearPanel>,
+  ruta: string,
+  cuerpo: Record<string, unknown>,
+) {
+  const r = await app.fetch(
+    new Request(`https://panel.babycaleb.com${ruta}`, {
+      method: "POST",
+      body: JSON.stringify(cuerpo),
+      headers: { "content-type": "application/json" },
+    }),
+    real as Env,
+  );
+  return { estado: r.status, cuerpo: (await r.json()) as Record<string, unknown> };
+}
+
 /** Cambiar un ajuste, como hace la pantalla. */
 async function cambiarAjuste(
   app: ReturnType<typeof crearPanel>,
