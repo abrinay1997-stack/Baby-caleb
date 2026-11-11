@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { dinero, fecha, useCarga } from "../api";
+import { useOutletContext } from "react-router-dom";
+import { type Yo, dinero, fecha, useCarga } from "../api";
 import { Carga, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
+import { AccionesPedido, type PedidoParaActuar } from "./AccionesPedido";
+import { NuevoPedido } from "./NuevoPedido";
 
 /**
  * Los pedidos.
@@ -107,12 +110,35 @@ export function Pedidos() {
   if (busca.trim() !== "") consulta.set("busca", busca.trim());
   const cola = consulta.toString();
 
+  const yo = useOutletContext<Yo>();
+  // Sube al tomar o cambiar un pedido, y eso hace que `useCarga` vuelva a
+  // pedir la lista: sin esto el pedido recién tomado no aparecería hasta
+  // recargar la página a mano.
+  const [recarga, setRecarga] = useState(0);
   const datos = useCarga<{ pedidos: Pedido[]; hayMas: boolean }>(
     `/api/pedidos${cola === "" ? "" : `?${cola}`}`,
+    [recarga],
   );
+  const [tomando, setTomando] = useState(false);
+  const [actuando, setActuando] = useState<PedidoParaActuar | null>(null);
+
+  // Mirar los pedidos es una cosa y moverlos es otra: la contadora los ve y no
+  // los toca. El servidor lo comprueba igual; esto solo evita ofrecer un botón
+  // que iba a fallar.
+  const puedeTocar = yo.permisos["pedidos"] === "editar";
 
   return (
     <div className="grid gap-4">
+      {puedeTocar ? (
+        <button
+          type="button"
+          onClick={() => setTomando(true)}
+          className="tactil w-full rounded-[14px] bg-accent px-4 py-3 font-bold text-accent-fg focus-visible:outline-accent-edge focus-visible:outline-2 md:w-auto md:justify-self-start"
+        >
+          + Tomar un pedido
+        </button>
+      ) : null}
+
       <Tarjeta>
         <label className="block">
           <span className="mb-1 block text-[13px] font-bold">Buscar</span>
@@ -177,7 +203,28 @@ export function Pedidos() {
                   return (
                     <Fila key={p.id}>
                       <Celda etiqueta="" papel="titulo">
-                        {p.numero}
+                        {puedeTocar ? (
+                          // El número ES el botón: en un teléfono, un menú de
+                          // tres puntos al lado de cada fila se falla con el
+                          // pulgar.
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActuando({
+                                id: p.id,
+                                numero: p.numero,
+                                estado: p.estado,
+                                cliente: p.cliente,
+                              })
+                            }
+                            className="m-0 block w-full cursor-pointer border-0 bg-transparent p-0 text-left font-bold text-fg underline decoration-line underline-offset-4 focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2"
+                          >
+                            {p.numero}
+                            <span className="sr-only"> — tocar para agendar o cancelar</span>
+                          </button>
+                        ) : (
+                          p.numero
+                        )}
                       </Celda>
                       <Celda etiqueta="Clienta" papel="meta">
                         {p.cliente ?? "Sin nombre"}
@@ -224,6 +271,17 @@ export function Pedidos() {
           )
         }
       </Carga>
+      <NuevoPedido
+        abierta={tomando}
+        alCerrar={() => setTomando(false)}
+        alCrear={() => setRecarga((n) => n + 1)}
+      />
+
+      <AccionesPedido
+        pedido={actuando}
+        alCerrar={() => setActuando(null)}
+        alCambiar={() => setRecarga((n) => n + 1)}
+      />
     </div>
   );
 }

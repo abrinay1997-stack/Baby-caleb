@@ -269,6 +269,40 @@ for (const [nombreVista, tamano] of VISTAS) {
         }
         await pagina.keyboard.press("Escape");
       }
+      // Tomar un pedido es la hoja más larga del panel: la clienta, el
+      // catálogo entero con una casilla por producto, la zona y las notas. Si
+      // alguna se mide a ojo, es la que hace zoom al escribir en un teléfono.
+      await pagina.goto(`${BASE}/pedidos`, { waitUntil: "networkidle" });
+      const tomar = pagina.getByRole("button", { name: /Tomar un pedido/ }).first();
+      if ((await tomar.count()) > 0) {
+        await tomar.click();
+        await pagina.waitForTimeout(300);
+        const deTomar = await pagina.evaluate(medir);
+        revisadas += 1;
+        for (const f of deTomar) todas.push({ vista: nombreVista, pantalla: "hoja-tomar-pedido", ...f });
+        if (!soloMedir) {
+          await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-tomar-pedido.png` });
+        }
+        await pagina.keyboard.press("Escape");
+        await pagina.waitForTimeout(150);
+      }
+
+      // Y la de agendar/cancelar, que es donde se toca un pedido de verdad.
+      const unPedido = pagina.getByRole("button", { name: /BC-1041/ }).first();
+      if ((await unPedido.count()) > 0) {
+        await unPedido.click();
+        await pagina.waitForTimeout(300);
+        const deAcciones = await pagina.evaluate(medir);
+        revisadas += 1;
+        for (const f of deAcciones) {
+          todas.push({ vista: nombreVista, pantalla: "hoja-acciones-pedido", ...f });
+        }
+        if (!soloMedir) {
+          await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-acciones-pedido.png` });
+        }
+        await pagina.keyboard.press("Escape");
+      }
+
       await pagina.goto(`${BASE}/catalogo`, { waitUntil: "networkidle" });
       await fila.click();
       await pagina.waitForTimeout(200);

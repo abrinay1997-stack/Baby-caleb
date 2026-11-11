@@ -58,6 +58,10 @@ import {
   quitarCredencial,
 } from "../db/pasarelas";
 import { registrar as registrarMovimientos } from "../db/inventario";
+import {
+  buscar as buscarClientas,
+  encontrarOCrear as encontrarOCrearClienta,
+} from "../db/clientes";
 import { crearPedido } from "../db/pedidos";
 import { agendar as agendarPedido, cancelar as cancelarPedido } from "../db/transiciones";
 import {
@@ -963,6 +967,44 @@ function registrarRutas(panel: Hono<Entorno>): void {
       ...(limite === undefined ? {} : { limite }),
     });
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Buscar una clienta, por nombre o por celular.
+   *
+   * Es un selector para tomar un pedido, no un listado de clientas: devuelve
+   * pocas y solo cuando se escribe algo. Un listado completo de personas con
+   * su teléfono es justo lo que no debe salir de un panel sin que alguien lo
+   * haya pedido.
+   */
+  panel.get("/clientes", exige("pedidos"), async (c) => {
+    const r = await buscarClientas(
+      c.env.DB,
+      c.req.query("buscar") ?? "",
+      enteroDeTexto(c.req.query("limite")) ?? 20,
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Dar de alta una clienta — o encontrar la que ya estaba.
+   *
+   * No se llama «crear» a propósito. Si el celular ya es de alguien, devuelve a
+   * ESA persona: es la defensa contra el problema que tiene todo negocio que
+   * lleva años atendiendo por WhatsApp, la misma señora con tres fichas y el
+   * historial de compras repartido entre las tres.
+   *
+   * La respuesta dice `nuevo` para que la pantalla pueda avisar «ya la tenía»
+   * en vez de dejar a quien atiende con la duda.
+   */
+  panel.post("/clientes", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const r = await encontrarOCrearClienta(contextoCatalogo(c), {
+      nombre: texto(b["nombre"]) ?? "",
+      celular: texto(b["celular"]) ?? "",
+    });
+    return c.json(r, r.ok ? (r.datos.nuevo ? 201 : 200) : codigoHttp(r.codigo));
   });
 
   /**
