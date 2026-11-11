@@ -194,6 +194,54 @@ for (const [nombreVista, tamano] of VISTAS) {
     }
   }
 
+  // La hoja en ESCRITORIO.
+  //
+  // Todo el bloque de hojas de abajo vive dentro del «si es teléfono», que se
+  // escribió para el cajón y se llevó las hojas por delante. Resultado: no
+  // había ni una captura de una hoja en computadora, y la hoja llevaba desde
+  // el primer día pegada a la esquina de arriba a la izquierda — en cada
+  // pedido, cada ajuste y cada movimiento de inventario. Nadie lo vio porque
+  // nadie lo miraba.
+  //
+  // Se mide el centrado, no solo el §7: una captura enseña que la hoja sale,
+  // y lo que estaba mal era DÓNDE salía.
+  if (nombreVista === "escritorio") {
+    await pagina.goto(`${BASE}/pedidos`, { waitUntil: "networkidle" });
+    const abrirEnEscritorio = pagina.getByRole("button", { name: /Tomar un pedido/ }).first();
+    if ((await abrirEnEscritorio.count()) > 0) {
+      await abrirEnEscritorio.click();
+      await pagina.waitForTimeout(300);
+
+      const deHoja = await pagina.evaluate(medir);
+      revisadas += 1;
+      for (const f of deHoja) {
+        todas.push({ vista: nombreVista, pantalla: "hoja-tomar-pedido", ...f });
+      }
+
+      const desvio = await pagina.evaluate(() => {
+        const d = document.querySelector("dialog.hoja[open]");
+        if (d === null) return null;
+        const r = d.getBoundingClientRect();
+        // Lo que sobra a cada lado. Si la hoja está centrada, es lo mismo.
+        return Math.abs(r.left - (window.innerWidth - r.right));
+      });
+      if (desvio !== null && desvio > 2) {
+        todas.push({
+          vista: nombreVista,
+          pantalla: "hoja-tomar-pedido",
+          regla: "hoja centrada en escritorio",
+          detalle: `sobran ${Math.round(desvio)}px más de un lado que del otro`,
+        });
+      }
+
+      if (!soloMedir) {
+        await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-tomar-pedido.png` });
+      }
+      await pagina.keyboard.press("Escape");
+      await pagina.waitForTimeout(150);
+    }
+  }
+
   // El cajón, abierto: es donde viven el foco atrapado y los títulos de
   // sección, y cerrado no se mide nada de eso.
   if (nombreVista === "telefono") {
@@ -283,6 +331,26 @@ for (const [nombreVista, tamano] of VISTAS) {
         if (!soloMedir) {
           await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-tomar-pedido.png` });
         }
+
+        // Con el buscador escrito. Es un estado DISTINTO y es el que más
+        // riesgo tiene: las filas de resultado solo existen mientras hay
+        // consulta, así que medir la hoja vacía no las mide nunca.
+        const buscador = pagina.getByPlaceholder("Nombre, talla o código");
+        if ((await buscador.count()) > 0) {
+          await buscador.fill("ma"); // «manga» y «mantas» en el catálogo de muestra: filas de verdad
+          await pagina.waitForTimeout(250);
+          const deBuscar = await pagina.evaluate(medir);
+          revisadas += 1;
+          for (const f of deBuscar) {
+            todas.push({ vista: nombreVista, pantalla: "hoja-tomar-pedido-buscando", ...f });
+          }
+          if (!soloMedir) {
+            await pagina.screenshot({
+              path: `${SALIDA}/${nombreVista}-hoja-tomar-pedido-buscando.png`,
+            });
+          }
+        }
+
         await pagina.keyboard.press("Escape");
         await pagina.waitForTimeout(150);
       }

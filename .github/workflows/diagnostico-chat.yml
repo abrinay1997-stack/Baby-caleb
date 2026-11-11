@@ -1,0 +1,106 @@
+# ¿Por qué el chat de la web contesta sin decir nada?
+#
+# El Worker ya anota el motivo cuando el modelo contesta 200 y sin texto: la
+# línea `chat_sin_texto` lleva las claves que llegaron, el modelo que dice ser,
+# el motivo de parada y los tipos de bloque. Pero esa línea vive en el registro
+# en vivo de Cloudflare, y el dueño de este sistema NO usa la terminal.
+#
+# Este botón hace las tres cosas por él: se engancha al registro, le manda un
+# mensaje al chat, y deja la línea impresa en el resumen de la ejecución.
+#
+# Lo que se imprime son FORMAS, nunca contenido: nombres de claves, el motivo
+# de parada y los tipos de bloque. Ni el prompt, ni la llave, ni lo que escriba
+# una clienta. Eso es a propósito y no se debe relajar: el resumen de una
+# ejecución de Actions lo puede leer cualquiera con acceso al repositorio.
+name: Diagnóstico · por qué el chat no contesta
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirar:
+    name: Escuchar el Worker y preguntarle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Escuchar, preguntar y recoger
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -u
+
+          # El orden NO es negociable: primero se engancha el oído y solo
+          # después se habla. Al revés, el mensaje viaja y vuelve antes de que
+          # el registro esté escuchando, y la ejecución sale limpia y vacía
+          # — que es peor que fallar, porque parece que no hubo problema.
+          npx wrangler tail babycaleb-web --format json > registro.jsonl 2> tail-error.txt &
+          OIDO=$!
+
+          echo "Esperando a que el registro se enganche..."
+          sleep 20
+
+          if ! kill -0 "$OIDO" 2>/dev/null; then
+            echo "::error::El registro no se pudo enganchar. Detalle:"
+            cat tail-error.txt
+            exit 1
+          fi
+
+          echo "Mandando un mensaje al chat..."
+          curl -sS -o respuesta.json -w "estado HTTP: %{http_code}\n" \
+            --max-time 60 \
+            -X POST https://babycaleb.com/api/chat \
+            -H 'content-type: application/json' \
+            -d '{"sesion":"diagnostico-actions","messages":[{"role":"user","content":"hola"}]}' || true
+
+          echo "Lo que vio la clienta:"
+          cat respuesta.json || true
+          echo
+
+          echo "Esperando a que llegue el registro..."
+          sleep 25
+          kill "$OIDO" 2>/dev/null || true
+          wait "$OIDO" 2>/dev/null || true
+
+      - name: La respuesta
+        if: always()
+        run: |
+          set -u
+          {
+            echo "## Por qué el chat no contesta"
+            echo
+            echo "### Lo que vio la clienta"
+            echo '```json'
+            cat respuesta.json 2>/dev/null || echo "(no hubo respuesta)"
+            echo '```'
+            echo
+            echo "### Lo que anotó el Worker"
+            echo '```'
+            # `.logs[]?.message[]?` son los `console.warn` del Worker. Se filtra
+            # a los tres eventos del chat para no volcar el tráfico entero.
+            jq -r '.logs[]?.message[]? | tostring' registro.jsonl 2>/dev/null \
+              | grep -E 'chat_sin_texto|chat_modelo_fallo|chat_error' \
+              || echo "(no apareció ninguna línea del chat — mira el paso anterior)"
+            echo '```'
+            echo
+            echo "### Cómo se lee"
+            echo '- **`motivo_parada: "max_tokens"`** → el presupuesto de salida se gasta antes de escribir. Se sube el número.'
+            echo '- **`claves` sin `content`** → el modelo contesta con otra forma. Se cambia el lector.'
+            echo '- **`bloques` vacío con otro motivo** → el modelo se niega. Se ablandan las reglas duras.'
+            echo '- **`chat_modelo_fallo`** → ni siquiera entró: mira su `estado`.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "===== resumen en pantalla ====="
+          jq -r '.logs[]?.message[]? | tostring' registro.jsonl 2>/dev/null \
+            | grep -E 'chat_sin_texto|chat_modelo_fallo|chat_error' \
+            || echo "(ninguna línea del chat)"

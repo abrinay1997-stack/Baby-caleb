@@ -400,5 +400,20 @@ select {
   .hoja {
     width: min(560px, calc(100vw - 48px));
     border-radius: var(--radio);
+
+    /* Centrada de verdad.
+       
+       El comentario de arriba decía «en escritorio queda centrada» y el CSS no
+       lo hacía: un `<dialog>` modal se centra solo con el `margin: auto` que
+       trae el navegador, pero el reset de Tailwind pone `margin: 0` a TODO, así
+       que la hoja se iba a la esquina de arriba a la izquierda. Se veía en
+       cada pedido, cada ajuste y cada movimiento de inventario hechos desde la
+       computadora.
+       
+       `inset: 0` con `margin: auto` la centra en los dos ejes; el alto lo
+       sigue mandando `max-height: 88dvh`. */
+    position: fixed;
+    inset: 0;
+    margin: auto;
   }
 }

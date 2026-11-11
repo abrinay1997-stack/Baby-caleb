@@ -39,6 +39,18 @@ export interface Mensaje {
   readonly contenido: string;
   /** Si `rol` es "tool", a qué llamada responde. */
   readonly llamadaId?: string;
+  /**
+   * Si `rol` es "assistant", las herramientas que pidió en ese turno.
+   *
+   * Hay que guardarlas y devolverlas tal cual. En esta forma de API un
+   * `tool_result` solo vale si el turno del asistente que va JUSTO antes trae
+   * el `tool_use` con el mismo id; si el historial reconstruye ese turno como
+   * texto pelado, el id no existe y la API rechaza la petición entera.
+   *
+   * Por eso no basta con recordar lo que el modelo DIJO: hay que recordar
+   * también lo que PIDIÓ.
+   */
+  readonly llamadas?: readonly LlamadaAHerramienta[];
 }
 
 export interface LlamadaAHerramienta {
@@ -181,7 +193,7 @@ export function meta(cfg: ConfiguracionDeMeta): Proveedor {
         // Nunca por debajo de 16: Meta lo rechaza.
         max_tokens: Math.max(p.maxTokens ?? MAX_TOKENS_POR_OMISION, MAX_TOKENS_MINIMO),
         system: p.sistema,
-        messages: p.mensajes.map(aMensajeDeLaApi),
+        messages: aMensajesDeLaApi(p.mensajes),
         // Sin `eager_input_streaming` y sin `cache_control`: lo primero hace
         // fallar cada mensaje y lo segundo no se sabe que Meta lo acepte, así
         // que el costo se calcula sin caché (06-asistente §6).
@@ -213,14 +225,65 @@ export function meta(cfg: ConfiguracionDeMeta): Proveedor {
   };
 }
 
-function aMensajeDeLaApi(m: Mensaje): Record<string, unknown> {
-  if (m.rol === "tool") {
-    return {
-      role: "user",
-      content: [{ type: "tool_result", tool_use_id: m.llamadaId ?? "", content: m.contenido }],
-    };
+/**
+ * El historial, en la forma que la API acepta.
+ *
+ * Mapear mensaje a mensaje NO sirve, y es un error que solo se ve cuando
+ * alguien por fin encadena una herramienta con la API de verdad: el proveedor
+ * se probó contra el guion fijo, que no valida nada de esto.
+ *
+ * Dos reglas que el mapeo uno a uno rompía:
+ *
+ *  1. **El `tool_use` tiene que volver.** El turno del asistente que pidió
+ *     herramientas se manda con sus bloques `tool_use`, no como texto pelado.
+ *     Sin ellos, el `tool_result` que viene detrás apunta a un id que no
+ *     existe y la API rechaza la petición entera.
+ *  2. **Los resultados de un mismo turno van JUNTOS.** Si el modelo pidió dos
+ *     herramientas, las dos respuestas van en UN solo mensaje de usuario. Uno
+ *     por mensaje deja mensajes de usuario seguidos y un `tool_use` sin su
+ *     respuesta al lado.
+ *
+ * Un bloque de texto vacío tampoco se manda: la API los rechaza, y un turno en
+ * el que el modelo solo pidió herramientas no tiene texto que mandar.
+ */
+export function aMensajesDeLaApi(mensajes: readonly Mensaje[]): Record<string, unknown>[] {
+  const salida: Record<string, unknown>[] = [];
+  let resultados: Record<string, unknown>[] = [];
+
+  const cerrarResultados = (): void => {
+    if (resultados.length === 0) return;
+    salida.push({ role: "user", content: resultados });
+    resultados = [];
+  };
+
+  for (const m of mensajes) {
+    if (m.rol === "tool") {
+      resultados.push({
+        type: "tool_result",
+        tool_use_id: m.llamadaId ?? "",
+        content: m.contenido,
+      });
+      continue;
+    }
+
+    // Cualquier mensaje que no sea un resultado cierra el grupo que venía.
+    cerrarResultados();
+
+    if (m.rol === "assistant" && m.llamadas !== undefined && m.llamadas.length > 0) {
+      const bloques: Record<string, unknown>[] = [];
+      if (m.contenido.trim() !== "") bloques.push({ type: "text", text: m.contenido });
+      for (const ll of m.llamadas) {
+        bloques.push({ type: "tool_use", id: ll.id, name: ll.nombre, input: ll.argumentos });
+      }
+      salida.push({ role: "assistant", content: bloques });
+      continue;
+    }
+
+    salida.push({ role: m.rol, content: m.contenido });
   }
-  return { role: m.rol, content: m.contenido };
+
+  cerrarResultados();
+  return salida;
 }
 
 /**
