@@ -14,6 +14,7 @@ import {
   devolverParada,
   entregasDelDia,
   fechaDePanama,
+  guardarPrueba,
   marcarEntregada,
   marcarFallida,
   sugerirParaEnvio,
@@ -1242,6 +1243,73 @@ describe("marcarEntregada", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.codigo).toBe("transicion_invalida");
     expect(await existencias(e.codigo)).toEqual({ fisico: 50, reservado: e.cantidad });
+  });
+});
+
+describe("guardarPrueba", () => {
+  /** Los bytes de un WebP de verdad: el tipo sale de mirarlos, no de la cabecera. */
+  const webp = () => {
+    const b = new Uint8Array(16);
+    b.set([0x52, 0x49, 0x46, 0x46], 0); // RIFF
+    b.set([0x57, 0x45, 0x42, 0x50], 8); // WEBP
+    return b.buffer as ArrayBuffer;
+  };
+
+  it("la foto de una entrega entra como SENSIBLE y colgada de su envío", async () => {
+    const e = await enLaCalle();
+    const r = await guardarPrueba({ ...ctx(), r2: env.PRIVADO }, e.envioId, webp());
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+
+    const fila = await env.DB.prepare(
+      "SELECT tipo, mime, sensible, referencia_tipo, referencia_id, borrar_despues_de FROM archivos WHERE r2_key = ?",
+    )
+      .bind(r.datos.r2Key)
+      .first<{
+        tipo: string;
+        mime: string;
+        sensible: number;
+        referencia_tipo: string | null;
+        referencia_id: string | null;
+        borrar_despues_de: number | null;
+      }>();
+
+    // `sensible = 1` es lo único que impide que la puerta de una clienta se
+    // sirva por `/foto/` sin sesión. No es un detalle del archivo: es la
+    // diferencia entre una foto de un pañal y la casa de alguien.
+    expect(fila?.sensible).toBe(1);
+    expect(fila?.referencia_tipo).toBe("envio");
+    expect(fila?.referencia_id).toBe(e.envioId);
+    // Y ya está confirmada: si la subida se hubiera cortado, seguiría marcada.
+    expect(fila?.borrar_despues_de).toBeNull();
+
+    // Y sirve para marcar la entrega.
+    const marcada = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"), envioId: e.envioId, pruebaR2: r.datos.r2Key, metodoCobro: "efectivo",
+    });
+    expect(marcada.ok, JSON.stringify(marcada)).toBe(true);
+    expect((await leerEnvio(e.envioId))?.foto_r2).toBe(r.datos.r2Key);
+  });
+
+  it("lo que no son bytes de una imagen no se guarda", async () => {
+    const e = await enLaCalle();
+    const html = new TextEncoder().encode("<html>no soy una foto</html>").buffer as ArrayBuffer;
+    const r = await guardarPrueba({ ...ctx(), r2: env.PRIVADO }, e.envioId, html);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.codigo).toBe("entrada_invalida");
+  });
+
+  it("y no se le cuelga una foto a una entrega ya cerrada", async () => {
+    const e = await enLaCalle();
+    expect(
+      (await marcarEntregada(ctx(), {
+        idempotencia: id("idem"), envioId: e.envioId, metodoCobro: "efectivo",
+      })).ok,
+    ).toBe(true);
+
+    const r = await guardarPrueba({ ...ctx(), r2: env.PRIVADO }, e.envioId, webp());
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.codigo).toBe("transicion_invalida");
   });
 });
 
