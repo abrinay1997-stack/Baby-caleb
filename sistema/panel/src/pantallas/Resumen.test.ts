@@ -74,8 +74,18 @@ describe("las barras del gráfico", () => {
       }
     });
     // Y están repartidas por igual: el hueco entre dos es siempre el mismo.
+    const paso = ancho / serie.length;
     const pasos = dibujo.slice(1).map((b, i) => b.x - dibujo[i]!.x);
-    for (const p of pasos) expect(p).toBeCloseTo(ancho / serie.length, 9);
+    for (const p of pasos) expect(p).toBeCloseTo(paso, 9);
+
+    dibujo.forEach((b, i) => {
+      // Cada barra va centrada en su tramo y deja hueco a los lados. El hueco
+      // no es decoración: catorce barras pegadas se leen como un bloque y no se
+      // distingue un día del siguiente. Lo pidió una mutación que las hacía
+      // ocupar el tramo entero y pasaba en verde.
+      expect(b.ancho, `barra ${i}`).toBeLessThan(paso);
+      expect(b.x + b.ancho / 2, `barra ${i}`).toBeCloseTo((i + 0.5) * paso, 9);
+    });
   });
 
   it("una barra que llega al tope de la escala llega al tope del dibujo", () => {
@@ -103,7 +113,10 @@ describe("el texto de la comparación", () => {
   });
 
   it("los dos en cero no se comparan", () => {
-    expect(textoDeComparacion(comparar(0, 0), "hoy")).toBe("Tampoco hubo ayer a esta hora");
+    expect(textoDeComparacion(comparar(0, 0), "hoy")).toBe("Tampoco ayer a esta hora");
+    expect(textoDeComparacion(comparar(0, 0), "semana")).toBe(
+      "Tampoco la semana pasada a estas alturas",
+    );
   });
 
   it("dice más o menos, con el porcentaje redondeado", () => {

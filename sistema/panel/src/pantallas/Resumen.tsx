@@ -162,8 +162,8 @@ const PALABRAS: Record<NombrePeriodo, { titulo: string; contra: string }> = {
  */
 export function textoDeComparacion(c: Comparacion, nombre: NombrePeriodo): string {
   const contra = PALABRAS[nombre].contra;
-  if (c.tipo === "sin_base") return `Tampoco hubo ${contra.replace(/^que /, "")}`;
-  
+  if (c.tipo === "sin_base") return `Tampoco ${contra.replace(/^que /, "")}`;
+  if (c.tipo === "desde_cero") return `No hubo nada ${contra}`;
   if (c.variacionBp === 0) return `Igual ${contra}`;
   if (Math.abs(c.variacionBp) < 50) return `Casi igual ${contra}`;
   const porCiento = Math.round(Math.abs(c.variacionBp) / 100);
@@ -385,9 +385,14 @@ function Grafico({ serie }: { serie: { fecha: string; centavos: number }[] }) {
       </div>
       <div className="mt-1 flex gap-2">
         <div className="w-14 shrink-0" />
+        {/* «del… al…» y no dos fechas sueltas. Una fecha pegada al borde
+            izquierdo parecería una marca del eje, y no lo es: el centro de la
+            primera barra cae unos píxeles más adentro. Decirlo como un rango
+            quita la promesa de posición que no se puede cumplir con catorce
+            días en 390 px sin bajar del piso de 12 px. */}
         <div className="flex min-w-0 flex-1 justify-between text-[12px] text-muted">
-          <span>{diaCorto(serie[0]!.fecha)}</span>
-          <span>{diaCorto(serie.at(-1)!.fecha)}</span>
+          <span>del {diaCorto(serie[0]!.fecha)}</span>
+          <span>al {diaCorto(serie.at(-1)!.fecha)}</span>
         </div>
       </div>
       <p className="m-0 mt-2 text-[12px] text-muted">
@@ -660,6 +665,19 @@ function Existencias({ inventario }: { inventario: Inventario }) {
 
 function Plata({ dinero: d, periodo }: { dinero: Dinero; periodo: NombrePeriodo }) {
   const ticket = promedio(d.entregado.total, d.entregado.pedidos);
+
+  // La serie viene vacía solo cuando NUNCA ha habido un pedido, y sin pedidos
+  // no puede haber pagos. Cuatro tarjetas en $0.00 serían ciertas y se leerían
+  // como «hoy no vendió nada», que es otra cosa: lo que pasa es que el sistema
+  // todavía no tiene de qué hablar.
+  if (d.serie.length === 0) {
+    return (
+      <Vacio
+        titulo="Todavía no ha entrado dinero por el sistema"
+        detalle="No es que hoy no haya entrado nada: es que aún no hay ningún pedido registrado, así que no hay pagos que sumar ni entregas que contar. Cuando entre el primero, aquí sale lo que entró, lo que se entregó, lo que falta por cobrar y el pedido promedio."
+      />
+    );
+  }
 
   return (
     <div className="grid gap-3">

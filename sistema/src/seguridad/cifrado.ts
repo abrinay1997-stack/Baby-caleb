@@ -101,9 +101,26 @@ export interface EntornoCifrado {
 declare global {
   namespace Cloudflare {
     interface Env {
-      /** 32 bytes al azar en base64. Ver la cabecera de `src/seguridad/cifrado.ts`. */
+      /** 32 bytes al azar en base64. Ver la cabecera de este archivo. */
       PASARELAS_LLAVE_MAESTRA?: string;
     }
+  }
+  /**
+   * Y TAMBIÉN el `Env` global, que es otro.
+   *
+   * `worker-configuration.d.ts` declara los dos por separado:
+   *
+   *     namespace Cloudflare { interface Env extends __BaseEnv_Env {} }
+   *     interface Env extends __BaseEnv_Env {}
+   *
+   * Son HERMANOS —los dos extienden la misma base— y no padre e hijo, así que
+   * ampliar uno no llega al otro. Las pruebas usan `Cloudflare.Env` (es lo que
+   * el plugin de vitest le pone a `env`) y las rutas del panel usan el global.
+   * Con solo el primero, `c.env.PASARELAS_LLAVE_MAESTRA` no compila.
+   */
+  interface Env {
+    /** 32 bytes al azar en base64. Ver la cabecera de este archivo. */
+    PASARELAS_LLAVE_MAESTRA?: string;
   }
 }
 

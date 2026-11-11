@@ -26,6 +26,28 @@ import {
 import { guardar as guardarAjuste, historial, leerVigentes } from "../db/ajustes";
 import { leerPedido, listarPedidos } from "../db/pedidos-lectura";
 import {
+  ajustarRedondeoDeInventario,
+  cerrarMes,
+  huecosAbiertos,
+  libroDiario,
+  mayorDeCuenta,
+  porCobrar,
+  reabrirMes,
+  registrarAsiento,
+  resumenContable,
+  revertirAsiento,
+  revisionDeCierre,
+} from "../db/contabilidad";
+import { asientoManual } from "../dominio/contabilidad";
+import {
+  apagar as apagarPasarela,
+  cambiarModo,
+  configurarCredencial,
+  encender as encenderPasarela,
+  estado as estadoDePasarelas,
+  quitarCredencial,
+} from "../db/pasarelas";
+import {
   armarRuta,
   cancelarRuta,
   cerrarRuta,
@@ -196,6 +218,14 @@ const texto = (v: unknown): string | undefined => (typeof v === "string" ? v : u
  * (cachés, proxys) no traten un conflicto como un éxito.
  */
 function codigoHttp(codigo: string): 400 | 403 | 404 | 409 | 422 | 500 {
+  // `pasarela_no_disponible` no es un error del sistema: es que la pasarela
+  // está encendida y le falta una credencial, o está apagada. Sin esta línea
+  // caía en el 500 de abajo y quien lo viera buscaría una avería que no hay.
+  if (codigo === "pasarela_no_disponible") return 409;
+  // Igual que el anterior: «ese mes está cerrado» no es una avería del
+  // sistema. Sin esta línea el panel enseñaría «error del sistema» cuando lo
+  // correcto es decir que el periodo está cerrado y hay que reabrirlo.
+  if (codigo === "periodo_cerrado") return 409;
   switch (codigo) {
     case "entrada_invalida":
       return 400;
@@ -608,6 +638,244 @@ function registrarRutas(panel: Hono<Entorno>): void {
   });
 
 
+
+
+
+  // ---------------------------------------------------------------------------
+  // Contabilidad (F5)
+  //
+  // LOS LIBROS NO SE EDITAN NI SE BORRAN. Por eso no hay aquí ningún PATCH ni
+  // ningún DELETE: un asiento equivocado se corrige con su reverso, que es
+  // otro asiento y deja las dos cosas escritas. La base lo hace cumplir con
+  // triggers; estas rutas simplemente no ofrecen lo que no se puede hacer.
+  //
+  // Cerrar un mes lleva el permiso `cierre_de_mes` y no `contabilidad`: la
+  // contadora lleva los libros, pero cerrar es un acto de la dueña.
+  // ---------------------------------------------------------------------------
+
+  const contextoContable = (c: Context<Entorno>) => ({
+    db: c.env.DB,
+    ahora: Date.now(),
+    actor: c.get("usuario").correo,
+  });
+
+  /** Un rango de fechas de la query, o el mes en curso. */
+  const rango = (c: Context<Entorno>) => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const desde = texto(c.req.query("desde")) ?? `${hoy.slice(0, 7)}-01`;
+    return { desde, hasta: texto(c.req.query("hasta")) ?? hoy };
+  };
+
+  panel.get("/contabilidad", exige("contabilidad"), async (c) => {
+    const ctx = { db: c.env.DB, ahora: Date.now() };
+    const [resumen, huecos] = await Promise.all([
+      resumenContable(ctx, rango(c)),
+      huecosAbiertos(ctx),
+    ]);
+    return c.json(ok({ resumen, huecos }));
+  });
+
+  panel.get("/contabilidad/diario", exige("contabilidad"), async (c) => {
+    const limite = entero(c.req.query("limite"));
+    const asientos = await libroDiario(
+      { db: c.env.DB, ahora: Date.now() },
+      { ...rango(c), ...(limite === undefined ? {} : { limite }) },
+    );
+    return c.json(ok({ asientos }));
+  });
+
+  panel.get("/contabilidad/cuentas/:codigo", exige("contabilidad"), async (c) => {
+    const r = await mayorDeCuenta(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("codigo"),
+      rango(c),
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.get("/contabilidad/por-cobrar", exige("contabilidad"), async (c) => {
+    const al = texto(c.req.query("al")) ?? new Date().toISOString().slice(0, 10);
+    return c.json(ok(await porCobrar({ db: c.env.DB, ahora: Date.now() }, al)));
+  });
+
+  /**
+   * Revertir un asiento.
+   *
+   * Es la ÚNICA forma de corregir, y por eso pide motivo. Un libro con un
+   * reverso sin explicación tiene el mismo agujero que uno editado: se sabe
+   * que algo cambió y no por qué.
+   */
+  panel.post("/contabilidad/asientos/:id/reverso", exigeEditar("contabilidad"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await revertirAsiento(
+      contextoContable(c),
+      c.req.param("id"),
+      texto(b["motivo"]) ?? "",
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Un asiento a mano. La pantalla no lo ofrece; el asistente y F5.5 sí. */
+  panel.post("/contabilidad/asientos", exigeEditar("contabilidad"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const lineas = b["lineas"];
+    if (!Array.isArray(lineas)) {
+      return c.json(fallo("entrada_invalida", "un asiento necesita sus líneas"), 400);
+    }
+    const armado = asientoManual({
+      fecha: texto(b["fecha"]) ?? "",
+      descripcion: texto(b["descripcion"]) ?? "",
+      lineas: lineas as never,
+      referencia: (b["referencia"] ?? null) as never,
+    });
+    if (!armado.ok) return c.json(armado, codigoHttp(armado.codigo));
+    const r = await registrarAsiento(contextoContable(c), armado.datos);
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  panel.get("/contabilidad/cierre", exige("contabilidad"), async (c) => {
+    const mes = texto(c.req.query("mes")) ?? new Date().toISOString().slice(0, 7);
+    const r = await revisionDeCierre({ db: c.env.DB, ahora: Date.now() }, mes);
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Cerrar es de la dueña, no de la contadora: `cierre_de_mes`. */
+  panel.post("/contabilidad/cierre", exigeEditar("cierre_de_mes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await cerrarMes(contextoContable(c), texto(b["mes"]) ?? "");
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.post("/contabilidad/cierre/reabrir", exigeEditar("cierre_de_mes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await reabrirMes(
+      contextoContable(c),
+      texto(b["mes"]) ?? "",
+      texto(b["motivo"]) ?? "",
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Los centavos sueltos del costo promedio.
+   *
+   * Existe como ruta para poder dispararlo a mano mientras no haya un cron.
+   * No calcula nada nuevo: baja a cero el valor de lo que ya no tiene
+   * unidades y deja el asiento que lo explica.
+   */
+  panel.post("/contabilidad/redondeos", exigeEditar("contabilidad"), async (c) => {
+    const r = await ajustarRedondeoDeInventario(contextoContable(c));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Pasarelas de cobro (F4b)
+  //
+  // Se configuran desde aquí como en Odoo. DOS REGLAS para estas cinco rutas, y
+  // las dos van contra el reflejo normal de quien programa:
+  //
+  //  - **No se devuelve eco del cuerpo.** Ni en la respuesta ni en el `detalle`
+  //    de un fallo. El valor de una credencial viaja en el cuerpo y en ningún
+  //    otro sitio; un eco lo pondría en un registro, en una captura de pantalla
+  //    o en una herramienta del navegador.
+  //  - **Nada de `console.*` con el cuerpo.** Por lo mismo.
+  //
+  // Y el actor sale de la sesión, nunca del cuerpo: si saliera del cuerpo,
+  // cualquiera firmaría con el nombre de otra persona el día que se cambió una
+  // clave de cobro.
+  // ---------------------------------------------------------------------------
+
+  const contextoPasarelas = (c: Context<Entorno>) => ({
+    db: c.env.DB,
+    ahora: Date.now(),
+    actor: c.get("usuario").correo,
+    llaveMaestra: c.env.PASARELAS_LLAVE_MAESTRA,
+  });
+
+  /**
+   * El estado de las tres pasarelas.
+   *
+   * `exige` y no `exigeEditar` porque es una lectura. Hoy dan lo mismo —solo
+   * la dueña tiene el permiso `ajustes`— pero el día que exista un rol que
+   * mire sin tocar, esta ruta ya está del lado correcto.
+   *
+   * Lo que devuelve NO lleva ninguna credencial, y no porque se borre antes de
+   * responder: la consulta de `estado` no nombra siquiera la columna del
+   * secreto. Lo que no se lee no se puede devolver por error.
+   */
+  panel.get("/pasarelas", exige("ajustes"), async (c) => {
+    const r = await estadoDePasarelas(contextoPasarelas(c));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.post("/pasarelas/:pasarela/credenciales/:credencial", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const r = await configurarCredencial(contextoPasarelas(c), {
+      pasarela: c.req.param("pasarela"),
+      modo: b["modo"],
+      credencial: c.req.param("credencial"),
+      valor: b["valor"],
+      motivo: texto(b["motivo"]) ?? "",
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Quitar una credencial.
+   *
+   * `POST …/quitar` y no `DELETE`: hace falta mandar el modo y el motivo en el
+   * cuerpo, y un `DELETE` con cuerpo lo pierde en algunos intermedios.
+   *
+   * Que se pueda quitar es deliberado. «Ya no uso PayPal, quíteme la clave» es
+   * una petición de seguridad, y un sistema que no la puede cumplir se queda
+   * con un secreto descifrable para siempre. Lo que no se borra es el libro.
+   */
+  panel.post(
+    "/pasarelas/:pasarela/credenciales/:credencial/quitar",
+    exigeEditar("ajustes"),
+    async (c) => {
+      const b = (await cuerpo(c)) ?? {};
+      const r = await quitarCredencial(contextoPasarelas(c), {
+        pasarela: c.req.param("pasarela"),
+        modo: b["modo"],
+        credencial: c.req.param("credencial"),
+        motivo: texto(b["motivo"]) ?? "",
+      });
+      return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+    },
+  );
+
+  /** Prueba o real. No se cambia con la pasarela encendida. */
+  panel.post("/pasarelas/:pasarela/modo", exigeEditar("ajustes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await cambiarModo(contextoPasarelas(c), {
+      pasarela: c.req.param("pasarela"),
+      modo: b["modo"],
+      motivo: texto(b["motivo"]) ?? "",
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Encender o apagar.
+   *
+   * Encender exige las credenciales completas del modo en el que está. Apagar
+   * NO lleva ninguna condición: es el interruptor de emergencia, y una
+   * condición ahí es un interruptor que no responde el día que hace falta.
+   */
+  panel.post("/pasarelas/:pasarela/encendida", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const motivo = texto(b["motivo"]) ?? "";
+    const pasarela = c.req.param("pasarela");
+    const r =
+      b["encendida"] === true
+        ? await encenderPasarela(contextoPasarelas(c), { pasarela, motivo })
+        : await apagarPasarela(contextoPasarelas(c), { pasarela, motivo });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
 
   // ---------------------------------------------------------------------------
   // Pedidos (F4.2)

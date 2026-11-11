@@ -87,12 +87,29 @@ export const SECCIONES: Seccion[] = [
     ],
   },
   {
+    titulo: "El dinero",
+    destinos: [
+      {
+        ruta: "/contabilidad",
+        nombre: "Contabilidad",
+        descripcion: "Los libros, el estado de resultados y el cierre de mes",
+        permiso: "contabilidad",
+      },
+    ],
+  },
+  {
     titulo: "Configuración",
     destinos: [
       {
         ruta: "/ajustes",
         nombre: "Ajustes",
         descripcion: "Las reglas con cifras del negocio",
+        permiso: "ajustes",
+      },
+      {
+        ruta: "/pasarelas",
+        nombre: "Pasarelas de cobro",
+        descripcion: "Con qué se cobra en la web, y si está en prueba o en real",
         permiso: "ajustes",
       },
       {

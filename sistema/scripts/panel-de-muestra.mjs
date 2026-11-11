@@ -73,6 +73,142 @@ const PERMISOS_DUENA = {
   ajustes: "editar",
 };
 
+/**
+ * El resumen del inicio, en sus DOS estados.
+ *
+ * Con `MUESTRA=vacia` sale el de hoy —0 clientas, 0 pedidos, inventario sin
+ * cargar— y sin eso sale un negocio en marcha. Hacen falta los dos: la pantalla
+ * que solo se ha mirado con datos de ejemplo es una pantalla que no se ha
+ * probado, y el estado vacío es el que la dueña va a ver primero.
+ *
+ *   node scripts/panel-de-muestra.mjs                 negocio en marcha
+ *   MUESTRA=vacia node scripts/panel-de-muestra.mjs   la base de hoy
+ */
+const VACIA = process.env.MUESTRA === "vacia";
+
+// Solo para inventarle fechas a la muestra. La regla del huso de verdad vive en
+// `DESFASE_PANAMA_MS` (src/dominio/metricas.ts) y es la que usa el Worker; esto
+// no calcula nada del negocio, dibuja un decorado.
+const DESFASE_PANAMA = 5 * 60 * 60 * 1000;
+const diaPanama = (ms) => new Date(ms - DESFASE_PANAMA).toISOString().slice(0, 10);
+const masDias = (f, n) =>
+  new Date(Date.parse(`${f}T00:00:00Z`) + n * dia).toISOString().slice(0, 10);
+const medianoche = (f) => Date.parse(`${f}T00:00:00Z`) + DESFASE_PANAMA;
+
+/** Lo que entró cada día, con forma de semana de verdad: flojo el domingo. */
+const SERIE = [0, 3450, 1200, 0, 8900, 4500, 2300, 11_200, 0, 6700, 3100, 9800, 5400, 2600];
+
+function resumenDeMuestra(nombre) {
+  const ahora = Date.now();
+  const hoy = diaPanama(ahora);
+  const diasDesdeLunes = (new Date(`${hoy}T00:00:00Z`).getUTCDay() + 6) % 7;
+  const desdeFecha = nombre === "hoy" ? hoy : masDias(hoy, -diasDesdeLunes);
+  const salto = (nombre === "hoy" ? 1 : 7) * dia;
+  const periodo = {
+    nombre,
+    desde: medianoche(desdeFecha),
+    hasta: ahora,
+    desdeFecha,
+    hastaFecha: hoy,
+    dias: nombre === "hoy" ? 1 : diasDesdeLunes + 1,
+  };
+  const anterior = {
+    nombre,
+    desde: periodo.desde - salto,
+    hasta: periodo.hasta - salto,
+    desdeFecha: diaPanama(periodo.desde - salto),
+    hastaFecha: diaPanama(periodo.hasta - salto),
+    dias: periodo.dias,
+  };
+
+  if (VACIA) {
+    return {
+      ahora,
+      hoy,
+      periodo,
+      anterior,
+      avisos: { sinPublicar: 0, masViejo: null },
+      atencion: {
+        pedidosEnTotal: 0, porAbonar: 0, porAbonarVencidos: 0, agendadosSinDespachar: 0,
+        pagosPorRevisar: 0, pagosEsperandoClienta: 0, entregasAtrasadas: 0,
+        entregasFallidas: 0, paradasDeHoySinAsignar: 0, rutasDeHoySinSalir: 0,
+      },
+      actividad: {
+        pedidosNuevos: 0, pedidosNuevosAnterior: 0, clientasNuevas: 0,
+        clientasNuevasAnterior: 0, clientasEnTotal: 0,
+      },
+      // Treinta y seis filas en cero y ningún movimiento: las creó la carga
+      // inicial, no es que se haya vendido todo.
+      inventario: { cargado: false, filas: 36, sinMinimo: 36 },
+      dinero: {
+        entro: 0, entroAnterior: 0, pagosSinFecha: 0,
+        entregado: { total: 0, pedidos: 0 },
+        entregadoAnterior: { total: 0, pedidos: 0 },
+        devueltos: 0,
+        porCobrar: { total: 0, pedidos: 0 },
+        serie: [],
+      },
+    };
+  }
+
+  const deLaSemana = nombre === "semana";
+  return {
+    ahora,
+    hoy,
+    periodo,
+    anterior,
+    // Distinto de cero a propósito: es la tarjeta que solo aparece cuando algo
+    // va mal, y si nunca se ve no se sabe si está bien escrita.
+    avisos: { sinPublicar: 2, masViejo: ahora - 23 * 60_000 },
+    atencion: {
+      pedidosEnTotal: 312,
+      porAbonar: 6,
+      porAbonarVencidos: 2,
+      agendadosSinDespachar: 3,
+      pagosPorRevisar: 4,
+      pagosEsperandoClienta: 1,
+      entregasAtrasadas: 1,
+      entregasFallidas: 2,
+      paradasDeHoySinAsignar: 5,
+      rutasDeHoySinSalir: 1,
+    },
+    actividad: {
+      pedidosNuevos: deLaSemana ? 23 : 4,
+      pedidosNuevosAnterior: deLaSemana ? 19 : 6,
+      clientasNuevas: deLaSemana ? 7 : 1,
+      clientasNuevasAnterior: deLaSemana ? 7 : 0,
+      clientasEnTotal: 247,
+    },
+    inventario: {
+      cargado: true,
+      filas: 118,
+      sinMinimo: 41,
+      unidades: 466,
+      reservadas: 54,
+      agotadas: 3,
+      porAcabarse: 4,
+      lista: [
+        { codigo: "BC-003-RN", nombre: "Gorro de punto recién nacido", bodega: "Principal", libres: 0, minimo: 3 },
+        { codigo: "BC-007-U", nombre: "Babero impermeable", bodega: "Casa", libres: 0, minimo: null },
+        { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", bodega: "Principal", libres: 2, minimo: 6 },
+        { codigo: "BC-011-6M", nombre: "Pijama de algodón 6 meses", bodega: "Casa", libres: 4, minimo: 4 },
+      ],
+      listaTruncada: false,
+    },
+    dinero: {
+      entro: deLaSemana ? 38_900 : 7450,
+      entroAnterior: deLaSemana ? 31_200 : 9800,
+      // Uno sin ubicar, para que se vea la tarjeta que lo avisa.
+      pagosSinFecha: 1,
+      entregado: deLaSemana ? { total: 42_300, pedidos: 9 } : { total: 9900, pedidos: 2 },
+      entregadoAnterior: deLaSemana ? { total: 51_000, pedidos: 11 } : { total: 4500, pedidos: 1 },
+      devueltos: deLaSemana ? 1 : 0,
+      porCobrar: { total: 27_650, pedidos: 8 },
+      serie: SERIE.map((centavos, i) => ({ fecha: masDias(hoy, i - (SERIE.length - 1)), centavos })),
+    },
+  };
+}
+
 const RESPUESTAS = {
   "/api/yo": ok({
     usuario: {
@@ -85,22 +221,11 @@ const RESPUESTAS = {
     permisos: PERMISOS_DUENA,
   }),
 
-  // `/resumen`: cuentas + `porAcabarse` (codigo, nombre, bodega, libres, minimo).
-  "/api/resumen": ok({
-    variantes: 118,
-    bodegas: 2,
-    zonas: 11,
-    clientes: 247,
-    // A propósito distinto de cero: es la tarjeta que solo aparece cuando algo
-    // va mal, y si nunca se ve no se sabe si está bien escrita.
-    avisosSinPublicar: 2,
-    avisoMasViejo: Date.now() - 23 * 60_000,
-    porAcabarse: [
-      { codigo: "BC-003-RN", nombre: "Gorro de punto recién nacido", bodega: "Principal", libres: 0, minimo: 3 },
-      { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", bodega: "Principal", libres: 2, minimo: 6 },
-      { codigo: "BC-011-6M", nombre: "Pijama de algodón 6 meses", bodega: "Casa", libres: 4, minimo: 4 },
-    ],
-  }),
+  // `/resumen`: la forma de `ResumenDelNegocio` (src/db/metricas.ts). Es una
+  // función y no un objeto porque la pantalla pide `?periodo=` y porque tiene
+  // DOS estados que hay que poder mirar (ver `resumenDeMuestra`).
+  "/api/resumen": (url) =>
+    ok(resumenDeMuestra(url.searchParams.get("periodo") === "semana" ? "semana" : "hoy")),
 
   // `/catalogo`: las columnas del SELECT, con costo porque el rol es dueña.
   "/api/catalogo": ok({
@@ -235,8 +360,9 @@ const servidor = createServer(async (pet, res) => {
   const ruta = new URL(pet.url ?? "/", "http://x").pathname;
 
   if (Object.hasOwn(RESPUESTAS, ruta)) {
+    const respuesta = RESPUESTAS[ruta];
     res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    res.end(RESPUESTAS[ruta]);
+    res.end(typeof respuesta === "function" ? respuesta(new URL(pet.url ?? "/", "http://x")) : respuesta);
     return;
   }
   // El veredicto de borrado, que la pantalla pide ANTES de enseñar el
