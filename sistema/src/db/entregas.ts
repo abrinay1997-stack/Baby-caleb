@@ -9,6 +9,8 @@ import { type Candidato, sugerirMotorizado } from "../dominio/asignacion";
 import { type Punto, esPuntoValido } from "../dominio/geo";
 import { esEstadoMotorizado, puedeRecibirEntregas } from "../dominio/motorizado";
 import reglas from "../../reglas.json";
+import { leerVigentes } from "./ajustes";
+import type { Ventana } from "../dominio/ajustes";
 
 /**
  * La entrega: de la bodega a la puerta (F4.5).
@@ -121,38 +123,50 @@ export async function ajustesDeEntrega(
   db: D1Database,
   ahora: number,
 ): Promise<AjustesDeEntrega> {
-  const { results } = await db
-    .prepare(
-      `SELECT a.clave, a.valor_json
-         FROM ajustes a
-        WHERE a.clave IN ('ventanas_entrega','comisiones')
-          AND a.vigente_desde <= ?1
-          AND a.version = (SELECT MAX(b.version) FROM ajustes b
-                            WHERE b.clave = a.clave AND b.vigente_desde <= ?1)`,
-    )
-    .bind(ahora)
-    .all<{ clave: string; valor_json: string }>();
-
-  const puesto = new Map<string, unknown>();
-  for (const a of results) {
-    try {
-      puesto.set(a.clave, JSON.parse(a.valor_json));
-    } catch {
-      // Un ajuste ilegible se trata como no puesto: cae en el de fábrica, que
-      // es PENDIENTE. Peor que no tener el dato es tener uno roto y creérselo.
-    }
+  // Lee del módulo de ajustes, no con una consulta propia.
+  //
+  // Antes esta función tenía su copia de la consulta Y entendía
+  // `ventanas_entrega` como una lista de textos (`["manana","tarde"]`),
+  // mientras el esquema de ajustes la define como objetos con código, nombre
+  // y horario. Dos lecturas del mismo dato con dos ideas distintas de qué es:
+  // el resultado habría sido que la dueña decidiera sus ventanas desde el
+  // panel y esta función siguiera diciendo «falta decidirlas».
+  //
+  // Fallaba del lado seguro —decía «falta», no un horario equivocado— pero
+  // era un error igual, y de los que nadie encuentra hasta que una clienta
+  // no puede agendar.
+  const r = await leerVigentes({ db, ahora });
+  if (!r.ok) {
+    // Sin poder leer los ajustes no se inventa ninguno: todo PENDIENTE, y
+    // quien llame decidirá si puede seguir sin ellos.
+    return { ventanas: "PENDIENTE", comisiones: "PENDIENTE" };
   }
 
-  const ventanasCrudas = puesto.get("ventanas_entrega") ?? deFabrica["ventanas_entrega"];
-  const ventanas =
-    Array.isArray(ventanasCrudas) && ventanasCrudas.every((v) => typeof v === "string")
-      ? (ventanasCrudas as string[])
-      : ("PENDIENTE" as const);
+  const de = (clave: string) => r.datos.ajustes.find((a) => a.clave === clave);
 
-  return {
-    ventanas,
-    comisiones: puesto.get("comisiones") ?? deFabrica["comisiones"] ?? "PENDIENTE",
-  };
+  const ve = de("ventanas_entrega");
+  /**
+   * De cada ventana se guarda su CÓDIGO, no su nombre.
+   *
+   * `envios.ventana` lleva escrito el código (`manana`), y por eso el esquema
+   * separa `id` de `etiqueta`: el día que la dueña renombre «Mañana» a «Antes
+   * del mediodía», los envíos que ya dicen `manana` tienen que seguir
+   * significando algo. Guardar aquí el nombre rompería esa promesa.
+   */
+  // `ve.pendiente` es la comprobación que dice lo que queremos decir; hoy
+  // `Array.isArray` sola bastaría, porque una clave sin decidir vale el texto
+  // «PENDIENTE» y eso no es una lista. Lo compruebo: quitar `ve.pendiente` no
+  // tumba ninguna prueba. Se queda por legible, no porque defienda algo — y
+  // lo digo aquí para que nadie cuente con ella como defensa.
+  const ventanas =
+    ve === undefined || ve.pendiente || !Array.isArray(ve.valor)
+      ? ("PENDIENTE" as const)
+      : (ve.valor as Ventana[]).map((v) => v.id);
+
+  const co = de("comisiones");
+  const comisiones = co === undefined || co.pendiente ? ("PENDIENTE" as const) : co.valor;
+
+  return { ventanas, comisiones };
 }
 
 // ---------------------------------------------------------------------------

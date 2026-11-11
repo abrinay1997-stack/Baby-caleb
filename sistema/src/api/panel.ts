@@ -23,6 +23,7 @@ import {
   ponerReceta,
   explicar,
 } from "../db/catalogo-admin";
+import { guardar as guardarAjuste, historial, leerVigentes } from "../db/ajustes";
 
 /**
  * La API del panel.
@@ -586,28 +587,55 @@ function registrarRutas(panel: Hono<Entorno>): void {
    * sin decir de dónde sale invita a creérselo.
    */
   panel.get("/ajustes", exige("ajustes"), async (c) => {
-    const ahora = Date.now();
-    const { results } = await c.env.DB.prepare(
-      `SELECT a.clave, a.version, a.valor_json, a.vigente_desde, a.cambiado_por, a.motivo
-       FROM ajustes a
-       WHERE a.vigente_desde <= ?1
-         AND a.version = (SELECT MAX(b.version) FROM ajustes b
-                          WHERE b.clave = a.clave AND b.vigente_desde <= ?1)
-       ORDER BY a.clave`,
-    )
-      .bind(ahora)
-      .all<{ clave: string; version: number; valor_json: string; vigente_desde: number }>();
+    const r = await leerVigentes({ db: c.env.DB, ahora: Date.now() });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
 
-    const vigentes = results.map((a) => {
-      let valor: unknown = null;
-      try {
-        valor = JSON.parse(a.valor_json);
-      } catch {
-        valor = a.valor_json;
-      }
-      return { ...a, valor };
-    });
+  /**
+   * Cambiar un ajuste.
+   *
+   * Dos cosas que NO salen del cuerpo de la petición, a propósito:
+   *
+   *  - **Quién lo cambió** sale de la sesión. Si saliera del cuerpo,
+   *    cualquiera firmaría con el nombre de otra persona, y el historial
+   *    —que existe para contestar «¿quién bajó la comisión en marzo?»—
+   *    dejaría de valer para nada.
+   *  - **Qué forma tiene el valor** lo decide `validar` dentro de `guardar`,
+   *    no esta ruta. Aquí el valor viaja tal cual (número, booleano, lista,
+   *    objeto o la cadena «PENDIENTE»): un segundo sitio que lo interprete
+   *    acabaría discrepando del primero.
+   */
+  panel.post("/ajustes/:clave", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
 
-    return c.json(ok({ vigentes, ahora }));
+    const vigenteDesde = entero(b["vigenteDesde"]);
+    const r = await guardarAjuste(
+      {
+        db: c.env.DB,
+        ahora: Date.now(),
+        actor: c.get("usuario").correo,
+      },
+      {
+        clave: c.req.param("clave"),
+        valor: b["valor"],
+        motivo: texto(b["motivo"]) ?? "",
+        ...(vigenteDesde === undefined ? {} : { vigenteDesde }),
+      },
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Las versiones de un ajuste, de la más nueva a la más vieja.
+   *
+   * Se lee con `exige` y no con `exigeEditar`: mirar quién cambió una cifra no
+   * es cambiarla. Hoy da igual —solo la dueña tiene el permiso `ajustes`— pero
+   * el día que alguien más pueda mirar sin tocar, esta ruta ya está del lado
+   * correcto.
+   */
+  panel.get("/ajustes/:clave/historial", exige("ajustes"), async (c) => {
+    const r = await historial({ db: c.env.DB, ahora: Date.now() }, c.req.param("clave"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 }

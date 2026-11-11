@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { token, ulid } from "../ids";
 import { crearPedido } from "./pedidos";
 import { agendar } from "./transiciones";
+import { guardar as guardarAjuste } from "./ajustes";
 import {
   type ContextoEntrega,
   ajustesDeEntrega,
@@ -53,6 +54,16 @@ let zonaId: string;
 let zona: string;
 
 beforeEach(async () => {
+  // Los ajustes se limpian entre pruebas. El pool de vitest rehace el esquema
+  // una vez por ARCHIVO, no por prueba, así que una prueba que decide las
+  // ventanas de entrega se las deja decididas a las siguientes — y las que
+  // comprueban «mientras la dueña no las decida» pasarían a probar lo
+  // contrario de lo que dicen.
+  //
+  // Sin filas, cada prueba arranca en los valores de fábrica de reglas.json,
+  // que es el estado real de un sistema recién instalado.
+  await env.DB.prepare("DELETE FROM ajustes").run();
+
   productoId = id("prod");
   bodegaId = id("bod");
   bodega = `Bodega ${bodegaId}`;
@@ -632,6 +643,42 @@ describe("crearEnvio", () => {
     if (!r.ok) expect(r.mensaje).toMatch(/más de una bodega/i);
   });
 
+  it("lo que guarda el panel es lo que lee la entrega (el choque que hubo)", async () => {
+    // Esta prueba existe por un fallo que vivió unas horas: el módulo de
+    // ajustes definía `ventanas_entrega` como objetos y el de entregas la
+    // leía como textos, cada uno con su propia consulta a la misma tabla. La
+    // dueña habría decidido sus ventanas desde el panel y el sistema habría
+    // seguido diciendo que faltaban.
+    //
+    // La diferencia con la prueba de abajo es DE DÓNDE sale el dato: aquí se
+    // guarda por el mismo camino que usa el panel, no con un INSERT montado a
+    // mano. Un dato de prueba escrito a mano prueba lo que uno cree; este
+    // prueba lo que el otro lado escribe de verdad.
+    const guardado = await guardarAjuste(
+      { db: env.DB, ahora: ahora(), actor: "duena@babycaleb.com" },
+      {
+        clave: "ventanas_entrega",
+        valor: [
+          { id: "manana", etiqueta: "Mañana", desde: "08:00", hasta: "12:00" },
+          { id: "tarde", etiqueta: "Tarde", desde: "13:00", hasta: "18:00" },
+        ],
+        motivo: "las que de verdad reparte el motorizado",
+      },
+    );
+    expect(guardado.ok, "el panel no pudo guardar las ventanas").toBe(true);
+
+    const vigentes = await ajustesDeEntrega(env.DB, ahora());
+    expect(vigentes.ventanas, "la entrega no ve lo que el panel guardó").toEqual([
+      "manana",
+      "tarde",
+    ]);
+
+    // Y una ventana decidida se acepta de verdad al crear el envío.
+    const p = await pedidoAgendado();
+    const r = await crearEnvio(ctx(), { pedidoId: p.pedidoId, ventana: "manana" });
+    expect(r.ok, "una ventana ya decidida tendría que aceptarse").toBe(true);
+  });
+
   it("una ventana de entrega no se acepta mientras la dueña no las decida", async () => {
     const p = await pedidoAgendado();
     const r = await crearEnvio(ctx(), { pedidoId: p.pedidoId, ventana: "manana" });
@@ -642,15 +689,32 @@ describe("crearEnvio", () => {
   });
 
   it("y sí se acepta cuando el ajuste está puesto", async () => {
+    // La forma REAL que guarda el panel: objetos con código, nombre y horario.
+    //
+    // Esta prueba guardaba antes `["manana","tarde"]`, que era la forma que
+    // esta función se imaginaba y que el panel nunca escribe. Pasaba en verde
+    // mientras el sistema entero habría dicho «las ventanas no están
+    // decididas» con la dueña habiéndolas decidido.
+    //
+    // Ese es el riesgo de montar un dato de prueba a mano: se prueba contra lo
+    // que uno cree, no contra lo que el otro lado escribe.
     await env.DB.prepare(
       `INSERT INTO ajustes (clave,version,valor_json,vigente_desde,cambiado_por)
-       VALUES ('ventanas_entrega',1,'["manana","tarde"]',?,'prueba')`,
+       VALUES ('ventanas_entrega',1,?,?,'prueba')`,
     )
-      .bind(ahora() - 1000)
+      .bind(
+        JSON.stringify([
+          { id: "manana", etiqueta: "Mañana", desde: "08:00", hasta: "12:00" },
+          { id: "tarde", etiqueta: "Tarde", desde: "13:00", hasta: "18:00" },
+        ]),
+        ahora() - 1000,
+      )
       .run();
 
     try {
       const vigentes = await ajustesDeEntrega(env.DB, ahora());
+      // Lo que vuelve son los CÓDIGOS, que es lo que se escribe en el envío:
+      // el nombre se puede cambiar y el código no.
       expect(vigentes.ventanas).toEqual(["manana", "tarde"]);
       // Y lo que la dueña NO decidió sigue diciendo que falta.
       expect(vigentes.comisiones).toBe("PENDIENTE");

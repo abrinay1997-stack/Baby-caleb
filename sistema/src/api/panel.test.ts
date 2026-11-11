@@ -23,6 +23,23 @@ async function pedir(app: ReturnType<typeof crearPanel>, ruta: string) {
   return { estado: r.status, cuerpo: (await r.json()) as Record<string, unknown> };
 }
 
+/** Cambiar un ajuste, como hace la pantalla. */
+async function cambiarAjuste(
+  app: ReturnType<typeof crearPanel>,
+  clave: string,
+  cuerpo: Record<string, unknown>,
+) {
+  const r = await app.fetch(
+    new Request(`https://panel.babycaleb.com/ajustes/${clave}`, {
+      method: "POST",
+      body: JSON.stringify(cuerpo),
+      headers: { "content-type": "application/json" },
+    }),
+    real as Env,
+  );
+  return { estado: r.status, cuerpo: (await r.json()) as Record<string, unknown> };
+}
+
 /** Bytes de un PNG de verdad (la cabecera, que es lo que se mira). */
 const PNG = (() => {
   const b = new Uint8Array(64);
@@ -289,18 +306,88 @@ describe("/ajustes", () => {
     ]);
 
     const r = await pedir(entrandoComo("duena"), "/ajustes");
-    const d = r.cuerpo.datos as { vigentes: { clave: string; version: number; valor: unknown }[] };
-    const abono = d.vigentes.find((v) => v.clave === "abono_minimo_cents");
+    const d = r.cuerpo.datos as { ajustes: { clave: string; version: number | null; valor: unknown }[] };
+    const abono = d.ajustes.find((v) => v.clave === "abono_minimo_cents");
     expect(abono?.version).toBe(2);
     expect(abono?.valor).toBe(1000);
   });
 
-  it("sin nada puesto devuelve la lista vacía, no un error", async () => {
-    // Lo que no está puesto cae en el valor de fábrica, y eso lo resuelve la
-    // pantalla: así se puede decir de dónde sale cada número.
+  it("la asistente NO puede cambiar un ajuste", async () => {
+    // El dueño lo pidió con todas sus letras: «Juancito no va a venir y
+    // cambiar los permisos y las políticas. Eso lo hace solamente el
+    // administrador». La matriz de roles ya lo dice; esto comprueba que la
+    // ruta la respeta.
+    const r = await cambiarAjuste(entrandoComo("asistente"), "stock_bajo", {
+      valor: 3,
+      motivo: "me pareció",
+    });
+    expect(r.estado).toBe(403);
+
+    // Y no se guardó nada: un 403 que igual escribe es peor que no tener 403.
+    const fila = await real.DB.prepare(
+      "SELECT COUNT(*) AS n FROM ajustes WHERE clave = 'stock_bajo'",
+    ).first<{ n: number }>();
+    expect(fila?.n).toBe(0);
+  });
+
+  it("quién lo cambió sale de la sesión, NUNCA del cuerpo", async () => {
+    // Si saliera del cuerpo, cualquiera firmaría con el nombre de otra
+    // persona y el historial —que existe para contestar «¿quién bajó la
+    // comisión en marzo?»— dejaría de valer para nada.
+    const r = await cambiarAjuste(entrandoComo("duena"), "stock_bajo", {
+      valor: 7,
+      motivo: "se repone más rápido de lo que pensábamos",
+      cambiado_por: "otra@persona.com",
+      actor: "otra@persona.com",
+    });
+    expect(r.estado).toBe(200);
+
+    const fila = await real.DB.prepare(
+      "SELECT cambiado_por FROM ajustes WHERE clave = 'stock_bajo' ORDER BY version DESC LIMIT 1",
+    ).first<{ cambiado_por: string }>();
+    expect(fila?.cambiado_por).toBe(comoUsuario("duena").correo);
+    expect(fila?.cambiado_por).not.toBe("otra@persona.com");
+  });
+
+  it("un valor que no vale se rechaza con el motivo en español", async () => {
+    const r = await cambiarAjuste(entrandoComo("duena"), "stock_bajo", {
+      valor: -5,
+      motivo: "probando",
+    });
+    expect(r.estado).toBe(400);
+    // El mensaje es para la dueña, no para quien programa.
+    expect(String(r.cuerpo["mensaje"] ?? "")).toMatch(/[a-záéíóúñ]{4,}/i);
+  });
+
+  it("el historial de una clave inventada es un 404, no una lista vacía", async () => {
+    const r = await pedir(entrandoComo("duena"), "/ajustes/no_existe_esta_clave/historial");
+    expect(r.estado).toBe(404);
+  });
+
+  it("sin nada puesto devuelve TODAS las claves con su valor de fábrica", async () => {
+    // Esto cambió, y a mejor. Antes la ruta devolvía una lista vacía y era la
+    // PANTALLA la que mezclaba los valores de fábrica. Dos sitios podían
+    // decidir qué vale una clave que nadie ha tocado, y dos sitios que deciden
+    // lo mismo acaban decidiendo distinto.
+    //
+    // Ahora lo resuelve el servidor y lo dice: cada fila trae `origen`, así
+    // que la pantalla puede seguir distinguiendo «esto lo puso ella» de «esto
+    // viene de fábrica» sin tener que calcularlo.
     const r = await pedir(entrandoComo("duena"), "/ajustes");
     expect(r.estado).toBe(200);
-    expect((r.cuerpo.datos as { vigentes: unknown[] }).vigentes).toEqual([]);
+    const d = r.cuerpo.datos as {
+      ajustes: { clave: string; origen: string; valor: unknown; pendiente: boolean }[];
+    };
+
+    // Las 15 claves, siempre. Una que desaparece de la lista es una que nadie
+    // vuelve a buscar.
+    expect(d.ajustes.length).toBe(15);
+    expect(d.ajustes.every((a) => a.origen === "fabrica")).toBe(true);
+
+    // Y lo que todavía nadie ha decidido se ve como tal, que no es lo mismo
+    // que valer cero.
+    const reserva = d.ajustes.find((a) => a.clave === "reserva_horas_comprobante");
+    expect(reserva?.pendiente).toBe(true);
   });
 });
 
