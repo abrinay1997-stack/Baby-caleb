@@ -57,7 +57,20 @@ import {
   estado as estadoDePasarelas,
   quitarCredencial,
 } from "../db/pasarelas";
-import { registrar as registrarMovimientos } from "../db/inventario";
+import {
+  registrar as registrarMovimientos,
+  trasladar as trasladarExistencias,
+} from "../db/inventario";
+import {
+  cambiarUso as cambiarUsoDeBodega,
+  crear as crearBodega,
+  renombrar as renombrarBodega,
+} from "../db/bodegas";
+import { crear as crearZona, editar as editarZona, type CambiosEnZona } from "../db/zonas-admin";
+import {
+  alta as altaDeUsuario,
+  cambiarAcceso as cambiarAccesoDeUsuario,
+} from "../db/usuarios";
 import {
   buscar as buscarClientas,
   encontrarOCrear as encontrarOCrearClienta,
@@ -315,6 +328,37 @@ const enteroDeTexto = (v: unknown): number | undefined => {
   const n = Number(v);
   return Number.isSafeInteger(n) ? n : undefined;
 };
+
+/**
+ * El cuerpo de una zona, pasando SOLO las claves que de verdad vinieron.
+ *
+ * Es lo que hace posible distinguir las tres cosas que puede querer decir una
+ * tarifa: un número, `null` («se cotiza a mano») y que no venga («déjala como
+ * estaba»). Si se copiaran todas las claves con `??`, un `null` se volvería
+ * «sin cambio» y la dueña vería que su cambio no pasó sin que nada fallara —y
+ * una zona que debía cotizarse a mano seguiría cobrando una tarifa vieja.
+ *
+ * Los valores van tal cual: quien los valida es `src/db/zonas-admin.ts`, y un
+ * segundo sitio que los interpretara acabaría discrepando del primero.
+ */
+const CAMPOS_DE_ZONA = [
+  "nombre",
+  "alias",
+  "region",
+  "metodo",
+  "tarifaCents",
+  "requierePagoTotal",
+  "bodegaPreferidaId",
+  "activa",
+] as const;
+
+function cambiosDeZona(b: Record<string, unknown>): CambiosEnZona {
+  const cambios: Record<string, unknown> = {};
+  for (const campo of CAMPOS_DE_ZONA) {
+    if (campo in b) cambios[campo] = b[campo];
+  }
+  return cambios as CambiosEnZona;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -674,10 +718,90 @@ function registrarRutas(panel: Hono<Entorno>): void {
     return c.json(ok({ bodegas: results }));
   });
 
+  /**
+   * Una bodega nueva.
+   *
+   * `precios_y_stock` y no `ajustes`: una bodega es donde vive el inventario,
+   * y quien puede mover el stock es quien decide dónde se guarda. Hoy los dos
+   * permisos acaban en la misma persona, pero el que dice la verdad sobre lo
+   * que se está tocando es este.
+   */
+  panel.post("/bodegas", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await crearBodega({ db: c.env.DB, ahora: Date.now() }, b["nombre"]);
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Renombrar una bodega o dejar de usarla.
+   *
+   * **No hay `DELETE` y no es un olvido.** Una bodega aparece en cada
+   * movimiento de inventario que pasó por ella, y los movimientos no se borran
+   * —hay un trigger que lo impide—: borrarla dejaría el libro apuntando a un
+   * sitio que no existe. Lo que se puede es dejar de usarla, y entonces nada
+   * nuevo sale ni entra ahí.
+   *
+   * Las dos cosas en la misma ruta porque son la misma fila; cada una va a su
+   * función, que lleva su propia fila de control.
+   */
+  panel.patch("/bodegas/:id", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const ctx = { db: c.env.DB, ahora: Date.now() };
+    const id = c.req.param("id");
+
+    if ("nombre" in b) {
+      const r = await renombrarBodega(ctx, id, b["nombre"]);
+      if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+    }
+    if ("activa" in b) {
+      const r = await cambiarUsoDeBodega(ctx, id, b["activa"] === true);
+      if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+    }
+    if (!("nombre" in b) && !("activa" in b)) {
+      return c.json(fallo("entrada_invalida", "no hay nada que cambiar"), 400);
+    }
+
+    return c.json(ok({ id }));
+  });
+
+  /**
+   * Trasladar mercancía de una bodega a otra.
+   *
+   * Los dos movimientos van en el mismo batch dentro de `trasladar`: o sale de
+   * una y entra en la otra, o no pasa nada. Es el MISMO camino que usa la
+   * herramienta `trasladar_stock` del asistente — un segundo camino hacia el
+   * inventario sería un segundo sitio donde olvidarse de la fila de control.
+   */
+  panel.post("/bodegas/traslados", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const motivo = texto(b["motivo"])?.trim();
+    const r = await trasladarExistencias(
+      { db: c.env.DB, actor: c.get("usuario").id, ahora: Date.now() },
+      {
+        codigo: texto(b["codigo"]) ?? "",
+        desdeId: texto(b["desdeId"]) ?? "",
+        haciaId: texto(b["haciaId"]) ?? "",
+        cantidad: entero(b["cantidad"]) ?? 0,
+        ...(motivo === undefined || motivo === "" ? {} : { motivo }),
+      },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
   panel.get("/zonas", exige("pedidos"), async (c) => {
     const { results } = await c.env.DB.prepare(
+      // `bodega_preferida_id` además del nombre: el nombre es para leer y el
+      // id es lo que la hoja de editar necesita para dejar marcada la bodega
+      // que ya estaba. Sin él, abrir y guardar una zona le borraría la bodega.
       `SELECT z.id, z.nombre, z.alias_json, z.region, z.metodo, z.tarifa_cents,
-              z.requiere_pago_total, z.activa, b.nombre AS bodega_preferida
+              z.requiere_pago_total, z.activa, z.bodega_preferida_id,
+              b.nombre AS bodega_preferida
        FROM zonas_envio z
        LEFT JOIN bodegas b ON b.id = z.bodega_preferida_id
        ORDER BY z.region, z.nombre`,
@@ -699,6 +823,39 @@ function registrarRutas(panel: Hono<Entorno>): void {
     return c.json(ok({ zonas }));
   });
 
+  /**
+   * Crear y cambiar zonas de envío.
+   *
+   * `ajustes` y no `precios_y_stock`: una zona no es mercancía, es una regla
+   * con cifras del negocio —lo que se le cobra a la clienta por llevarle el
+   * pedido—, y esas las cambia quien cambia los ajustes. La asistente toma
+   * pedidos, así que NECESITA ver las zonas (la lectura va con `pedidos`),
+   * pero no le toca mover una tarifa.
+   *
+   * Lo que viaja en `tarifaCents` son tres cosas distintas y las tres
+   * importan: un número (la tarifa), `null` (se cotiza a mano) y que el campo
+   * no venga (déjala como estaba). Por eso la ruta pasa el cuerpo tal cual y
+   * es `editar` quien mira si la clave está, con `in`.
+   */
+  panel.post("/zonas", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await crearZona({ db: c.env.DB, ahora: Date.now() }, cambiosDeZona(b));
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  panel.patch("/zonas/:id", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await editarZona(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      cambiosDeZona(b),
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
 
 
 
@@ -1532,6 +1689,53 @@ function registrarRutas(panel: Hono<Entorno>): void {
       "SELECT id, correo, nombre, rol, telegram_chat_id, activo, creado_en FROM usuarios ORDER BY nombre",
     ).all();
     return c.json(ok({ usuarios: results }));
+  });
+
+  /**
+   * Dar de alta a alguien en el panel.
+   *
+   * Entrar son DOS cosas: Cloudflare Access comprueba que la persona es quien
+   * dice ser, y esta tabla dice si además trabaja aquí. Esta ruta hace la
+   * segunda. La primera sigue siendo de Access: alguien dado de alta aquí y
+   * fuera de la aplicación de Access no entra, y hay que decirlo en la
+   * pantalla para que nadie dé por hecho que con esto basta.
+   */
+  panel.post("/usuarios", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await altaDeUsuario(
+      { db: c.env.DB, ahora: Date.now() },
+      { correo: b["correo"], nombre: b["nombre"], rol: b["rol"] },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Quitarle o devolverle el acceso a alguien.
+   *
+   * No se borra la fila: `usuarios.id` queda escrito en los pedidos que esa
+   * persona tomó y en los movimientos que registró. Lo que se apaga es el
+   * acceso, y tiene efecto en su siguiente petición.
+   *
+   * Quien no puede quedarse fuera es la ÚLTIMA DUEÑA ACTIVA: sin ella nadie
+   * tendría el permiso de `ajustes`, o sea que nadie podría volver a dar de
+   * alta a nadie, ni a sí mismo. Eso lo impide la fila de control dentro de
+   * `cambiarAcceso`, mirando cuántas quedaron después del cambio.
+   */
+  panel.patch("/usuarios/:id", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    if (typeof b["activo"] !== "boolean") {
+      return c.json(fallo("entrada_invalida", "diga si la persona entra o no entra"), 400);
+    }
+
+    const r = await cambiarAccesoDeUsuario(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      b["activo"],
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   /**

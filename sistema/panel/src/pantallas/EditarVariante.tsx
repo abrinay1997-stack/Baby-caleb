@@ -2,6 +2,9 @@ import { useState } from "react";
 import { pedir } from "../api";
 import { Hoja } from "../armazon/Hoja";
 import { aCentavos, aPuntosBasicos, deCentavos, dePuntosBasicos } from "../dinero";
+// Las mismas piezas que las demás hojas. Una copia por pantalla es cómo se
+// acaba teniendo un campo a 14 px que hace zoom en el teléfono (§7b).
+import { BOTON, Campo, ENTRADA } from "../formulario";
 
 /**
  * Editar una variante del catálogo, y borrarla.
@@ -47,39 +50,6 @@ interface Veredicto {
   yaOculta?: boolean;
   razones: string[];
 }
-
-function Campo({
-  etiqueta,
-  ayuda,
-  children,
-}: {
-  etiqueta: string;
-  ayuda?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="mb-4 block">
-      <span className="mb-1 block text-[14px] font-bold">{etiqueta}</span>
-      {children}
-      {ayuda === undefined ? null : (
-        <span className="mt-1 block text-[12px] text-muted">{ayuda}</span>
-      )}
-    </label>
-  );
-}
-
-// 16 px en los campos es contrato (§7b): por debajo, el teléfono hace zoom al
-// tocar y la persona termina peleando con el viewport en vez de escribiendo.
-const ENTRADA =
-  "tactil w-full rounded-[12px] border border-line bg-bg px-3 py-2.5 " +
-  "focus-visible:outline-accent-edge focus-visible:outline-2";
-
-// `rounded-[14px]` y no `rounded-pill`: esa clase NO existe en este proyecto
-// —se usa `rounded-full` o el radio de la marca— y una clase de Tailwind que no
-// existe no da ningún error, simplemente no hace nada. Salió mirando la
-// captura, no el código.
-const BOTON =
-  "tactil flex-1 rounded-[14px] px-4 py-3 font-bold focus-visible:outline-accent-edge focus-visible:outline-2";
 
 export function EditarVariante({
   variante,

@@ -15,13 +15,46 @@ import type { Centavos } from "./dinero";
  * «24 de diciembre» escrito de seis maneras— y no geometría.
  */
 
+/**
+ * Las dos regiones y los tres métodos, como listas y no solo como tipos.
+ *
+ * Son los mismos del CHECK de `zonas_envio` (02-datos §5), y están aquí —en el
+ * dominio, que no importa nada de Workers— porque hacen falta en tres sitios
+ * que tienen que decir lo mismo: el esquema, la ruta que valida lo que llega
+ * por HTTP, y la pantalla que pinta las opciones. Un tipo de TypeScript no
+ * existe ya cuando entra la petición, y tres copias de una lista discrepan
+ * antes o después.
+ */
+export const REGIONES = ["ciudad", "interior"] as const;
+export type Region = (typeof REGIONES)[number];
+
+export const METODOS = ["motorizado", "ferguson", "otro"] as const;
+export type Metodo = (typeof METODOS)[number];
+
+export const esRegion = (v: unknown): v is Region =>
+  typeof v === "string" && (REGIONES as readonly string[]).includes(v);
+export const esMetodo = (v: unknown): v is Metodo =>
+  typeof v === "string" && (METODOS as readonly string[]).includes(v);
+
+/** Lo que lee la dueña en el panel. El valor guardado es el de la lista. */
+export const ETIQUETA_REGION: Record<Region, string> = {
+  ciudad: "Ciudad",
+  interior: "Interior",
+};
+
+export const ETIQUETA_METODO: Record<Metodo, string> = {
+  motorizado: "Motorizado",
+  ferguson: "Ferguson",
+  otro: "Otro",
+};
+
 export interface Zona {
   id: string;
   nombre: string;
   /** Otras formas de escribirla, de `zonas_envio.alias_json`. */
   alias: readonly string[];
-  region: "ciudad" | "interior";
-  metodo: "motorizado" | "ferguson" | "otro";
+  region: Region;
+  metodo: Metodo;
   /** null = se cotiza a mano. No es gratis: es que todavía no se sabe. */
   tarifa_cents: Centavos | null;
   requiere_pago_total: boolean;
