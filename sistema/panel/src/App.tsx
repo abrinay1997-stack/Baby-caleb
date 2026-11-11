@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { type Yo, useCarga } from "./api";
 import { Armazon } from "./armazon/Armazon";
 import { Cargando, Tarjeta } from "./componentes";
@@ -75,8 +75,19 @@ export function App() {
             <Route path="contabilidad" element={<Contabilidad />} />
             <Route path="usuarios" element={<Usuarios />} />
             {/* Una ruta que no existe lleva al resumen en vez de a una página en
-                blanco: en un teléfono no hay barra de direcciones que arreglar. */}
-            <Route path="*" element={<Resumen />} />
+                blanco: en un teléfono no hay barra de direcciones que arreglar.
+
+                REDIRIGE, no pinta el resumen en su sitio. Antes lo pintaba, y
+                el resultado se veía a medias: la cabecera decía «Panel» en vez
+                de «Resumen» —el armazón saca el título del mapa de navegación,
+                y una ruta que no está en el mapa no tiene nombre— y ninguna
+                pestaña quedaba marcada.
+
+                Se notó con `/admin`, que es lo que uno escribe por costumbre
+                porque el panel del CRM vive ahí. Entraba, funcionaba, y parecía
+                roto. Con la redirección la barra de direcciones se corrige
+                sola y la pantalla se ve entera. */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>
