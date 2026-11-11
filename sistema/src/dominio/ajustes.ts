@@ -524,7 +524,7 @@ function texto(e: Esquema, valor: unknown): Resultado<Valor> {
   if (!ID_DE_MODELO.test(limpio)) {
     return fallo(
       "entrada_invalida",
-      `«${e.titulo}» es el nombre técnico de un modelo, como muse-spark-1.2-contributor: letras, números, puntos y guiones, sin espacios.`,
+      `«${e.titulo}» es el nombre técnico de un modelo, como muse-spark-1.3-contributor: letras, números, puntos y guiones, sin espacios.`,
     );
   }
   return ok(limpio);

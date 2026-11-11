@@ -259,7 +259,7 @@ export const PRIVACIDAD: DocumentoLegal = {
         {
           // Comprobado: worker/chat.ts manda la conversación a
           // `https://api.meta.ai/v1/messages` con el modelo
-          // `muse-spark-1.2-contributor`. Y worker/chat.ts + worker/env.ts:
+          // `muse-spark-1.3-contributor`. Y worker/chat.ts + worker/env.ts:
           // cuando se conecte la bandeja del negocio (el «binding» CRM), el
           // mensaje pasa por ahí y la conversación se guarda para que la dueña
           // la pueda leer, contestar o pausar.

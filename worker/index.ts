@@ -106,7 +106,7 @@ export default {
           // viene de `reglas.json` y NUNCA se había usado contra la API: si
           // está mal, esto es lo primero que hay que mirar, y mirarlo no debe
           // exigir leer el código.
-          chat_modelo: env.MODELO_CHAT ?? "muse-spark-1.2-contributor",
+          chat_modelo: env.MODELO_CHAT ?? "muse-spark-1.3-contributor",
           // Sin el binding, /api/catalogo sirve la copia del build y la web
           // sigue en pie — pero con precios de la fecha del despliegue. Vale
           // más verlo aquí que descubrirlo por un precio viejo.

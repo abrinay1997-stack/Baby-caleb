@@ -56,7 +56,7 @@ const BASE_META = "https://api.meta.ai/v1";
  * que cambiarlo allá: una política que describe un modelo que ya no se usa es
  * peor que no tener política.
  */
-const MODELO_POR_OMISION = "muse-spark-1.2-contributor";
+const MODELO_POR_OMISION = "muse-spark-1.3-contributor";
 
 /**
  * El texto de la respuesta, sin confiar en su forma.

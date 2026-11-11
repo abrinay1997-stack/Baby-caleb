@@ -17,7 +17,7 @@
   "ventanas_entrega": "PENDIENTE",
   "comisiones": "PENDIENTE",
   "cancelacion_con_abono": "PENDIENTE",
-  "modelo_asistente": "muse-spark-1.2-contributor",
+  "modelo_asistente": "muse-spark-1.3-contributor",
   "modelo_respaldo": "PENDIENTE",
   "ia_entrena_con_datos": true,
   "tope_ia_mensual_usd": "PENDIENTE"
