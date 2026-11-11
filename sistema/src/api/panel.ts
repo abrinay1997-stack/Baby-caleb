@@ -39,6 +39,8 @@ import {
   revisionDeCierre,
 } from "../db/contabilidad";
 import { asientoManual } from "../dominio/contabilidad";
+import { resumenDelNegocio } from "../db/metricas";
+import { esNombrePeriodo } from "../dominio/metricas";
 import {
   apagar as apagarPasarela,
   cambiarModo,
@@ -296,38 +298,25 @@ function registrarRutas(panel: Hono<Entorno>): void {
    * sale de ninguna otra pantalla y es la primera señal de que los mensajes a las
    * clientas no están llegando.
    */
+  /**
+   * La portada.
+   *
+   * **Sin `exige(...)`**, y es deliberado: es lo primero que se abre, y un 403
+   * aquí deja el panel sin portada para quien sí puede entrar. Los permisos se
+   * aplican DENTRO — `resumenDelNegocio` recibe el rol y **no consulta** lo que
+   * ese rol no puede ver, así que el bloque llega en `null` y no es que se
+   * esconda: es que nunca se pidió a la base.
+   *
+   * Un periodo que no se entiende cae en «hoy» en vez de fallar: esta pantalla
+   * tiene que abrir siempre.
+   */
   panel.get("/resumen", async (c) => {
-    const [variantes, bodegas, zonas, clientes, outbox] = await Promise.all([
-      c.env.DB.prepare("SELECT COUNT(*) n FROM variantes WHERE activo = 1").first<{ n: number }>(),
-      c.env.DB.prepare("SELECT COUNT(*) n FROM bodegas WHERE activa = 1").first<{ n: number }>(),
-      c.env.DB.prepare("SELECT COUNT(*) n FROM zonas_envio WHERE activa = 1").first<{ n: number }>(),
-      c.env.DB.prepare("SELECT COUNT(*) n FROM clientes WHERE anonimizado_en IS NULL").first<{ n: number }>(),
-      atrasados(c.env.DB),
-    ]);
-
-    // Lo que está por acabarse, con la etiqueta y nunca el número exacto hacia
-    // afuera — aquí sí se puede, porque esto es el panel de la dueña.
-    const { results: bajos } = await c.env.DB.prepare(
-      `SELECT e.codigo, v.nombre, b.nombre AS bodega, e.fisico - e.reservado AS libres, e.minimo
-       FROM existencias e
-       JOIN variantes v ON v.codigo = e.codigo
-       JOIN bodegas b ON b.id = e.bodega_id
-       WHERE e.minimo IS NOT NULL AND e.fisico - e.reservado <= e.minimo
-       ORDER BY libres, e.codigo
-       LIMIT 20`,
-    ).all<{ codigo: string; nombre: string; bodega: string; libres: number; minimo: number }>();
-
-    return c.json(
-      ok({
-        variantes: variantes?.n ?? 0,
-        bodegas: bodegas?.n ?? 0,
-        zonas: zonas?.n ?? 0,
-        clientes: clientes?.n ?? 0,
-        avisosSinPublicar: outbox.cuantos,
-        avisoMasViejo: outbox.masViejo,
-        porAcabarse: bajos,
-      }),
+    const pedido = c.req.query("periodo") ?? "hoy";
+    const r = await resumenDelNegocio(
+      { db: c.env.DB, ahora: Date.now(), rol: c.get("usuario").rol },
+      esNombrePeriodo(pedido) ? pedido : "hoy",
     );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   panel.get("/catalogo", exige("pedidos"), async (c) => {

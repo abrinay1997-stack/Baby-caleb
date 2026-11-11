@@ -146,6 +146,15 @@ function diaCorto(fechaISO: string): string {
   }).format(new Date(`${fechaISO}T00:00:00Z`));
 }
 
+/**
+ * Quita el punto final de una fecha ya formateada.
+ *
+ * En español de Panamá, Intl escribe «10:38 p. m.» con punto al final, así que
+ * una frase que termina con la hora sale con dos puntos seguidos. Se vio en la
+ * captura, no razonándolo.
+ */
+const sinPuntoFinal = (texto: string): string => texto.replace(/\.$/, "");
+
 /** Cómo se llama el periodo y con qué se compara, en palabras de la dueña. */
 const PALABRAS: Record<NombrePeriodo, { titulo: string; contra: string }> = {
   hoy: { titulo: "Hoy", contra: "que ayer a esta hora" },
@@ -198,35 +207,35 @@ export function pendientesDe(a: Atencion, avisosSinPublicar: number): Pendiente[
     {
       clave: "avisos",
       cuantos: avisosSinPublicar,
-      que: "aviso|avisos sin salir",
+      que: "aviso sin salir|avisos sin salir",
       haga: "El sistema los reintenta cada 5 minutos. Si el número no baja en media hora, avísele a Juan: puede que las clientas no estén recibiendo sus mensajes.",
       urgente: true,
     },
     {
       clave: "atrasadas",
       cuantos: a.entregasAtrasadas,
-      que: "entrega|entregas que salieron y nadie cerró",
+      que: "entrega que salió y nadie cerró|entregas que salieron y nadie cerró",
       haga: "Salieron en un día anterior y siguen abiertas. Llame al motorizado: o llegó y no la marcó, o la caja sigue en la moto.",
       urgente: true,
     },
     {
       clave: "fallidas",
       cuantos: a.entregasFallidas,
-      que: "entrega|entregas que fallaron",
+      que: "entrega que falló|entregas que fallaron",
       haga: "Nadie las resolvió todavía. Hay que reprogramarlas o devolver la mercancía a la bodega.",
       urgente: true,
     },
     {
       clave: "cobros",
       cuantos: a.pagosPorRevisar,
-      que: "comprobante|comprobantes esperándola",
+      que: "comprobante esperándola|comprobantes esperándola",
       haga: "Alguien de la casa tiene que mirarlos y aprobarlos o rechazarlos. Mientras no, el pedido no se agenda.",
       urgente: true,
     },
     {
       clave: "porAbonar",
       cuantos: a.porAbonar,
-      que: "pedido|pedidos esperando su abono",
+      que: "pedido esperando su abono|pedidos esperando su abono",
       haga:
         a.porAbonarVencidos > 0
           ? `${a.porAbonarVencidos} ya pasaron su hora: su reserva está trabando mercancía que nadie puede comprar. Escríbale a la clienta o libere el pedido.`
@@ -236,28 +245,28 @@ export function pendientesDe(a: Atencion, avisosSinPublicar: number): Pendiente[
     {
       clave: "sinDespachar",
       cuantos: a.agendadosSinDespachar,
-      que: "pedido|pedidos agendados sin preparar",
+      que: "pedido agendado sin preparar|pedidos agendados sin preparar",
       haga: "Están pagados o abonados y nadie les ha armado la entrega. Es el paso que falta para que salgan.",
       urgente: false,
     },
     {
       clave: "sinAsignar",
       cuantos: a.paradasDeHoySinAsignar,
-      que: "parada|paradas de hoy sin motorizado",
+      que: "parada de hoy sin motorizado|paradas de hoy sin motorizado",
       haga: "Tienen fecha de hoy y nadie las lleva. Asígnelas antes de que salga la ruta.",
       urgente: false,
     },
     {
       clave: "rutas",
       cuantos: a.rutasDeHoySinSalir,
-      que: "ruta|rutas de hoy sin salir",
+      que: "ruta de hoy sin salir|rutas de hoy sin salir",
       haga: "La tanda está armada pero no ha salido de la bodega. Mientras no salga, no se puede marcar ninguna entrega.",
       urgente: false,
     },
     {
       clave: "esperandoClienta",
       cuantos: a.pagosEsperandoClienta,
-      que: "pago|pagos esperando a la clienta",
+      que: "pago esperando a la clienta|pagos esperando a la clienta",
       haga: "Estos NO dependen de usted: la clienta empezó a pagar y no terminó. Se le puede recordar.",
       urgente: false,
     },
@@ -265,8 +274,15 @@ export function pendientesDe(a: Atencion, avisosSinPublicar: number): Pendiente[
   return filas.filter((f) => f.cuantos > 0);
 }
 
-/** «1 pedido» / «3 pedidos», de un «pedido|pedidos …». */
-function conteo(cuantos: number, que: string): string {
+/**
+ * «1 pedido esperando su abono» / «3 pedidos esperando su abono».
+ *
+ * Las dos formas se escriben ENTERAS en `que`, separadas por una barra, y no
+ * como un tronco con una cola pegada. Con la cola, el singular salía mutilado:
+ * nueve filas decían «1 entrega» o «1 ruta» a secas, sin el dato que las hace
+ * accionables, y solo el plural estaba bien escrito. Se vio en la captura.
+ */
+export function conteo(cuantos: number, que: string): string {
   const [singular, plural] = que.split("|");
   return `${cuantos} ${cuantos === 1 ? singular : (plural ?? singular)}`;
 }
@@ -570,7 +586,7 @@ function Atender({
           <p className="m-0 mt-1 text-muted">{f.haga}</p>
           {f.clave === "avisos" && avisos.masViejo !== null ? (
             <p className="m-0 mt-1 text-[12px] text-muted">
-              El más viejo lleva esperando desde {comoFecha(avisos.masViejo)}.
+              El más viejo lleva esperando desde {sinPuntoFinal(comoFecha(avisos.masViejo))}.
             </p>
           ) : null}
         </Tarjeta>

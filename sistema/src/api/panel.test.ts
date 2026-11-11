@@ -236,39 +236,62 @@ describe("el costo no sale si el rol no lo tiene", () => {
 });
 
 describe("/resumen", () => {
-  it("cuenta lo que hay y avisa de lo que se acaba", async () => {
+  /*
+   * Aquí había tres pruebas de la forma VIEJA de esta ruta, que contaba
+   * variantes y bodegas y devolvía una lista de «por acabarse». Las reglas que
+   * protegían no se perdieron: «lo libre es físico menos reservado» y «avisa al
+   * llegar al mínimo» viven ahora en `db/metricas.ts` con sus propias pruebas
+   * (test/metricas.test.ts). Lo comprobé antes de quitarlas.
+   *
+   * La tercera —«una variante sin mínimo no aparece»— cambió a propósito: hoy
+   * las 36 filas del inventario están sin mínimo, así que la alarma de «por
+   * acabarse» no podía avisar de nada y la pantalla callaba un problema. Ahora
+   * «sin mínimo puesto» es su propia cifra. Es un cambio de criterio, no una
+   * regla que se cayó.
+   *
+   * Lo que queda aquí es lo que decide LA RUTA.
+   */
+
+  it("abre para cualquier rol: el filtro va dentro, no en la puerta", async () => {
+    // Es la portada. Un 403 aquí deja el panel sin primera pantalla para quien
+    // sí puede entrar, así que el permiso se aplica por bloque y no al entrar.
     await sembrarCatalogo();
-    const r = await pedir(entrandoComo("duena"), "/resumen");
-    const d = r.cuerpo.datos as {
-      variantes: number;
-      bodegas: number;
-      avisosSinPublicar: number;
-      porAcabarse: { codigo: string; libres: number }[];
-    };
-    expect(d.variantes).toBe(1);
-    expect(d.bodegas).toBe(1);
-    expect(d.avisosSinPublicar).toBe(0);
-    // 10 físicas menos 2 reservadas son 8 libres… con mínimo 5 no avisa.
-    expect(d.porAcabarse).toEqual([]);
+    for (const rol of ["duena", "asistente", "contadora"] as const) {
+      const r = await pedir(entrandoComo(rol), "/resumen");
+      expect(r.estado, `${rol} no pudo abrir la portada`).toBe(200);
+    }
   });
 
-  it("avisa cuando lo libre llega al mínimo, contando lo reservado", async () => {
+  it("la asistente NO recibe el bloque del dinero", async () => {
+    // Su rol tiene `cobros: no` y `contabilidad: no`. El bloque no se esconde
+    // en la pantalla: no se pide a la base, y llega en nulo.
     await sembrarCatalogo();
-    await real.DB.prepare("UPDATE existencias SET reservado = 6 WHERE codigo = 'NAT-M'").run();
-    const r = await pedir(entrandoComo("duena"), "/resumen");
-    const d = r.cuerpo.datos as { porAcabarse: { codigo: string; libres: number }[] };
-    expect(d.porAcabarse).toHaveLength(1);
-    expect(d.porAcabarse[0]).toMatchObject({ codigo: "NAT-M", libres: 4 });
+    const r = await pedir(entrandoComo("asistente"), "/resumen");
+    const d = r.cuerpo.datos as { dinero: unknown; atencion: unknown };
+    expect(d.dinero).toBeNull();
+    // Y lo que sí le toca sigue viniendo: tiene `pedidos: editar`.
+    expect(d.atencion).not.toBeNull();
   });
 
-  it("una variante sin mínimo no aparece, aunque esté en cero", async () => {
+  it("la dueña sí lo recibe", async () => {
     await sembrarCatalogo();
-    await real.DB.prepare(
-      "UPDATE existencias SET fisico = 0, reservado = 0, minimo = NULL WHERE codigo = 'NAT-M'",
-    ).run();
     const r = await pedir(entrandoComo("duena"), "/resumen");
-    const d = r.cuerpo.datos as { porAcabarse: unknown[] };
-    expect(d.porAcabarse).toEqual([]);
+    expect((r.cuerpo.datos as { dinero: unknown }).dinero).not.toBeNull();
+  });
+
+  it("un periodo que no se entiende cae en «hoy» en vez de fallar", async () => {
+    // Esta pantalla tiene que abrir siempre. Un 400 por un parámetro torcido
+    // en la URL dejaría a la dueña sin portada por un enlace viejo.
+    await sembrarCatalogo();
+    const r = await pedir(entrandoComo("duena"), "/resumen?periodo=el-siglo-pasado");
+    expect(r.estado).toBe(200);
+    expect((r.cuerpo.datos as { periodo: { nombre: string } }).periodo.nombre).toBe("hoy");
+  });
+
+  it("y «semana» se respeta", async () => {
+    await sembrarCatalogo();
+    const r = await pedir(entrandoComo("duena"), "/resumen?periodo=semana");
+    expect((r.cuerpo.datos as { periodo: { nombre: string } }).periodo.nombre).toBe("semana");
   });
 });
 

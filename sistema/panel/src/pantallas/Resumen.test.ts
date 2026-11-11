@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barras, escalaDeLaSerie, pendientesDe, textoDeComparacion } from "./Resumen";
+import { barras, conteo, escalaDeLaSerie, pendientesDe, textoDeComparacion } from "./Resumen";
 import { comparar, fraccion } from "../../../src/dominio/metricas";
 
 /**
@@ -184,6 +184,28 @@ describe("la lista de lo que hay que atender", () => {
     expect(conVencidos[0]!.cuantos).toBe(3);
     expect(conVencidos[0]!.urgente).toBe(true);
     expect(conVencidos[0]!.haga).toContain("2 ya pasaron su hora");
+  });
+
+  it("dice lo mismo en singular que en plural", () => {
+    // Una fila que en plural dice «entregas que salieron y nadie cerró» y en
+    // singular dice «1 entrega» pierde justo lo que la hace accionable. Pasó en
+    // nueve de las nueve filas y se vio en la captura, no en una prueba.
+    const todas = pendientesDe(
+      {
+        pedidosEnTotal: 9, porAbonar: 1, porAbonarVencidos: 1, agendadosSinDespachar: 1,
+        pagosPorRevisar: 1, pagosEsperandoClienta: 1, entregasAtrasadas: 1,
+        entregasFallidas: 1, paradasDeHoySinAsignar: 1, rutasDeHoySinSalir: 1,
+      },
+      1,
+    );
+    expect(todas).toHaveLength(9);
+    for (const f of todas) {
+      const [singular, plural] = f.que.split("|");
+      expect(plural, f.clave).toBeDefined();
+      expect(singular!.trim().split(/\s+/).length, `${f.clave} en singular`).toBeGreaterThan(1);
+      expect(conteo(1, f.que), f.clave).toBe(`1 ${singular}`);
+      expect(conteo(3, f.que), f.clave).toBe(`3 ${plural}`);
+    }
   });
 
   it("y lo que espera a la clienta no se marca como urgente para usted", () => {

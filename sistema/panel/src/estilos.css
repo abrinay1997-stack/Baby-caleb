@@ -133,9 +133,21 @@ select {
    cada celda se lee como par etiqueta/valor.
    --------------------------------------------------------------------------- */
 /* Hasta 767 px, UNA columna: cada fila debajo de la anterior. El reparto en
-   columnas llega desde 768 con `--columnas`, que pone el componente. */
+   columnas llega desde 768 con `--columnas`, que pone el componente.
+
+   `minmax(0, 1fr)` y NO `1fr`, que es la trampa clásica de las cuadrículas:
+   `1fr` significa `minmax(auto, 1fr)`, y ese `auto` impide que la columna
+   encoja por debajo del contenido mínimo de lo que lleva dentro. Con una
+   celda larga —un nombre de ajuste sin espacios, una fecha y una explicación
+   en la misma fila— la columna se queda en su ancho natural, la cuadrícula
+   empuja a su padre, y la PÁGINA ENTERA se desplaza de lado: los 92 px que
+   medía el auditor en `/ajustes`.
+   
+   El componente ya usa `minmax(0, auto)` para el caso de escritorio por esta
+   misma razón; faltaba aquí. Con el cero, la columna puede encoger y el
+   contenido se parte dentro, que es lo que el §7f pide. */
 .rejilla {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* ---------------------------------------------------------------------------
@@ -192,7 +204,24 @@ select {
   .celda[data-papel="clave"] {
     margin-left: auto;
     font-weight: 700;
-    white-space: nowrap;
+    /* Antes aquí había `white-space: nowrap`, puesto para que un precio no se
+       partiera por la mitad. Y eso está bien para «$46.50»… pero la celda
+       clave también lleva valores largos —la lista de formas de pago, las
+       comisiones de las tres pasarelas— y con `nowrap` esa línea no podía
+       encoger, empujaba a su fila, y la PÁGINA ENTERA se desplazaba de lado.
+       Eran 81 de los 92 px que medía el auditor en `/ajustes`.
+
+       `min-width: 0` deja que la celda encoja —lo mismo que ya hace `titulo`
+       un poco más arriba, y por el mismo motivo— y `overflow-wrap: anywhere`
+       solo parte cuando de verdad no cabe. Un precio no tiene dónde partirse
+       a 390 px, así que sigue entero; una lista de tres pasarelas pasa a dos
+       renglones en vez de romper la pantalla.
+
+       La regla dura del §7f es que la página no se desplace de lado. Que una
+       meta ocupe una línea es una optimización de espacio; cuando chocan,
+       manda la primera. */
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .celda[data-papel="estado"] {
