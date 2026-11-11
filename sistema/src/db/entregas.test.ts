@@ -1662,3 +1662,304 @@ describe("fechaDePanama", () => {
     expect(fechaDePanama(Date.UTC(2026, 10, 11, 17, 0, 0))).toBe("2026-11-11");
   });
 });
+
+/**
+ * Los asientos de la entrega (F5.1 enganchada).
+ *
+ * Son lo último que faltaba y lo más fácil de dar por hecho: los veinte
+ * constructores de `dominio/contabilidad.ts` ya existían, cuadraban y tenían
+ * sus propias pruebas… y nadie los llamaba. Las 76 pruebas de este archivo
+ * pasaban en verde con los libros vacíos, que es exactamente por qué estas
+ * pruebas miran la TABLA `asientos` y no el valor que devuelve la función.
+ *
+ * Cada una se validó quitando del batch el asiento que vigila.
+ */
+describe("los asientos que deja una entrega", () => {
+  const asientosDe = async (pedidoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT a.id, a.hecho, a.fecha, a.origen, a.descripcion, cc.diferencia
+         FROM asientos a LEFT JOIN control_cuadre cc ON cc.asiento_id = a.id
+        WHERE a.referencia_tipo = 'pedido' AND a.referencia_id = ?
+        ORDER BY a.hecho`,
+    )
+      .bind(pedidoId)
+      .all<{
+        id: string;
+        hecho: string;
+        fecha: string;
+        origen: string;
+        descripcion: string;
+        diferencia: number | null;
+      }>();
+    return results;
+  };
+
+  const lineasDe = async (asientoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT c.codigo, l.debe_cents AS debe, l.haber_cents AS haber
+         FROM asiento_lineas l JOIN cuentas c ON c.id = l.cuenta_id
+        WHERE l.asiento_id = ? ORDER BY c.codigo`,
+    )
+      .bind(asientoId)
+      .all<{ codigo: string; debe: number; haber: number }>();
+    return results;
+  };
+
+  /** El costo promedio cargado, que es lo que hace posible el asiento 3b. */
+  const conCosto = (codigo: string, unidades: number, valorCents: number) =>
+    env.DB.prepare("INSERT INTO valor_inventario (codigo,unidades,valor_cents) VALUES (?,?,?)")
+      .bind(codigo, unidades, valorCents)
+      .run();
+
+  it("reconoce la venta al entregar: anticipo fuera, por cobrar dentro, ingreso sin ITBMS", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const antes = await env.DB.prepare(
+      `SELECT total_cents, pagado_cents, subtotal_cents, envio_cents, descuento_cents, itbms_cents
+         FROM pedidos WHERE id = ?`,
+    )
+      .bind(e.pedidoId)
+      .first<{
+        total_cents: number;
+        pagado_cents: number;
+        subtotal_cents: number;
+        envio_cents: number;
+        descuento_cents: number;
+        itbms_cents: number;
+      }>();
+    const total = antes!.total_cents;
+    const abonado = antes!.pagado_cents;
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const asientos = await asientosDe(e.pedidoId);
+    const venta = asientos.find((a) => a.hecho === "3");
+    expect(venta, `asientos: ${JSON.stringify(asientos)}`).toBeDefined();
+    expect(venta?.origen).toBe("entrega");
+    expect(venta?.descripcion).toContain(e.numero);
+
+    const lineas = await lineasDe(venta!.id);
+    // El anticipo que había deja de ser deuda y lo que falta se vuelve cuenta
+    // por cobrar. Del otro lado, el ingreso NO entra de una pieza:
+    //
+    //  · 4101 lleva la mercancía (subtotal menos descuento),
+    //  · 4102 lleva el envío, aparte, porque la dueña necesita poder ver si
+    //    el envío le cuesta más de lo que cobra por él —es una de las once
+    //    cosas que todavía están PENDIENTES en su documento—, y metido en
+    //    ventas esa pregunta ya no se puede contestar;
+    //  · 2201 no tiene línea porque hoy el ITBMS es 0, y eso no es «el
+    //    impuesto es cero»: es que la tasa sigue PENDIENTE y por eso la
+    //    columna vale 0. Cuando ella la decida, esta línea aparece sola.
+    //
+    // Esta prueba empezó esperando `4101 = total` y se puso roja. El código
+    // tenía razón y la expectativa no; se queda así de explícita para que la
+    // separación del envío sea algo que una prueba defiende, no un detalle.
+    expect(antes!.envio_cents, "el escenario tiene que traer envío").toBeGreaterThan(0);
+    expect(lineas).toEqual([
+      { codigo: "1201", debe: total - abonado, haber: 0 },
+      { codigo: "2101", debe: abonado, haber: 0 },
+      { codigo: "4101", debe: 0, haber: antes!.subtotal_cents - antes!.descuento_cents },
+      { codigo: "4102", debe: 0, haber: antes!.envio_cents },
+    ]);
+    // Y el asiento entero suma lo mismo por los dos lados.
+    expect(lineas.reduce((t, l) => t + l.debe, 0)).toBe(total);
+    expect(lineas.reduce((t, l) => t + l.haber, 0)).toBe(total);
+  });
+
+  it("el cobro en efectivo va a la caja del motorizado, y la caja nace en el mismo batch", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const antes = await leerPedido(e.pedidoId);
+    const saldo = antes!.total_cents - antes!.pagado_cents;
+
+    // La caja no existe ANTES: la crea el primer cobro que la usa.
+    const codigoCaja = `1104-${e.motorizado.id}`;
+    const sinCaja = await env.DB.prepare("SELECT codigo FROM cuentas WHERE codigo = ?")
+      .bind(codigoCaja)
+      .first();
+    expect(sinCaja).toBeNull();
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const caja = await env.DB.prepare(
+      "SELECT nombre, tipo, subtipo, motorizado_id FROM cuentas WHERE codigo = ?",
+    )
+      .bind(codigoCaja)
+      .first<{ nombre: string; tipo: string; subtipo: string; motorizado_id: string }>();
+    expect(caja).toEqual({
+      nombre: `Caja de ${e.motorizado.nombre}`,
+      tipo: "activo",
+      subtipo: "caja_motorizado",
+      motorizado_id: e.motorizado.id,
+    });
+
+    const cobro = (await asientosDe(e.pedidoId)).find((a) => a.hecho === "4");
+    expect(cobro, "falta el asiento 4").toBeDefined();
+    expect(await lineasDe(cobro!.id)).toEqual([
+      { codigo: codigoCaja, debe: saldo, haber: 0 },
+      { codigo: "1201", debe: 0, haber: saldo },
+    ]);
+  });
+
+  it("por Yappy es el 4b y el dinero está ya en la cuenta, no en la calle", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const antes = await leerPedido(e.pedidoId);
+    const saldo = antes!.total_cents - antes!.pagado_cents;
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "yappy",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const asientos = await asientosDe(e.pedidoId);
+    expect(asientos.map((a) => a.hecho)).toContain("4b");
+    expect(asientos.map((a) => a.hecho)).not.toContain("4");
+
+    const cobro = asientos.find((a) => a.hecho === "4b")!;
+    expect(await lineasDe(cobro.id)).toEqual([
+      { codigo: "1101", debe: saldo, haber: 0 },
+      { codigo: "1201", debe: 0, haber: saldo },
+    ]);
+    // Y no se creó ninguna caja: por Yappy el motorizado no toca el dinero.
+    const caja = await env.DB.prepare("SELECT codigo FROM cuentas WHERE codigo = ?")
+      .bind(`1104-${e.motorizado.id}`)
+      .first();
+    expect(caja).toBeNull();
+  });
+
+  it("cobrar con «otro» no inventa una cuenta: deja el saldo en 1201 y el pedido pagado", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const antes = await leerPedido(e.pedidoId);
+    const saldo = antes!.total_cents - antes!.pagado_cents;
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "otro",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    // El dinero entró de verdad: esto no es un cobro a medias.
+    expect(r.datos.cobradoCents).toBe(saldo);
+    expect((await leerPedido(e.pedidoId))?.estado_pago).toBe("pagado");
+
+    // Pero NO hay asiento de cobro, porque no se sabe a qué cuenta entró y los
+    // dieciocho asientos del documento no tienen uno para «no sé dónde está».
+    // Meterlo en 1103 «porque suena razonable» sería una cifra a ojo.
+    const asientos = await asientosDe(e.pedidoId);
+    expect(asientos.map((a) => a.hecho)).toContain("3");
+    expect(asientos.map((a) => a.hecho)).not.toContain("4");
+    expect(asientos.map((a) => a.hecho)).not.toContain("4b");
+
+    // El hueco queda a la vista, que es el punto: 1201 se queda con el saldo
+    // mientras el pedido dice que está pagado. Lo canta la casilla «lo por
+    // cobrar cuadra con 1201» del cierre de mes.
+    const venta = asientos.find((a) => a.hecho === "3")!;
+    const porCobrar = (await lineasDe(venta.id)).find((l) => l.codigo === "1201");
+    expect(porCobrar?.debe).toBe(saldo);
+  });
+
+  it("sin costo promedio no escribe un cero: el 3b no existe y el pedido queda sin costo", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.costoDesconocido).toBe(true);
+
+    // Un 3b en cero afirmaría que la mercancía no costó nada, y eso pone el
+    // margen en 100 %: la ganancia más bonita y más falsa que hay.
+    expect((await asientosDe(e.pedidoId)).map((a) => a.hecho)).not.toContain("3b");
+  });
+
+  it("con costo promedio cargado sí escribe el 3b, y es el costo del momento", async () => {
+    const codigo = await variante(10);
+    // 10 unidades valen $20.00 → $2.00 cada una. Se llevan 3 → $6.00.
+    await conCosto(codigo, 10, 2000);
+    const e = await enLaCalle({ cantidad: 3, codigo });
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.costoDesconocido).toBe(false);
+
+    const costo = (await asientosDe(e.pedidoId)).find((a) => a.hecho === "3b");
+    expect(costo, "falta el asiento 3b").toBeDefined();
+    expect(await lineasDe(costo!.id)).toEqual([
+      { codigo: "1301", debe: 0, haber: 600 },
+      { codigo: "5101", debe: 600, haber: 0 },
+    ]);
+  });
+
+  it("todos los asientos de la entrega cuadran y llevan la fecha de Panamá", async () => {
+    const codigo = await variante(10);
+    await conCosto(codigo, 10, 2000);
+    const T = Date.UTC(2026, 10, 12, 2, 0, 0); // 11 de noviembre, 21:00 en Panamá
+    const e = await enLaCalle({ cantidad: 2, codigo });
+
+    const r = await marcarEntregada(
+      { db: env.DB, ahora: T, actor: "yarielis@babycaleb.com" },
+      {
+        idempotencia: id("idem"),
+        envioId: e.envioId,
+        motorizadoId: e.motorizado.id,
+        metodoCobro: "efectivo",
+      },
+    );
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const asientos = await asientosDe(e.pedidoId);
+    expect(asientos.map((a) => a.hecho).sort()).toEqual(["3", "3b", "4"]);
+    for (const a of asientos) {
+      // Su fila de cuadre existe y la diferencia es cero. Sin la fila, el
+      // asiento estaría a medias y el cierre lo cantaría.
+      expect(a.diferencia, `asiento ${a.hecho} sin cuadrar`).toBe(0);
+      // El día del negocio, no el de UTC: a las 21:00 de Panamá UTC ya es el 12.
+      expect(a.fecha, `asiento ${a.hecho}`).toBe("2026-11-11");
+    }
+  });
+
+  it("el mismo toque dos veces no duplica los asientos", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const entrada = {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo" as const,
+    };
+
+    expect((await marcarEntregada(ctx(), entrada)).ok).toBe(true);
+    const unaVez = await asientosDe(e.pedidoId);
+    expect((await marcarEntregada(ctx(), entrada)).ok).toBe(true);
+
+    // Dos asientos iguales descuadran nada —cada uno cuadra por su lado— así
+    // que nada los delataría salvo el saldo, que estaría al doble.
+    expect((await asientosDe(e.pedidoId)).map((a) => a.hecho)).toEqual(
+      unaVez.map((a) => a.hecho),
+    );
+  });
+});
