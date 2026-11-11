@@ -52,7 +52,20 @@ export async function imagen(
   }
   if (clave === "") return noEncontrado();
 
-  const r = await sistema.archivo(clave);
+  // La llamada puede REVENTAR, no solo contestar que no. Pasa cuando el
+  // sistema está caído, o —lo que pasó aquí— cuando el método todavía no está
+  // desplegado al otro lado: entonces no hay respuesta que mirar, hay una
+  // excepción, y sin esto sale un 500 al navegador.
+  //
+  // 503 y no 404: no es que la foto no exista, es que no se puede preguntar.
+  // Confundirlos manda al siguiente que lo mire a buscar la foto en vez de
+  // mirar el sistema.
+  let r: Awaited<ReturnType<SistemaWebBinding["archivo"]>>;
+  try {
+    r = await sistema.archivo(clave);
+  } catch {
+    return new Response("Sin conexión con el sistema", { status: 503 });
+  }
   if (!r.ok || r.datos === null) return noEncontrado();
 
   return new Response(r.datos.bytes, {

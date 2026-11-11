@@ -97,6 +97,22 @@ describe("lo que no es una petición normal", () => {
     expect(r.status).toBe(503);
   });
 
+  it("si la llamada REVIENTA, 503 y no un 500 al navegador", async () => {
+    // Pasa cuando el sistema está caído o cuando el método todavía no está
+    // desplegado al otro lado. Lo segundo ocurrió de verdad: `/foto/` daba 500
+    // porque `archivo()` existía en el código y no en el Worker desplegado.
+    const roto: SistemaWebBinding = {
+      async catalogo() {
+        return { ok: false, codigo: "interno", mensaje: "x" };
+      },
+      archivo() {
+        throw new TypeError("sistema.archivo is not a function");
+      },
+    };
+    const r = await imagen(pedir("/foto/a.webp"), roto);
+    expect(r.status).toBe(503);
+  });
+
   it("una clave vacía da 404 sin molestar al sistema", async () => {
     const s = sistema(UNA_FOTO);
     const r = await imagen(pedir("/foto/"), s);
