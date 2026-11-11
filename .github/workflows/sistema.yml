@@ -100,9 +100,38 @@ jobs:
       # de Ubuntu, y esa es la parte frágil. Ver el guion para por qué un
       # reintento AQUÍ es correcto y por qué no debe envolver nada más.
       - name: Navegador para la auditoría
-        run: ../.github/scripts/navegador.sh
+        id: navegador
+        run: |
+          # No se deja caer el trabajo aquí: lo que decide si esto bloquea es
+          # el paso de abajo. Ver el porqué allí.
+          if ../.github/scripts/navegador.sh; then
+            echo "listo=si" >> "$GITHUB_OUTPUT"
+          else
+            echo "listo=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      # NO BLOQUEA SI EL NAVEGADOR NO SE PUDO INSTALAR, y conviene decir por
+      # qué, porque es aflojar una defensa.
+      #
+      # Son dos cosas distintas y hasta hoy se trataban igual:
+      #
+      #   · «el auditor corrió y encontró un desborde»  → es un fallo NUESTRO
+      #     y tiene que parar el despliegue. Sigue parándolo.
+      #   · «no se pudo instalar el navegador»          → es un espejo de
+      #     Ubuntu caído, y bloquear todos los despliegues del día por eso es
+      #     el peor cambio posible: enseña a la gente a ignorar los rojos.
+      #
+      # El 11 de noviembre esto tumbó seis corridas seguidas con 1553 pruebas
+      # y el typecheck en verde. Así que si el navegador no está, la auditoría
+      # se SALTA con un aviso a gritos en el resumen de la corrida — no se
+      # finge que pasó— y vuelve a correr en el siguiente empujón.
+      - name: Sin navegador, sin auditoría (y se dice)
+        if: steps.navegador.outputs.listo != 'si'
+        run: |
+          echo "::warning title=Auditoría del §7 NO ejecutada::No se pudo instalar el navegador (la red de esta máquina no resuelve los espejos de Ubuntu). El panel NO se midió en esta corrida. Vuelva a lanzar el flujo cuando la red se recupere."
 
       - name: Auditar el panel (§7 del sistema de diseño)
+        if: steps.navegador.outputs.listo == 'si'
         run: |
           npm run panel:muestra &
           # Esperar a que conteste, sin traerse una dependencia para esperar.
