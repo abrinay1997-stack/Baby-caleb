@@ -1252,7 +1252,10 @@ export async function marcarEntregada(
       },
       // Lo que ESTE batch escribió, y no solo la versión: la hora exacta y el
       // monto. Si otro batch se metió en medio, su hora es otra y esto cae.
-      // MUTADO: sin controlExtra
+      controlExtra: {
+        sql: "entregado_en = ? AND cobrado_cents = ?",
+        valores: [ctx.ahora, cobrado],
+      },
     }),
   ];
 
@@ -1279,27 +1282,34 @@ export async function marcarEntregada(
           costo === null ? null : Math.round(costo / c.cantidad),
           e.envioId, ctx.actor, ctx.ahora,
         ),
-      // Sin guarda en el WHERE a propósito. Los CHECK de `existencias`
-      // (`fisico >= 0`, `reservado >= 0`) tumban el batch si esto dejara algo
-      // en negativo, y son más fiables que un `WHERE reservado >= ?`: con la
-      // guarda, un UPDATE que no casa con nada NO falla, y el control de abajo
-      // —que solo puede comprobar que la fila existe— pasaría igual, dejando el
-      // movimiento escrito y las existencias intactas.
+      /**
+       * Sin guarda en el WHERE, y SIN fila de control. Las dos decisiones son a
+       * propósito y las dos se comprobaron rompiéndolas:
+       *
+       * - **Sin `WHERE reservado >= ?`.** Con la guarda, un UPDATE que no casa
+       *   con nada no falla: afecta cero filas y el batch sigue. Sin ella, los
+       *   CHECK de `existencias` (`fisico >= 0`, `reservado >= 0`) tumban el
+       *   batch si esto dejara algo en negativo. La tabla es más fiable que el
+       *   WHERE porque no se puede olvidar.
+       * - **Sin fila de control.** Aquí una no aportaría nada, y escribirla
+       *   haría creer que protege algo. Lo único que podría pasar callando es
+       *   que la fila de `existencias` no exista, y eso ya lo impide la llave
+       *   foránea `(codigo, bodega_id)` de `movimientos_inventario`: el
+       *   movimiento se inserta justo antes y no puede entrar sin su fila. Lo
+       *   probé neutralizando el control —`ok = 1` fijo— y ninguna prueba se
+       *   movió; probé borrando la fila de existencias y lo que salta es la
+       *   llave foránea. Hay una prueba que lo fija.
+       *
+       * `aplicar()` de db/inventario.ts sí lleva el control, y ahí sí hace
+       * falta: esa función solo mueve el físico, así que puede dejarlo por
+       * debajo de lo reservado. Esta baja los dos a la vez y conserva la
+       * invariante por construcción.
+       */
       ctx.db
         .prepare(
           "UPDATE existencias SET fisico = fisico - ?, reservado = reservado - ? WHERE codigo = ? AND bodega_id = ?",
         )
         .bind(c.cantidad, c.cantidad, c.codigo, c.bodega_id),
-      // Lo que esta fila caza, exactamente: que la fila de existencias NO
-      // EXISTA. Eso no falla solo —afecta cero filas y el batch sigue— y
-      // dejaría una venta escrita sin que nada saliera de ninguna bodega.
-      ctx.db
-        .prepare(
-          `INSERT INTO controles (id, regla, ok, creado_en)
-           VALUES (?, ?, (SELECT COUNT(*) FROM existencias
-                          WHERE codigo = ? AND bodega_id = ? AND fisico >= reservado), ?)`,
-        )
-        .bind(ulid(ctx.ahora), `entrega:${c.codigo}`, c.codigo, c.bodega_id, ctx.ahora),
     );
 
     if (costo !== null) {
@@ -1364,8 +1374,16 @@ export async function marcarEntregada(
           cobrado,
           // Derivado del ENVÍO y no de la clave de idempotencia: aunque el
           // teléfono genere dos claves distintas, el saldo de una entrega solo
-          // se puede cobrar una vez. Es la única de las tres capas que no
-          // depende de lo que mande el cliente.
+          // se puede cobrar una vez.
+          //
+          // **Hoy es un cinturón de más, y conviene decirlo.** Lo comprobé
+          // cambiándolo por la clave de idempotencia y la prueba de la carrera
+          // siguió verde: lo que de verdad caza al batch perdedor es el control
+          // de `enunciadosDeCobro`, porque la versión del pedido avanza DOS
+          // veces en el batch ganador —el cobro y la transición— y la que el
+          // perdedor esperaba ya no es la que hay. Se queda porque no cuesta
+          // nada y sobrevive a que alguien toque ese control, pero quien lo lea
+          // no debe creer que es lo que está defendiendo.
           `saldo:${e.envioId}`,
           ctx.actor,
           ctx.ahora,
@@ -1681,6 +1699,9 @@ export interface ParadaDelDia {
   readonly estado: EstadoEnvio;
   readonly orden: number | null;
   readonly pedido: string;
+  /** De dónde se carga. Una ruta solo puede llevar paradas de su bodega. */
+  readonly bodegaId: string;
+  readonly bodega: string;
   readonly cliente: string | null;
   readonly zona: string | null;
   readonly direccion: string | null;
@@ -1708,11 +1729,28 @@ export interface RutaDelDia {
   readonly paradas: ParadaDelDia[];
 }
 
+/** Un pedido agendado al que todavía no se le ha preparado la entrega. */
+export interface PedidoPorPreparar {
+  readonly pedidoId: string;
+  readonly numero: string;
+  readonly cliente: string | null;
+  readonly zona: string | null;
+  readonly saldoCents: number;
+}
+
 export interface EntregasDelDia {
   readonly fecha: string;
   readonly rutas: RutaDelDia[];
   /** Entregas listas pero todavía sin ruta: el trabajo por repartir. */
   readonly sinRuta: ParadaDelDia[];
+  /**
+   * Lo que todavía no es una entrega.
+   *
+   * Sin esto la pantalla no serviría para empezar el día: un pedido agendado
+   * sin envío no sale en ninguna de las dos listas de arriba, así que la dueña
+   * vería la pantalla vacía sin saber que tiene trabajo esperando.
+   */
+  readonly porPreparar: PedidoPorPreparar[];
   readonly resumen: {
     readonly porEntregar: number;
     readonly entregadas: number;
@@ -1724,11 +1762,12 @@ export interface EntregasDelDia {
 
 const FILA_PARADA = `
   SELECT v.id, v.estado, v.orden_ruta, v.ventana, v.cobro_cents, v.cobrado_cents,
-         v.cobro_metodo, v.entregado_en, v.foto_r2, v.ruta_id,
-         p.numero AS pedido, c.nombre AS cliente,
+         v.cobro_metodo, v.entregado_en, v.foto_r2, v.ruta_id, v.bodega_id,
+         b.nombre AS bodega, p.numero AS pedido, c.nombre AS cliente,
          z.nombre AS zona, d.texto AS direccion, d.referencia, d.lat, d.lng
     FROM envios v
     JOIN pedidos p ON p.id = v.pedido_id
+    JOIN bodegas b ON b.id = v.bodega_id
     LEFT JOIN clientes c ON c.id = p.cliente_id
     LEFT JOIN zonas_envio z ON z.id = p.zona_id
     LEFT JOIN direcciones d ON d.id = p.direccion_id
@@ -1745,6 +1784,8 @@ interface FilaParada {
   entregado_en: number | null;
   foto_r2: string | null;
   ruta_id: string | null;
+  bodega_id: string;
+  bodega: string;
   pedido: string;
   cliente: string | null;
   zona: string | null;
@@ -1759,6 +1800,8 @@ const comoParada = (f: FilaParada): ParadaDelDia => ({
   estado: esEstadoEnvio(f.estado) ? f.estado : "pendiente",
   orden: f.orden_ruta,
   pedido: f.pedido,
+  bodegaId: f.bodega_id,
+  bodega: f.bodega,
   cliente: f.cliente,
   zona: f.zona,
   direccion: f.direccion,
@@ -1832,6 +1875,25 @@ export async function entregasDelDia(
     porRuta.set(f.ruta_id, ya);
   }
 
+  // Los pedidos agendados que todavía no tienen entrega preparada. No se filtran
+  // por fecha: un pedido agendado el viernes y no despachado sigue siendo
+  // trabajo del lunes, y esconderlo porque «no es de hoy» es cómo se olvida.
+  const { results: porPreparar } = await db
+    .prepare(
+      `SELECT p.id, p.numero, p.total_cents - p.pagado_cents AS saldo,
+              c.nombre AS cliente, z.nombre AS zona
+         FROM pedidos p
+         LEFT JOIN clientes c ON c.id = p.cliente_id
+         LEFT JOIN zonas_envio z ON z.id = p.zona_id
+        WHERE p.estado = 'agendado'
+          AND NOT EXISTS (SELECT 1 FROM envios v
+                           WHERE v.pedido_id = p.id
+                             AND v.estado NOT IN ('entregado','devuelto','anulado'))
+        ORDER BY p.creado_en
+        LIMIT 100`,
+    )
+    .all<{ id: string; numero: string; saldo: number; cliente: string | null; zona: string | null }>();
+
   const todas = [...sinRuta, ...[...porRuta.values()].flat()];
   const abiertas = todas.filter(
     (p) => p.estado !== "entregado" && p.estado !== "devuelto" && p.estado !== "anulado",
@@ -1851,6 +1913,13 @@ export async function entregasDelDia(
       paradas: porRuta.get(r.id) ?? [],
     })),
     sinRuta,
+    porPreparar: porPreparar.map((p) => ({
+      pedidoId: p.id,
+      numero: p.numero,
+      cliente: p.cliente,
+      zona: p.zona,
+      saldoCents: Math.max(p.saldo, 0),
+    })),
     resumen: {
       // «Fallido» cuenta como por entregar: la caja sigue siendo de alguien y
       // alguien tiene que decidir si se reintenta o se devuelve.

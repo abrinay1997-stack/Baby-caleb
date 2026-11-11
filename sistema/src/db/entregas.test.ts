@@ -113,10 +113,17 @@ interface Escenario {
  * entero metería en cada prueba un segundo sistema que ya tiene las suyas.
  */
 async function pedidoAgendado(
-  opts: { cantidad?: number; fisico?: number; punto?: { lat: number; lng: number } | null; pagar?: "abono" | "todo" } = {},
+  opts: {
+    cantidad?: number;
+    fisico?: number;
+    punto?: { lat: number; lng: number } | null;
+    pagar?: "abono" | "todo";
+    /** Para que dos pedidos compartan variante y bodega. */
+    codigo?: string;
+  } = {},
 ): Promise<Escenario> {
   const cantidad = opts.cantidad ?? 2;
-  const codigo = await variante(opts.fisico ?? 50);
+  const codigo = opts.codigo ?? (await variante(opts.fisico ?? 50));
   const clienteId = id("cli");
 
   await env.DB.prepare("INSERT INTO clientes (id,nombre,creado_en,actualizado_en) VALUES (?,?,?,?)")
@@ -575,6 +582,55 @@ describe("crearEnvio", () => {
     if (!otra.ok) expect(otra.codigo).toBe("repetido");
   });
 
+  it("un pedido apartado en dos bodegas no se despacha: nadie lo armaría de un viaje", async () => {
+    const otraBodegaId = id("bod");
+    const otraBodega = `Bodega ${otraBodegaId}`;
+    await env.DB.prepare("INSERT INTO bodegas (id,nombre,activa) VALUES (?,?,1)")
+      .bind(otraBodegaId, otraBodega)
+      .run();
+
+    const aqui = await variante(10);
+    const alla = codigoNuevo();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO variantes (codigo,producto_id,nombre,unidades_por_caja,precio_cents,
+           publicado,activo,version,actualizado_en) VALUES (?,?,?,1,5000,1,1,1,?)`,
+      ).bind(alla, productoId, `pieza ${alla}`, ahora()),
+      env.DB.prepare("INSERT INTO existencias (codigo,bodega_id,fisico,reservado) VALUES (?,?,10,0)").bind(
+        alla, otraBodegaId,
+      ),
+    ]);
+
+    const clienteId = id("cli");
+    await env.DB.prepare("INSERT INTO clientes (id,nombre,creado_en,actualizado_en) VALUES (?,?,?,?)")
+      .bind(clienteId, "Dos bodegas", ahora(), ahora())
+      .run();
+    const pedido = await crearPedido(
+      { db: env.DB, ahora: ahora(), actor: "prueba", abonoMinimoCents: 500, minutosParaAbonar: null },
+      {
+        idempotencia: id("idem"), clienteId, origen: "panel",
+        lineas: [
+          { codigo: aqui, cantidad: 1, bodega },
+          { codigo: alla, cantidad: 1, bodega: otraBodega },
+        ],
+        zona,
+      },
+    );
+    if (!pedido.ok) throw new Error(pedido.mensaje);
+    await env.DB.prepare("UPDATE pedidos SET pagado_cents = 500, estado_pago = 'abonado' WHERE id = ?")
+      .bind(pedido.datos.id)
+      .run();
+    if (!(await agendar({ db: env.DB, ahora: ahora(), actor: "p" }, pedido.datos.id)).ok) {
+      throw new Error("no se agendó");
+    }
+
+    // Mandar al motorizado a una sola bodega por mercancía que está en dos es
+    // mandarlo a buscar algo que no está ahí. El sistema no finge que sí.
+    const r = await crearEnvio(ctx(), { pedidoId: pedido.datos.id });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.mensaje).toMatch(/más de una bodega/i);
+  });
+
   it("una ventana de entrega no se acepta mientras la dueña no las decida", async () => {
     const p = await pedidoAgendado();
     const r = await crearEnvio(ctx(), { pedidoId: p.pedidoId, ventana: "manana" });
@@ -920,7 +976,15 @@ describe("marcarEntregada", () => {
   });
 
   it("dos peticiones A LA VEZ con claves distintas: el saldo entra una sola vez", async () => {
-    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const codigo = await variante(20);
+    const e = await enLaCalle({ cantidad: 2, codigo });
+    // Otro pedido aparta del MISMO código: sin esto, lo reservado quedaría en
+    // cero tras la primera descarga y un segundo descuento chocaría con el
+    // `CHECK (reservado >= 0)` de la tabla. Con holgura, la tabla ya no
+    // defiende nada y lo que queda a prueba es lo que este archivo escribió.
+    await pedidoAgendado({ cantidad: 5, codigo });
+    expect(await existencias(codigo)).toEqual({ fisico: 20, reservado: 7 });
+
     const base = { envioId: e.envioId, motorizadoId: e.motorizado.id, metodoCobro: "efectivo" as const };
     const T = ahora();
 
@@ -940,8 +1004,9 @@ describe("marcarEntregada", () => {
     expect([uno.datos.yaEstaba, dos.datos.yaEstaba].filter((x) => x === false)).toHaveLength(1);
 
     expect((await pagosDe(e.pedidoId))?.n).toBe(1);
-    // Y el stock se descargó UNA vez: 10 − 2.
-    expect(await existencias(e.codigo)).toEqual({ fisico: 8, reservado: 0 });
+    // Y el stock se descargó UNA vez: 20 − 2 de físico, y de lo reservado se
+    // suelta solo lo de este pedido (7 − 2), no lo del otro.
+    expect(await existencias(codigo)).toEqual({ fisico: 18, reservado: 5 });
     const pedido = await leerPedido(e.pedidoId);
     expect(pedido?.pagado_cents).toBe(pedido?.total_cents);
   });
@@ -953,7 +1018,14 @@ describe("marcarEntregada", () => {
     // su propio batch. Con un control que mirara solo la versión, el perdedor
     // pasaría —después del ganador, la versión YA es la que esperaba— y el
     // físico bajaría dos veces.
-    const e = await enLaCalle({ cantidad: 2, fisico: 10, pagar: "todo" });
+    //
+    // Las dos horas son distintas a propósito: es el caso real del reintento
+    // un segundo después, y es donde el control tiene que decidir solo.
+    const codigo = await variante(20);
+    const e = await enLaCalle({ cantidad: 2, codigo, pagar: "todo" });
+    // Holgura en lo reservado, para que el `CHECK (reservado >= 0)` de la tabla
+    // no sea el que tape el error. Ver la prueba de arriba.
+    await pedidoAgendado({ cantidad: 5, codigo });
     const T = ahora();
 
     const [uno, dos] = await Promise.all([
@@ -965,7 +1037,7 @@ describe("marcarEntregada", () => {
     if (!uno.ok || !dos.ok) return;
     expect([uno.datos.yaEstaba, dos.datos.yaEstaba].filter((x) => x === false)).toHaveLength(1);
 
-    expect(await existencias(e.codigo)).toEqual({ fisico: 8, reservado: 0 });
+    expect(await existencias(codigo)).toEqual({ fisico: 18, reservado: 5 });
     const movimientos = await env.DB.prepare(
       "SELECT COUNT(*) AS n FROM movimientos_inventario WHERE referencia_id = ?",
     )
@@ -1133,6 +1205,31 @@ describe("marcarEntregada", () => {
       .bind(e.pedidoId)
       .first<{ costo_unit_cents: number | null }>();
     expect(linea?.costo_unit_cents).toBeNull();
+  });
+
+  it("si la fila de existencias desapareció, no se escribe media venta", async () => {
+    const e = await enLaCalle({ cantidad: 1, fisico: 10 });
+    // El caso que la fila de control de `db/inventario.ts` existe para cazar.
+    // Aquí no hace falta una: la llave foránea (codigo, bodega_id) de
+    // `movimientos_inventario` no deja insertar el movimiento sin su fila de
+    // existencias, y eso tumba el batch entero. Esta prueba fija ese
+    // razonamiento, porque sin ella alguien podría quitar la llave foránea y
+    // nada protestaría.
+    await env.DB.prepare("DELETE FROM existencias WHERE codigo = ? AND bodega_id = ?")
+      .bind(e.codigo, bodegaId)
+      .run();
+
+    const r = await marcarEntregada(ctx(), { idempotencia: id("idem"), envioId: e.envioId });
+    expect(r.ok).toBe(false);
+
+    // Y no quedó ni la parada marcada ni el movimiento escrito.
+    expect((await leerEnvio(e.envioId))?.estado).toBe("en_ruta");
+    const mov = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM movimientos_inventario WHERE referencia_id = ?",
+    )
+      .bind(e.envioId)
+      .first<{ n: number }>();
+    expect(mov?.n).toBe(0);
   });
 
   it("una parada que no salió no se puede entregar", async () => {
@@ -1396,6 +1493,24 @@ describe("entregasDelDia", () => {
     const r = await entregasDelDia(env.DB, "11/11/2026", ahora());
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.codigo).toBe("entrada_invalida");
+  });
+
+  it("saca los pedidos agendados que todavía no tienen entrega preparada", async () => {
+    const p = await pedidoAgendado();
+    const r = await entregasDelDia(env.DB, fechaDePanama(ahora()), ahora());
+    if (!r.ok) throw new Error(r.mensaje);
+    // Sin esta lista, la dueña abriría la pantalla vacía con trabajo esperando:
+    // un pedido agendado sin envío no sale en ninguna de las otras dos listas.
+    expect(r.datos.porPreparar.map((x) => x.numero)).toContain(p.numero);
+    expect(r.datos.porPreparar.find((x) => x.numero === p.numero)?.saldoCents).toBe(
+      p.totalCents - 500,
+    );
+
+    // Y en cuanto se le prepara la entrega, deja de estar «por preparar».
+    expect((await crearEnvio(ctx(), { pedidoId: p.pedidoId })).ok).toBe(true);
+    const despues = await entregasDelDia(env.DB, fechaDePanama(ahora()), ahora());
+    if (!despues.ok) throw new Error(despues.mensaje);
+    expect(despues.datos.porPreparar.map((x) => x.numero)).not.toContain(p.numero);
   });
 
   it("y los ajustes que faltan se dicen, no se rellenan", async () => {

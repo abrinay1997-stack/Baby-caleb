@@ -299,11 +299,15 @@ export function enunciadosDeGuardado(
 ): D1PreparedStatement[] {
   return [
     // La versión va calculada AQUÍ, en el enunciado, y no con un
-    // `MAX(version)+1` dentro del SQL. Con el subconsulta las dos personas que
-    // guardan a la vez se llevarían versiones distintas y las dos entrarían:
-    // la segunda ganaría y la primera se habría ido creyendo que su valor es el
-    // que vale. Con el número fijo, las dos calculan el mismo y la llave
+    // `MAX(version)+1` dentro del SQL. Con la subconsulta, dos personas que
+    // guardan a la vez se llevarían versiones distintas y las dos filas
+    // entrarían; con el número fijo las dos calculan el mismo y la llave
     // primaria tumba a la segunda, que es lo que se pidió: fallar, no pisar.
+    //
+    // Medido: pasar el cálculo a la subconsulta NO abre el agujero, porque el
+    // control de abajo busca la versión que ESTE batch calculó y no la
+    // encuentra. Las dos defensas se solapan a propósito, y la de aquí es la
+    // que se lee al mirar el INSERT.
     ctx.db
       .prepare(
         `INSERT INTO ajustes (clave, version, valor_json, vigente_desde, cambiado_por, motivo)

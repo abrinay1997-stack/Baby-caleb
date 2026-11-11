@@ -45,7 +45,7 @@ import {
  * historial que contesta «¿quién bajó la comisión en marzo?».
  */
 
-interface AjusteVigente {
+export interface AjusteVigente {
   clave: Clave;
   valor: unknown;
   pendiente: boolean;
@@ -90,7 +90,7 @@ const enDolares = (centavos: number): string =>
  * y dos formas de escribir el mismo valor acabarían discrepando en una de las
  * dos.
  */
-function comoSeLee(clave: Clave, valor: unknown): string {
+export function comoSeLee(clave: Clave, valor: unknown): string {
   if (esPendiente(valor)) return "Falta decidirlo";
   const e = ESQUEMAS[clave];
   switch (e.tipo) {
@@ -169,7 +169,7 @@ function Campo({
  * mismo que un campo a medio escribir. El texto se convierte al pulsar
  * Guardar, y lo que no se entiende se dice entonces.
  */
-interface Borrador {
+export interface Borrador {
   pendiente: boolean;
   texto: string;
   booleano: boolean;
@@ -180,7 +180,7 @@ interface Borrador {
 
 const ventanaVacia = (): Ventana => ({ id: "", etiqueta: "", desde: "", hasta: "" });
 
-function borradorDe(a: AjusteVigente): Borrador {
+export function borradorDe(a: AjusteVigente): Borrador {
   const e = ESQUEMAS[a.clave];
   const v = a.valor;
   const pendiente = esPendiente(v);
@@ -224,7 +224,10 @@ function borradorDe(a: AjusteVigente): Borrador {
  * la única copia que cuenta. Aquí solo se traduce lo que se escribió —dólares
  * a centavos, por ciento a puntos básicos— y se avisa de lo que no se entiende.
  */
-function valorDelBorrador(clave: Clave, b: Borrador): { valor: unknown } | { error: string } {
+export function valorDelBorrador(
+  clave: Clave,
+  b: Borrador,
+): { valor: unknown } | { error: string } {
   if (b.pendiente) return { valor: PENDIENTE };
   const e = ESQUEMAS[clave];
 
