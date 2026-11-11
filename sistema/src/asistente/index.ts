@@ -48,4 +48,5 @@ export function catalogo(): Registro {
 }
 
 export * from "./ejecutar";
+export * from "./conversar";
 export { HERRAMIENTAS_DE_CATALOGO, HERRAMIENTAS_DE_INVENTARIO, HERRAMIENTAS_DE_PRECIOS_Y_STOCK };
