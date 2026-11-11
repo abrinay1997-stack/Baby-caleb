@@ -361,6 +361,107 @@ const RESPUESTAS = {
    * de la dueña. Poner aquí un inventario positivo inventado escondería
    * exactamente lo que hay que ver antes de empezar a usar esto en serio.
    */
+  /**
+   * Pedidos.
+   *
+   * No estaba, y por eso `/pedidos` nunca se auditó: sin datos de muestra la
+   * pantalla sale vacía y medirla no dice nada, así que quedó fuera de la
+   * lista. El hueco se vio en un teléfono de verdad, no en CI.
+   *
+   * Los nombres largos son a propósito: una caja se rompe con el nombre largo,
+   * no con «Ana». Si la muestra solo trae nombres cortos, la auditoría mide una
+   * pantalla que no existe en la vida real.
+   */
+  "/api/pedidos": ok({
+    pedidos: [
+      {
+        id: "ped-1",
+        numero: "BC-1041",
+        estado: "por_abonar",
+        estado_pago: "sin_pago",
+        cliente: "María de los Ángeles Villarreal Quintero",
+        origen: "web",
+        lineas: 3,
+        creado_en: 1_794_200_000_000,
+        vence_en: 1_794_400_000_000,
+        total_cents: 18_750,
+        pagado_cents: 0,
+        saldo_cents: 18_750,
+      },
+      {
+        id: "ped-2",
+        numero: "BC-1042",
+        estado: "agendado",
+        estado_pago: "abonado",
+        cliente: "Yarielis Concepción",
+        origen: "whatsapp",
+        lineas: 1,
+        creado_en: 1_794_210_000_000,
+        vence_en: null,
+        total_cents: 4_500,
+        pagado_cents: 2_000,
+        saldo_cents: 2_500,
+      },
+      {
+        id: "ped-3",
+        numero: "BC-1043",
+        estado: "en_ruta",
+        estado_pago: "abonado",
+        cliente: "Rosa Elena Sánchez",
+        origen: "instagram",
+        lineas: 2,
+        creado_en: 1_794_220_000_000,
+        vence_en: null,
+        total_cents: 9_900,
+        pagado_cents: 5_000,
+        saldo_cents: 4_900,
+      },
+      {
+        id: "ped-4",
+        numero: "BC-1044",
+        estado: "entregado",
+        estado_pago: "pagado",
+        cliente: "Dayana I. Rodríguez de Hernández",
+        origen: "web",
+        lineas: 5,
+        creado_en: 1_794_100_000_000,
+        vence_en: null,
+        total_cents: 32_400,
+        pagado_cents: 32_400,
+        saldo_cents: 0,
+      },
+      {
+        id: "ped-5",
+        numero: "BC-1045",
+        estado: "cancelado",
+        estado_pago: "sin_pago",
+        cliente: null,
+        origen: "bot",
+        lineas: 1,
+        creado_en: 1_794_090_000_000,
+        vence_en: null,
+        total_cents: null,
+        pagado_cents: null,
+        saldo_cents: null,
+      },
+      {
+        id: "ped-6",
+        numero: "BC-1046",
+        estado: "devuelto",
+        estado_pago: "reembolsado",
+        cliente: "Kathia Mendoza",
+        origen: "web",
+        lineas: 2,
+        creado_en: 1_794_080_000_000,
+        vence_en: null,
+        total_cents: 7_200,
+        pagado_cents: 0,
+        saldo_cents: 0,
+      },
+    ],
+    hayMas: false,
+  }),
+
   "/api/contabilidad": ok({
     resumen: {
       desde: "2026-11-01",

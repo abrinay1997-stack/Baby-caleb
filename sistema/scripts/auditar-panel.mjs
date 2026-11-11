@@ -30,6 +30,14 @@ const PANTALLAS = [
   // panel (mil líneas). Hasta que se engancharon los asientos no tenía datos
   // que enseñar, así que tampoco se había visto con nada dentro.
   ["contabilidad", "/contabilidad"],
+  // Pedidos, entregas y pasarelas NO se medían, y no por descuido: el servidor
+  // de muestra no traía datos para ellas, así que medirlas habría sido medir
+  // una pantalla vacía. El hueco se destapó en un teléfono de verdad —los
+  // filtros de pedidos rompían la caja— con CI en verde. Una auditoría que no
+  // cubre una pantalla no dice «está bien»: no dice nada, y se lee igual.
+  ["pedidos", "/pedidos"],
+  ["entregas", "/entregas"],
+  ["pasarelas", "/pasarelas"],
   ["catalogo", "/catalogo"],
   ["existencias", "/existencias"],
   ["bodegas", "/bodegas"],

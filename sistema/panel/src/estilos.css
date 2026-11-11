@@ -165,6 +165,41 @@ select {
    Catorce líneas pasan a tres. En escritorio no cambia nada: desde 768 px la
    fila vuelve a ser `display: contents` y la cuadrícula manda.
    --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   En el teléfono, ninguna cuadrícula se mide por su contenido.
+
+   Esto arregla un desbordamiento que era estructural y estaba latente en todo
+   el panel; Pedidos fue solo la primera pantalla que lo cruzó. El mecanismo:
+
+     1. Cada pantalla envuelve lo suyo en un `grid`, cuya columna implícita es
+        `auto`, o sea, «tan ancha como el contenido más ancho».
+     2. Una fila de teléfono es `display:flex; flex-wrap:wrap`. Envolver es
+        algo que un flex hace cuando el ancho se lo IMPONEN; pero su ancho
+        máximo —el que mira el paso 1— es el de todas las celdas en una línea.
+     3. Pedidos tiene ocho columnas y nombres de clienta largos: esa línea mide
+        666 px. La columna creció a 666, y como las cuadrículas estiran a sus
+        hijos, arrastró también a la tarjeta de filtros. De ahí el informe de
+        que «los filtros rompen la pantalla»: eran la víctima, no la causa.
+
+   Se comprobó midiendo: poner `min-width: 0` en la rejilla o en la fila NO
+   cambia nada (292 px de desborde en los tres intentos), porque el ancho lo
+   decide la columna de fuera. Lo único que funciona es acotar esa columna.
+
+   Va en `@layer base` a propósito. Las utilidades de Tailwind viven en su
+   propia capa, y una regla SIN capa le gana a una con capa aunque tenga menos
+   especificidad —ni `:where()` lo evita—. Sin la capa, esta regla pisaba el
+   `grid-cols-2` de Resumen y Contabilidad y dejaba los recuadros en una sola
+   columna: un cambio de diseño que nadie pidió. Dentro de la capa es lo que
+   debe ser, un valor por defecto que cualquier `grid-cols-N` corrige.
+   --------------------------------------------------------------------------- */
+@layer base {
+  @media (max-width: 767px) {
+    main .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
 @media (max-width: 767px) {
   .filas {
     display: flex;
