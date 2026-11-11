@@ -6,7 +6,12 @@ import { Frontera } from "./Frontera";
 import { Ajustes } from "./pantallas/Ajustes";
 import { Bodegas } from "./pantallas/Bodegas";
 import { Catalogo } from "./pantallas/Catalogo";
+import { Cobros } from "./pantallas/Cobros";
+import { Entregas } from "./pantallas/Entregas";
+import { Contabilidad } from "./pantallas/Contabilidad";
 import { Existencias } from "./pantallas/Existencias";
+import { Pedidos } from "./pantallas/Pedidos";
+import { Pasarelas } from "./pantallas/Pasarelas";
 import { Resumen } from "./pantallas/Resumen";
 import { Usuarios } from "./pantallas/Usuarios";
 import { Zonas } from "./pantallas/Zonas";
@@ -58,11 +63,16 @@ export function App() {
         <Routes>
           <Route element={<Armazon yo={yo.datos} />}>
             <Route index element={<Resumen />} />
+            <Route path="pedidos" element={<Pedidos />} />
+            <Route path="cobros" element={<Cobros />} />
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="existencias" element={<Existencias />} />
+            <Route path="entregas" element={<Entregas />} />
             <Route path="bodegas" element={<Bodegas />} />
             <Route path="zonas" element={<Zonas />} />
             <Route path="ajustes" element={<Ajustes />} />
+            <Route path="pasarelas" element={<Pasarelas />} />
+            <Route path="contabilidad" element={<Contabilidad />} />
             <Route path="usuarios" element={<Usuarios />} />
             {/* Una ruta que no existe lleva al resumen en vez de a una página en
                 blanco: en un teléfono no hay barra de direcciones que arreglar. */}

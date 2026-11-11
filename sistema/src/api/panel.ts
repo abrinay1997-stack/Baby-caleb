@@ -23,6 +23,53 @@ import {
   ponerReceta,
   explicar,
 } from "../db/catalogo-admin";
+import { guardar as guardarAjuste, historial, leerVigentes } from "../db/ajustes";
+import { leerPedido, listarPedidos } from "../db/pedidos-lectura";
+import {
+  comprobantesPorConfirmar,
+  confirmarPago,
+  esMetodoManual,
+  registrarComprobante,
+  rechazarPago,
+} from "../db/pagos";
+import {
+  ajustarRedondeoDeInventario,
+  cerrarMes,
+  huecosAbiertos,
+  libroDiario,
+  mayorDeCuenta,
+  porCobrar,
+  reabrirMes,
+  registrarAsiento,
+  resumenContable,
+  revertirAsiento,
+  revisionDeCierre,
+} from "../db/contabilidad";
+import { asientoManual } from "../dominio/contabilidad";
+import { resumenDelNegocio } from "../db/metricas";
+import { esNombrePeriodo } from "../dominio/metricas";
+import {
+  apagar as apagarPasarela,
+  cambiarModo,
+  configurarCredencial,
+  encender as encenderPasarela,
+  estado as estadoDePasarelas,
+  quitarCredencial,
+} from "../db/pasarelas";
+import {
+  armarRuta,
+  cancelarRuta,
+  cerrarRuta,
+  crearEnvio,
+  despacharRuta,
+  devolverParada,
+  entregasDelDia,
+  fechaDePanama,
+  guardarPrueba,
+  marcarEntregada,
+  marcarFallida,
+  sugerirParaEnvio,
+} from "../db/entregas";
 
 /**
  * La API del panel.
@@ -180,6 +227,14 @@ const texto = (v: unknown): string | undefined => (typeof v === "string" ? v : u
  * (cachés, proxys) no traten un conflicto como un éxito.
  */
 function codigoHttp(codigo: string): 400 | 403 | 404 | 409 | 422 | 500 {
+  // `pasarela_no_disponible` no es un error del sistema: es que la pasarela
+  // está encendida y le falta una credencial, o está apagada. Sin esta línea
+  // caía en el 500 de abajo y quien lo viera buscaría una avería que no hay.
+  if (codigo === "pasarela_no_disponible") return 409;
+  // Igual que el anterior: «ese mes está cerrado» no es una avería del
+  // sistema. Sin esta línea el panel enseñaría «error del sistema» cuando lo
+  // correcto es decir que el periodo está cerrado y hay que reabrirlo.
+  if (codigo === "periodo_cerrado") return 409;
   switch (codigo) {
     case "entrada_invalida":
       return 400;
@@ -207,11 +262,51 @@ function codigoHttp(codigo: string): 400 | 403 | 404 | 409 | 422 | 500 {
  * escrito en `precios_historial` cuando alguien pregunte quién cambió un
  * precio, y «panel» no contesta esa pregunta.
  */
+
+/** El contexto que piden las funciones de entregas. */
+function contextoEntrega(c: Context<Entorno>) {
+  return { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo };
+}
+
+/**
+ * Un punto del mapa que llegue en el cuerpo, o nada.
+ *
+ * Media coordenada no es un punto: el esquema tiene un CHECK que lo rechaza,
+ * y mandarle medio par sería hacerle reventar el batch por algo que se puede
+ * mirar aquí.
+ */
+function puntoDe(v: unknown): { lat: number; lng: number } | undefined {
+  if (v === null || typeof v !== "object") return undefined;
+  const { lat, lng } = v as { lat?: unknown; lng?: unknown };
+  if (typeof lat !== "number" || typeof lng !== "number") return undefined;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+  return { lat, lng };
+}
+
 function contextoCatalogo(c: Context<Entorno>) {
   return { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo };
 }
 const entero = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isSafeInteger(v) ? v : undefined;
+
+/**
+ * Un entero que llega en la URL, donde todo es texto.
+ *
+ * `entero` no sirve para eso y el error era invisible: pide un `number` y
+ * `c.req.query()` devuelve `string`, así que `enteroDeTexto(c.req.query("limite"))`
+ * daba `undefined` SIEMPRE. El efecto no era un error ni un 400 — era que
+ * `?limite=10` se ignoraba en silencio y la ruta usaba su valor por defecto.
+ * Pasaba en tres rutas (el libro diario, los pedidos y los cobros) y ninguna
+ * prueba lo notaba, porque todas pedían sin límite.
+ *
+ * `Number(v)` y no `parseInt`: `parseInt("10 gatos")` da 10, y un límite que
+ * sale de un texto a medias es peor que ninguno.
+ */
+const enteroDeTexto = (v: unknown): number | undefined => {
+  if (typeof v !== "string" || v.trim() === "") return undefined;
+  const n = Number(v);
+  return Number.isSafeInteger(n) ? n : undefined;
+};
 
 // ---------------------------------------------------------------------------
 
@@ -229,38 +324,25 @@ function registrarRutas(panel: Hono<Entorno>): void {
    * sale de ninguna otra pantalla y es la primera señal de que los mensajes a las
    * clientas no están llegando.
    */
+  /**
+   * La portada.
+   *
+   * **Sin `exige(...)`**, y es deliberado: es lo primero que se abre, y un 403
+   * aquí deja el panel sin portada para quien sí puede entrar. Los permisos se
+   * aplican DENTRO — `resumenDelNegocio` recibe el rol y **no consulta** lo que
+   * ese rol no puede ver, así que el bloque llega en `null` y no es que se
+   * esconda: es que nunca se pidió a la base.
+   *
+   * Un periodo que no se entiende cae en «hoy» en vez de fallar: esta pantalla
+   * tiene que abrir siempre.
+   */
   panel.get("/resumen", async (c) => {
-    const [variantes, bodegas, zonas, clientes, outbox] = await Promise.all([
-      c.env.DB.prepare("SELECT COUNT(*) n FROM variantes WHERE activo = 1").first<{ n: number }>(),
-      c.env.DB.prepare("SELECT COUNT(*) n FROM bodegas WHERE activa = 1").first<{ n: number }>(),
-      c.env.DB.prepare("SELECT COUNT(*) n FROM zonas_envio WHERE activa = 1").first<{ n: number }>(),
-      c.env.DB.prepare("SELECT COUNT(*) n FROM clientes WHERE anonimizado_en IS NULL").first<{ n: number }>(),
-      atrasados(c.env.DB),
-    ]);
-
-    // Lo que está por acabarse, con la etiqueta y nunca el número exacto hacia
-    // afuera — aquí sí se puede, porque esto es el panel de la dueña.
-    const { results: bajos } = await c.env.DB.prepare(
-      `SELECT e.codigo, v.nombre, b.nombre AS bodega, e.fisico - e.reservado AS libres, e.minimo
-       FROM existencias e
-       JOIN variantes v ON v.codigo = e.codigo
-       JOIN bodegas b ON b.id = e.bodega_id
-       WHERE e.minimo IS NOT NULL AND e.fisico - e.reservado <= e.minimo
-       ORDER BY libres, e.codigo
-       LIMIT 20`,
-    ).all<{ codigo: string; nombre: string; bodega: string; libres: number; minimo: number }>();
-
-    return c.json(
-      ok({
-        variantes: variantes?.n ?? 0,
-        bodegas: bodegas?.n ?? 0,
-        zonas: zonas?.n ?? 0,
-        clientes: clientes?.n ?? 0,
-        avisosSinPublicar: outbox.cuantos,
-        avisoMasViejo: outbox.masViejo,
-        porAcabarse: bajos,
-      }),
+    const pedido = c.req.query("periodo") ?? "hoy";
+    const r = await resumenDelNegocio(
+      { db: c.env.DB, ahora: Date.now(), rol: c.get("usuario").rol },
+      esNombrePeriodo(pedido) ? pedido : "hoy",
     );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   panel.get("/catalogo", exige("pedidos"), async (c) => {
@@ -570,6 +652,660 @@ function registrarRutas(panel: Hono<Entorno>): void {
     return c.json(ok({ zonas }));
   });
 
+
+
+
+
+  // ---------------------------------------------------------------------------
+  // Contabilidad (F5)
+  //
+  // LOS LIBROS NO SE EDITAN NI SE BORRAN. Por eso no hay aquí ningún PATCH ni
+  // ningún DELETE: un asiento equivocado se corrige con su reverso, que es
+  // otro asiento y deja las dos cosas escritas. La base lo hace cumplir con
+  // triggers; estas rutas simplemente no ofrecen lo que no se puede hacer.
+  //
+  // Cerrar un mes lleva el permiso `cierre_de_mes` y no `contabilidad`: la
+  // contadora lleva los libros, pero cerrar es un acto de la dueña.
+  // ---------------------------------------------------------------------------
+
+  const contextoContable = (c: Context<Entorno>) => ({
+    db: c.env.DB,
+    ahora: Date.now(),
+    actor: c.get("usuario").correo,
+  });
+
+  /** Un rango de fechas de la query, o el mes en curso. */
+  const rango = (c: Context<Entorno>) => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const desde = texto(c.req.query("desde")) ?? `${hoy.slice(0, 7)}-01`;
+    return { desde, hasta: texto(c.req.query("hasta")) ?? hoy };
+  };
+
+  panel.get("/contabilidad", exige("contabilidad"), async (c) => {
+    const ctx = { db: c.env.DB, ahora: Date.now() };
+    const [resumen, huecos] = await Promise.all([
+      resumenContable(ctx, rango(c)),
+      huecosAbiertos(ctx),
+    ]);
+    return c.json(ok({ resumen, huecos }));
+  });
+
+  panel.get("/contabilidad/diario", exige("contabilidad"), async (c) => {
+    const limite = enteroDeTexto(c.req.query("limite"));
+    const asientos = await libroDiario(
+      { db: c.env.DB, ahora: Date.now() },
+      { ...rango(c), ...(limite === undefined ? {} : { limite }) },
+    );
+    return c.json(ok({ asientos }));
+  });
+
+  panel.get("/contabilidad/cuentas/:codigo", exige("contabilidad"), async (c) => {
+    const r = await mayorDeCuenta(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("codigo"),
+      rango(c),
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.get("/contabilidad/por-cobrar", exige("contabilidad"), async (c) => {
+    const al = texto(c.req.query("al")) ?? new Date().toISOString().slice(0, 10);
+    return c.json(ok(await porCobrar({ db: c.env.DB, ahora: Date.now() }, al)));
+  });
+
+  /**
+   * Revertir un asiento.
+   *
+   * Es la ÚNICA forma de corregir, y por eso pide motivo. Un libro con un
+   * reverso sin explicación tiene el mismo agujero que uno editado: se sabe
+   * que algo cambió y no por qué.
+   */
+  panel.post("/contabilidad/asientos/:id/reverso", exigeEditar("contabilidad"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await revertirAsiento(
+      contextoContable(c),
+      c.req.param("id"),
+      texto(b["motivo"]) ?? "",
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Un asiento a mano. La pantalla no lo ofrece; el asistente y F5.5 sí. */
+  panel.post("/contabilidad/asientos", exigeEditar("contabilidad"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const lineas = b["lineas"];
+    if (!Array.isArray(lineas)) {
+      return c.json(fallo("entrada_invalida", "un asiento necesita sus líneas"), 400);
+    }
+    const armado = asientoManual({
+      fecha: texto(b["fecha"]) ?? "",
+      descripcion: texto(b["descripcion"]) ?? "",
+      lineas: lineas as never,
+      referencia: (b["referencia"] ?? null) as never,
+    });
+    if (!armado.ok) return c.json(armado, codigoHttp(armado.codigo));
+    const r = await registrarAsiento(contextoContable(c), armado.datos);
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  panel.get("/contabilidad/cierre", exige("contabilidad"), async (c) => {
+    const mes = texto(c.req.query("mes")) ?? new Date().toISOString().slice(0, 7);
+    const r = await revisionDeCierre({ db: c.env.DB, ahora: Date.now() }, mes);
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Cerrar es de la dueña, no de la contadora: `cierre_de_mes`. */
+  panel.post("/contabilidad/cierre", exigeEditar("cierre_de_mes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await cerrarMes(contextoContable(c), texto(b["mes"]) ?? "");
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.post("/contabilidad/cierre/reabrir", exigeEditar("cierre_de_mes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await reabrirMes(
+      contextoContable(c),
+      texto(b["mes"]) ?? "",
+      texto(b["motivo"]) ?? "",
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Los centavos sueltos del costo promedio.
+   *
+   * Existe como ruta para poder dispararlo a mano mientras no haya un cron.
+   * No calcula nada nuevo: baja a cero el valor de lo que ya no tiene
+   * unidades y deja el asiento que lo explica.
+   */
+  panel.post("/contabilidad/redondeos", exigeEditar("contabilidad"), async (c) => {
+    const r = await ajustarRedondeoDeInventario(contextoContable(c));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Pasarelas de cobro (F4b)
+  //
+  // Se configuran desde aquí como en Odoo. DOS REGLAS para estas cinco rutas, y
+  // las dos van contra el reflejo normal de quien programa:
+  //
+  //  - **No se devuelve eco del cuerpo.** Ni en la respuesta ni en el `detalle`
+  //    de un fallo. El valor de una credencial viaja en el cuerpo y en ningún
+  //    otro sitio; un eco lo pondría en un registro, en una captura de pantalla
+  //    o en una herramienta del navegador.
+  //  - **Nada de `console.*` con el cuerpo.** Por lo mismo.
+  //
+  // Y el actor sale de la sesión, nunca del cuerpo: si saliera del cuerpo,
+  // cualquiera firmaría con el nombre de otra persona el día que se cambió una
+  // clave de cobro.
+  // ---------------------------------------------------------------------------
+
+  const contextoPasarelas = (c: Context<Entorno>) => ({
+    db: c.env.DB,
+    ahora: Date.now(),
+    actor: c.get("usuario").correo,
+    llaveMaestra: c.env.PASARELAS_LLAVE_MAESTRA,
+  });
+
+  /**
+   * El estado de las tres pasarelas.
+   *
+   * `exige` y no `exigeEditar` porque es una lectura. Hoy dan lo mismo —solo
+   * la dueña tiene el permiso `ajustes`— pero el día que exista un rol que
+   * mire sin tocar, esta ruta ya está del lado correcto.
+   *
+   * Lo que devuelve NO lleva ninguna credencial, y no porque se borre antes de
+   * responder: la consulta de `estado` no nombra siquiera la columna del
+   * secreto. Lo que no se lee no se puede devolver por error.
+   */
+  panel.get("/pasarelas", exige("ajustes"), async (c) => {
+    const r = await estadoDePasarelas(contextoPasarelas(c));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.post("/pasarelas/:pasarela/credenciales/:credencial", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const r = await configurarCredencial(contextoPasarelas(c), {
+      pasarela: c.req.param("pasarela"),
+      modo: b["modo"],
+      credencial: c.req.param("credencial"),
+      valor: b["valor"],
+      motivo: texto(b["motivo"]) ?? "",
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Quitar una credencial.
+   *
+   * `POST …/quitar` y no `DELETE`: hace falta mandar el modo y el motivo en el
+   * cuerpo, y un `DELETE` con cuerpo lo pierde en algunos intermedios.
+   *
+   * Que se pueda quitar es deliberado. «Ya no uso PayPal, quíteme la clave» es
+   * una petición de seguridad, y un sistema que no la puede cumplir se queda
+   * con un secreto descifrable para siempre. Lo que no se borra es el libro.
+   */
+  panel.post(
+    "/pasarelas/:pasarela/credenciales/:credencial/quitar",
+    exigeEditar("ajustes"),
+    async (c) => {
+      const b = (await cuerpo(c)) ?? {};
+      const r = await quitarCredencial(contextoPasarelas(c), {
+        pasarela: c.req.param("pasarela"),
+        modo: b["modo"],
+        credencial: c.req.param("credencial"),
+        motivo: texto(b["motivo"]) ?? "",
+      });
+      return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+    },
+  );
+
+  /** Prueba o real. No se cambia con la pasarela encendida. */
+  panel.post("/pasarelas/:pasarela/modo", exigeEditar("ajustes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await cambiarModo(contextoPasarelas(c), {
+      pasarela: c.req.param("pasarela"),
+      modo: b["modo"],
+      motivo: texto(b["motivo"]) ?? "",
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Encender o apagar.
+   *
+   * Encender exige las credenciales completas del modo en el que está. Apagar
+   * NO lleva ninguna condición: es el interruptor de emergencia, y una
+   * condición ahí es un interruptor que no responde el día que hace falta.
+   */
+  panel.post("/pasarelas/:pasarela/encendida", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const motivo = texto(b["motivo"]) ?? "";
+    const pasarela = c.req.param("pasarela");
+    const r =
+      b["encendida"] === true
+        ? await encenderPasarela(contextoPasarelas(c), { pasarela, motivo })
+        : await apagarPasarela(contextoPasarelas(c), { pasarela, motivo });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Pedidos (F4.2)
+  //
+  // El centro del negocio, y hasta ahora el único sitio al que nadie podía
+  // mirar: el sistema sabía CREAR un pedido y no tenía ni una consulta para
+  // enseñarlo.
+  //
+  // Quién ve el dinero y quién ve el costo lo decide la matriz de roles, y se
+  // recorta EN LA CONSULTA. Esconderlo en la pantalla dejaría el dato viajando
+  // hasta el navegador, donde lo ve cualquiera que abra las herramientas.
+  // ---------------------------------------------------------------------------
+
+  /** Quién mira, para `pedidos-lectura`. */
+  const quienMira = (c: Context<Entorno>) => {
+    const rol = c.get("usuario").rol;
+    return { veDinero: puedeVer(rol, "cobros"), veCosto: puedeVer(rol, "costo_y_margen") };
+  };
+
+  panel.get("/pedidos", exige("pedidos"), async (c) => {
+    const estado = texto(c.req.query("estado"));
+    const busca = texto(c.req.query("busca"));
+    const limite = enteroDeTexto(c.req.query("limite"));
+    const r = await listarPedidos(c.env.DB, quienMira(c), {
+      ...(estado === undefined || estado === "" ? {} : { estado }),
+      ...(busca === undefined ? {} : { busca }),
+      ...(limite === undefined ? {} : { limite }),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.get("/pedidos/:id", exige("pedidos"), async (c) => {
+    const r = await leerPedido(c.env.DB, quienMira(c), c.req.param("id"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cobros (F4.4)
+  //
+  // El módulo de pagos estaba escrito y probado desde F4.4 y NO TENÍA NI UNA
+  // RUTA: `confirmarPago` no se podía llamar desde ningún sitio, así que un
+  // comprobante entraba en «confirmando» y se quedaba ahí para siempre. La
+  // regla «el navegador no decide un pago» estaba cumplida de la peor forma
+  // posible — nadie decidía nada.
+  //
+  // Van con `cobros` y no con `pedidos`: quien despacha ve los pedidos y no
+  // tiene por qué tocar el dinero. En la matriz de roles, `cobros` en
+  // «editar» hoy solo lo tienen la dueña y la contadora.
+  // ---------------------------------------------------------------------------
+
+  /** La bandeja: comprobantes esperando que una persona los mire. */
+  panel.get("/cobros", exige("cobros"), async (c) => {
+    const limite = enteroDeTexto(c.req.query("limite"));
+    const r = await comprobantesPorConfirmar(c.env.DB, limite ?? 50);
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Anotar un comprobante.
+   *
+   * Entra en «confirmando» aunque lo registre la dueña desde el panel: la
+   * separación entre «alguien dice que pagó» y «una persona lo comprobó» no es
+   * por desconfianza de quien lo anota, es que son dos hechos distintos y los
+   * libros necesitan saber cuál es cuál. Confirmar es un clic más.
+   */
+  panel.post("/cobros", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const pedidoId = texto(b["pedidoId"]);
+    const montoCents = entero(b["montoCents"]);
+    const metodo = texto(b["metodo"]);
+    const tipo = texto(b["tipo"]);
+    const idempotencia = texto(b["idempotencia"]);
+    const comprobanteR2 = texto(b["comprobanteR2"]);
+
+    if (pedidoId === undefined || montoCents === undefined || metodo === undefined) {
+      return c.json(fallo("entrada_invalida", "hacen falta el pedido, el monto y el método"), 400);
+    }
+    // Esta guarda NO es la que protege: `registrarComprobante` ya rechaza un
+    // método que no es manual, y la mutación que la quita no pone roja ni una
+    // prueba. Se queda porque estrecha el tipo —`texto()` da `string` y el
+    // módulo pide `MetodoManual`—, así que sin ella haría falta un cast, que
+    // es justo la clase de afirmación que luego no se comprueba. Quien la lea
+    // no debe creer que es lo que defiende.
+    if (!esMetodoManual(metodo)) {
+      return c.json(fallo("entrada_invalida", `«${metodo}» no es un método manual`), 400);
+    }
+
+    // La del tipo SÍ protege, y se midió: sin ella, el CHECK de la columna
+    // salta y el `catch` del módulo lo contaba como el UNIQUE de la clave de
+    // idempotencia, respondiendo «ese comprobante ya estaba registrado». El
+    // `catch` ya está arreglado; esta guarda da el mensaje que nombra el campo.
+    if (tipo !== "abono" && tipo !== "total" && tipo !== "saldo") {
+      return c.json(fallo("entrada_invalida", "el tipo es «abono», «total» o «saldo»"), 400);
+    }
+
+    const r = await registrarComprobante(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      {
+        // Sin clave de idempotencia no hay candado: dos clics del mismo botón
+        // escriben dos comprobantes por el mismo dinero. Se exige en vez de
+        // inventarse una, porque una inventada aquí sería distinta en cada
+        // intento y el candado no cerraría nada.
+        idempotencia: idempotencia ?? `panel:${pedidoId}:${montoCents}:${metodo}`,
+        pedidoId,
+        montoCents,
+        metodo,
+        tipo,
+        ...(comprobanteR2 === undefined ? {} : { comprobanteR2 }),
+      },
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Una persona mira la captura y dice que sí. Aquí entra el dinero. */
+  panel.post("/cobros/:pagoId/confirmar", exigeEditar("cobros"), async (c) => {
+    const r = await confirmarPago(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      c.req.param("pagoId"),
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * La captura del comprobante.
+   *
+   * Sin esto la pantalla pedía confirmar a ciegas, y eso vacía la regla «el
+   * navegador no decide un pago»: si quien confirma no puede VER la captura,
+   * su clic no comprueba nada — solo traslada la firma. Una captura puede
+   * estar recortada, ser de otro pedido, ser de ayer o ser de otra persona, y
+   * todo eso se ve mirándola.
+   *
+   * Se sirve en vez de dar un enlace de R2 porque el bucket es privado y tiene
+   * que seguir siéndolo: ahí viven las capturas de pago de las clientas.
+   */
+  panel.get("/cobros/:pagoId/comprobante", exige("cobros"), async (c) => {
+    const fila = await c.env.DB.prepare("SELECT comprobante_r2 FROM pagos WHERE id = ?")
+      .bind(c.req.param("pagoId"))
+      .first<{ comprobante_r2: string | null }>();
+    if (fila?.comprobante_r2 == null) {
+      return c.json(fallo("no_encontrado", "ese pago no tiene captura"), 404);
+    }
+
+    const a = await c.env.PRIVADO.get(fila.comprobante_r2);
+    if (a === null) {
+      // La fila dice que hay captura y en R2 no está. Es una avería, no un
+      // 404: confundirlos manda al siguiente que lo mire a buscar la captura
+      // en vez de mirar el almacenamiento.
+      return c.json(fallo("interno", "la captura está registrada pero no se pudo leer"), 500);
+    }
+
+    const mime = await c.env.DB.prepare("SELECT mime FROM archivos WHERE r2_key = ?")
+      .bind(fila.comprobante_r2)
+      .first<{ mime: string }>();
+
+    return new Response(a.body, {
+      headers: {
+        "content-type": mime?.mime ?? "application/octet-stream",
+        // Que el navegador no adivine el tipo, y que esto NO entre en ninguna
+        // caché compartida: es el recibo bancario de una clienta.
+        "x-content-type-options": "nosniff",
+        "cache-control": "private, no-store",
+        "content-disposition": "inline",
+      },
+    });
+  });
+
+  /** Y dice que no. No se borra: queda el rechazo y su motivo. */
+  panel.post("/cobros/:pagoId/rechazar", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const motivo = texto(b["motivo"]);
+    if (motivo === undefined || motivo.trim() === "") {
+      return c.json(
+        fallo("entrada_invalida", "diga por qué se rechaza: sin motivo no le sirve a nadie"),
+        400,
+      );
+    }
+    const r = await rechazarPago(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      c.req.param("pagoId"),
+      motivo,
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Entregas (F4.5)
+  //
+  // TODAS entran por el panel, que está detrás de Cloudflare Access. El
+  // motorizado NO tiene cuenta de Access y por lo tanto hoy NO puede usar
+  // ninguna de estas: las toca quien despacha, desde el panel. La puerta del
+  // motorizado —celular + PIN, con su propia sesión— es una superficie pública
+  // nueva y se decide despierto, no de madrugada. Las piezas ya existen
+  // (`dominio/motorizado.ts`, `seguridad/pin.ts`, `seguridad/sesion.ts`).
+  // ---------------------------------------------------------------------------
+
+  /** La ruta del día: lo que falta por entregar, lo que ya salió y lo cobrado. */
+  panel.get("/entregas", exige("pedidos"), async (c) => {
+    const ahora = Date.now();
+    const pedida = texto(c.req.query("fecha"));
+    const r = await entregasDelDia(c.env.DB, pedida ?? fechaDePanama(ahora), ahora);
+    if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+
+    // La pantalla necesita a quién puede asignarle la ruta. Va aquí y no en
+    // `entregasDelDia` porque es de la pantalla, no del día: quien consulte el
+    // día desde otro sitio no necesita la lista de motorizados.
+    const { results: motorizados } = await c.env.DB.prepare(
+      "SELECT id, nombre, estado FROM motorizados WHERE estado <> 'inactivo' ORDER BY nombre",
+    ).all<{ id: string; nombre: string; estado: string }>();
+
+    return c.json(ok({ ...r.datos, motorizados }));
+  });
+
+  /** Preparar un pedido agendado para salir. */
+  panel.post("/entregas/pedidos/:pedidoId", exigeEditar("pedidos"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const programadoPara = texto(b["programadoPara"]);
+    const ventana = texto(b["ventana"]);
+    const r = await crearEnvio(contextoEntrega(c), {
+      pedidoId: c.req.param("pedidoId"),
+      ...(programadoPara === undefined ? {} : { programadoPara }),
+      ...(ventana === undefined ? {} : { ventana }),
+    });
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /** A quién le queda mejor esta entrega. */
+  panel.get("/entregas/:envioId/candidatos", exige("pedidos"), async (c) => {
+    const r = await sugerirParaEnvio(c.env.DB, c.req.param("envioId"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Armar la ruta del día de un motorizado. */
+  panel.post("/entregas/rutas", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const ids = b["envioIds"];
+    if (!Array.isArray(ids) || !ids.every((x) => typeof x === "string")) {
+      return c.json(fallo("entrada_invalida", "hay que decir qué entregas lleva la ruta"), 400);
+    }
+    const fecha = texto(b["fecha"]);
+    const origen = puntoDe(b["origen"]);
+
+    const r = await armarRuta(contextoEntrega(c), {
+      motorizadoId: texto(b["motorizadoId"]) ?? "",
+      bodegaId: texto(b["bodegaId"]) ?? "",
+      envioIds: ids as string[],
+      ...(fecha === undefined ? {} : { fecha }),
+      ...(origen === undefined ? {} : { origen }),
+    });
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /** La ruta sale a la calle. */
+  panel.post("/entregas/rutas/:rutaId/despachar", exigeEditar("pedidos"), async (c) => {
+    const r = await despacharRuta(contextoEntrega(c), c.req.param("rutaId"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** La ruta vuelve: se cierra y se cuenta lo cobrado. */
+  panel.post("/entregas/rutas/:rutaId/cerrar", exigeEditar("pedidos"), async (c) => {
+    const r = await cerrarRuta(contextoEntrega(c), c.req.param("rutaId"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Deshacer una ruta que todavía no salió. */
+  panel.post("/entregas/rutas/:rutaId/cancelar", exigeEditar("pedidos"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await cancelarRuta(
+      contextoEntrega(c),
+      c.req.param("rutaId"),
+      texto(b["motivo"]) ?? "",
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Entregada.
+   *
+   * Dos cosas que esta ruta decide y no delega:
+   *
+   * **1. El permiso depende del PEDIDO, no solo de la ruta.** Marcar entregado
+   * mueve dinero cuando queda saldo por cobrar en la puerta, y eso ya no es
+   * «mover un pedido», es cobrar. Un middleware no puede saberlo porque la
+   * respuesta depende de la fila. Así que la puerta es `pedidos` y aquí dentro
+   * se mira el saldo: si lo hay, hace falta además poder editar `cobros`. Con
+   * la matriz de hoy eso significa que la asistente puede cerrar una entrega ya
+   * pagada y no una con saldo.
+   *
+   * **2. `motorizadoId` NO se acepta del cuerpo.** Ese parámetro existe para
+   * que quien reparte solo pueda cerrar lo suyo; si llegara del cliente,
+   * cualquiera cerraría la parada de cualquiera. Desde el panel no se manda, y
+   * el día que exista la puerta del motorizado saldrá del sujeto de su sesión.
+   */
+  panel.post("/entregas/:envioId/entregada", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const envioId = c.req.param("envioId");
+
+    const saldo = await c.env.DB.prepare(
+      `SELECT (p.total_cents - p.pagado_cents) AS saldo
+         FROM envios e JOIN pedidos p ON p.id = e.pedido_id
+        WHERE e.id = ?`,
+    )
+      .bind(envioId)
+      .first<{ saldo: number }>();
+
+    if ((saldo?.saldo ?? 0) > 0 && !puedeEditar(c.get("usuario").rol, "cobros")) {
+      return c.json(
+        fallo(
+          "no_autorizado",
+          "esta entrega lleva saldo por cobrar y usted no puede registrar cobros",
+        ),
+        403,
+      );
+    }
+
+    const metodoCobro = texto(b["metodoCobro"]);
+    const montoCents = entero(b["montoCents"]);
+    const pruebaR2 = texto(b["pruebaR2"]);
+    const nota = texto(b["nota"]);
+    const punto = puntoDe(b["punto"]);
+
+    const r = await marcarEntregada(contextoEntrega(c), {
+      idempotencia: texto(b["idempotencia"]) ?? "",
+      envioId,
+      ...(metodoCobro === undefined ? {} : { metodoCobro: metodoCobro as never }),
+      ...(montoCents === undefined ? {} : { montoCents }),
+      ...(pruebaR2 === undefined ? {} : { pruebaR2 }),
+      ...(nota === undefined ? {} : { nota }),
+      ...(punto === undefined ? {} : { punto }),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** No se pudo entregar. */
+  panel.post("/entregas/:envioId/fallida", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    const punto = puntoDe(b["punto"]);
+    const r = await marcarFallida(contextoEntrega(c), {
+      idempotencia: texto(b["idempotencia"]) ?? "",
+      envioId: c.req.param("envioId"),
+      motivo: texto(b["motivo"]) ?? "",
+      ...(punto === undefined ? {} : { punto }),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Vuelve a la bodega: se libera lo que se había apartado. */
+  panel.post("/entregas/:envioId/devolucion", exigeEditar("pedidos"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await devolverParada(
+      contextoEntrega(c),
+      c.req.param("envioId"),
+      texto(b["motivo"]) ?? "",
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** La foto de la entrega. Los bytes van crudos, como la foto del catálogo. */
+  panel.put("/entregas/:envioId/prueba", exigeEditar("pedidos"), async (c) => {
+    const datos = await c.req.arrayBuffer();
+    const r = await guardarPrueba(
+      { ...contextoEntrega(c), r2: c.env.PRIVADO },
+      c.req.param("envioId"),
+      datos,
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * VER la foto de una entrega.
+   *
+   * No sale por el camino público de `leerPublico` y no es un descuido: una
+   * foto de entrega es la puerta de la casa de una clienta, entra marcada como
+   * sensible, y ese camino se niega a servirla — correctamente. Para verla hace
+   * falta pasar por aquí, que está detrás de Access.
+   *
+   * La clave de R2 no sale nunca hacia la pantalla: `entregasDelDia` solo dice
+   * si hay foto o no. Se pide por el id del envío y es esta ruta la que mira
+   * qué clave le toca.
+   */
+  panel.get("/entregas/:envioId/prueba", exige("pedidos"), async (c) => {
+    const fila = await c.env.DB.prepare("SELECT foto_r2 FROM envios WHERE id = ?")
+      .bind(c.req.param("envioId"))
+      .first<{ foto_r2: string | null }>();
+    if (fila?.foto_r2 == null) {
+      return c.json(fallo("no_encontrado", "esa entrega no tiene foto"), 404);
+    }
+
+    const a = await c.env.PRIVADO.get(fila.foto_r2);
+    if (a === null) {
+      // La fila dice que hay foto y en R2 no está. Es una avería, no un 404:
+      // confundirlos manda al siguiente que lo mire a buscar la foto en vez de
+      // mirar el almacenamiento.
+      return c.json(fallo("interno", "la foto está registrada pero no se pudo leer"), 500);
+    }
+
+    const mime = await c.env.DB.prepare("SELECT mime FROM archivos WHERE r2_key = ?")
+      .bind(fila.foto_r2)
+      .first<{ mime: string }>();
+
+    return new Response(a.body, {
+      headers: {
+        "content-type": mime?.mime ?? "application/octet-stream",
+        // Que el navegador no adivine el tipo, y que esto NO se guarde en
+        // ninguna caché compartida: es la casa de una clienta.
+        "x-content-type-options": "nosniff",
+        "cache-control": "private, no-store",
+        "content-disposition": "inline",
+      },
+    });
+  });
+
   panel.get("/usuarios", exige("ajustes"), async (c) => {
     const { results } = await c.env.DB.prepare(
       "SELECT id, correo, nombre, rol, telegram_chat_id, activo, creado_en FROM usuarios ORDER BY nombre",
@@ -586,28 +1322,55 @@ function registrarRutas(panel: Hono<Entorno>): void {
    * sin decir de dónde sale invita a creérselo.
    */
   panel.get("/ajustes", exige("ajustes"), async (c) => {
-    const ahora = Date.now();
-    const { results } = await c.env.DB.prepare(
-      `SELECT a.clave, a.version, a.valor_json, a.vigente_desde, a.cambiado_por, a.motivo
-       FROM ajustes a
-       WHERE a.vigente_desde <= ?1
-         AND a.version = (SELECT MAX(b.version) FROM ajustes b
-                          WHERE b.clave = a.clave AND b.vigente_desde <= ?1)
-       ORDER BY a.clave`,
-    )
-      .bind(ahora)
-      .all<{ clave: string; version: number; valor_json: string; vigente_desde: number }>();
+    const r = await leerVigentes({ db: c.env.DB, ahora: Date.now() });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
 
-    const vigentes = results.map((a) => {
-      let valor: unknown = null;
-      try {
-        valor = JSON.parse(a.valor_json);
-      } catch {
-        valor = a.valor_json;
-      }
-      return { ...a, valor };
-    });
+  /**
+   * Cambiar un ajuste.
+   *
+   * Dos cosas que NO salen del cuerpo de la petición, a propósito:
+   *
+   *  - **Quién lo cambió** sale de la sesión. Si saliera del cuerpo,
+   *    cualquiera firmaría con el nombre de otra persona, y el historial
+   *    —que existe para contestar «¿quién bajó la comisión en marzo?»—
+   *    dejaría de valer para nada.
+   *  - **Qué forma tiene el valor** lo decide `validar` dentro de `guardar`,
+   *    no esta ruta. Aquí el valor viaja tal cual (número, booleano, lista,
+   *    objeto o la cadena «PENDIENTE»): un segundo sitio que lo interprete
+   *    acabaría discrepando del primero.
+   */
+  panel.post("/ajustes/:clave", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
 
-    return c.json(ok({ vigentes, ahora }));
+    const vigenteDesde = entero(b["vigenteDesde"]);
+    const r = await guardarAjuste(
+      {
+        db: c.env.DB,
+        ahora: Date.now(),
+        actor: c.get("usuario").correo,
+      },
+      {
+        clave: c.req.param("clave"),
+        valor: b["valor"],
+        motivo: texto(b["motivo"]) ?? "",
+        ...(vigenteDesde === undefined ? {} : { vigenteDesde }),
+      },
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Las versiones de un ajuste, de la más nueva a la más vieja.
+   *
+   * Se lee con `exige` y no con `exigeEditar`: mirar quién cambió una cifra no
+   * es cambiarla. Hoy da igual —solo la dueña tiene el permiso `ajustes`— pero
+   * el día que alguien más pueda mirar sin tocar, esta ruta ya está del lado
+   * correcto.
+   */
+  panel.get("/ajustes/:clave/historial", exige("ajustes"), async (c) => {
+    const r = await historial({ db: c.env.DB, ahora: Date.now() }, c.req.param("clave"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 }

@@ -68,11 +68,19 @@ describe("migración 0001 desde cero", () => {
       expect(tablas, `falta ${deF45}, que trae la 0009`).toContain(deF45);
     }
 
+    // Y los libros en F5.1 (migración 0011). `control_cuadre` es la fila que
+    // tumba el batch de un asiento que no cuadra, así que es parte del libro
+    // tanto como los asientos mismos.
+    for (const deF51 of ["cuentas", "periodos", "asientos", "asiento_lineas",
+                         "control_cuadre", "extractos", "extracto_lineas"]) {
+      expect(tablas, `falta ${deF51}, que trae la 0011`).toContain(deF51);
+    }
+
     // Lo que todavía NO existe. Esta lista no es decorativa: es lo que impide
     // que alguien cree media tabla de una fase futura «para ir adelantando» y
     // la deje a medias, con llaves foráneas apuntando a columnas que nadie
     // terminó de pensar. Cuando una de estas nazca de verdad, se mueve arriba.
-    for (const futura of ["reservas", "asientos", "cuentas", "compras", "gastos"]) {
+    for (const futura of ["reservas", "compras", "gastos"]) {
       expect(tablas, `${futura} no es de ninguna migración todavía`).not.toContain(futura);
     }
   });

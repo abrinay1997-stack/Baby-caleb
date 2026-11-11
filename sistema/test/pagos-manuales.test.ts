@@ -332,3 +332,232 @@ describe("dos pagos DISTINTOS confirmados a la vez", () => {
     expect((await estadoDe(p.id))?.pagado_cents, "el cobro anterior sigue ahí").toBe(500);
   });
 });
+
+/**
+ * El asiento que deja un pago confirmado (F5.1 enganchada).
+ *
+ * Las 18 pruebas de arriba pasaban en verde con la contabilidad en cero: los
+ * veinte constructores existían y nadie los llamaba. Así que estas miran la
+ * TABLA `asientos`, no lo que devuelve la función.
+ *
+ * La referencia apunta al PAGO y no al pedido a propósito: un pedido tiene
+ * varios pagos (el abono, el saldo) y cada uno lleva su asiento, así que una
+ * referencia al pedido no permite preguntar «¿este cobro está en los libros?»
+ * — que es la casilla del cierre que lo vigila.
+ */
+describe("el asiento de un pago", () => {
+  const asientoDelPago = (pagoId: string) =>
+    env.DB.prepare(
+      `SELECT a.id, a.hecho, a.origen, a.fecha, a.descripcion, cc.diferencia
+         FROM asientos a LEFT JOIN control_cuadre cc ON cc.asiento_id = a.id
+        WHERE a.referencia_tipo = 'pago' AND a.referencia_id = ?`,
+    )
+      .bind(pagoId)
+      .first<{
+        id: string;
+        hecho: string;
+        origen: string;
+        fecha: string;
+        descripcion: string;
+        diferencia: number | null;
+      }>();
+
+  const lineasDe = async (asientoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT c.codigo, l.debe_cents AS debe, l.haber_cents AS haber
+         FROM asiento_lineas l JOIN cuentas c ON c.id = l.cuenta_id
+        WHERE l.asiento_id = ? ORDER BY c.codigo`,
+    )
+      .bind(asientoId)
+      .all<{ codigo: string; debe: number; haber: number }>();
+    return results;
+  };
+
+  it("un abono por Yappy entra como ANTICIPO, no como venta", async () => {
+    const p = await unPedido();
+    const c = await comprobante(p.id, 3000);
+    if (!c.ok) throw new Error(c.mensaje);
+
+    // Mientras está en «confirmando» no hay asiento: una captura es una
+    // afirmación, y los libros no anotan afirmaciones.
+    expect(await asientoDelPago(c.datos.pagoId)).toBeNull();
+
+    expect((await confirmarPago(ctx(), c.datos.pagoId)).ok).toBe(true);
+
+    const a = await asientoDelPago(c.datos.pagoId);
+    expect(a, "falta el asiento del pago").not.toBeNull();
+    expect(a?.hecho).toBe("1");
+    expect(a?.origen).toBe("pago");
+    expect(a?.diferencia, "el asiento no cuadró").toBe(0);
+    expect(a?.descripcion).toContain(p.numero);
+
+    // Lo abonado es un PASIVO hasta que el pedido salga. Reconocerlo como
+    // venta aquí sería dar por ganado algo que todavía hay que entregar — y
+    // además inflaría las ventas del mes con pedidos que no han salido.
+    expect(await lineasDe(a!.id)).toEqual([
+      { codigo: "1101", debe: 3000, haber: 0 },
+      { codigo: "2101", debe: 0, haber: 3000 },
+    ]);
+  });
+
+  it("cada método entra por su cuenta: Yappy 1101, transferencia 1102, efectivo 1103", async () => {
+    for (const [metodo, cuenta] of [
+      ["yappy", "1101"],
+      ["transferencia", "1102"],
+      ["efectivo", "1103"],
+    ] as const) {
+      const p = await unPedido();
+      const c = await comprobante(p.id, 1500, { metodo });
+      if (!c.ok) throw new Error(c.mensaje);
+      expect((await confirmarPago(ctx(), c.datos.pagoId)).ok, metodo).toBe(true);
+
+      const a = await asientoDelPago(c.datos.pagoId);
+      expect(a, `falta el asiento de ${metodo}`).not.toBeNull();
+      expect(await lineasDe(a!.id), metodo).toEqual([
+        { codigo: cuenta, debe: 1500, haber: 0 },
+        { codigo: "2101", debe: 0, haber: 1500 },
+      ]);
+    }
+  });
+
+  it("un método que este código no conoce cobra igual y NO inventa un asiento", async () => {
+    // `pagos.metodo` es una columna de texto SIN CHECK, así que una fila con
+    // un método que este código no conoce puede existir: una importación, una
+    // fila escrita a mano, o —como pasó— un método que se deja de aceptar.
+    // Aquí estuvo `nequi` hasta que Juan confirmó que ya no es un método de
+    // pago en Panamá; se quitó de la lista y no quedaba ni un pago con él.
+    //
+    // Lo que se vigila es que leer esa fila no reviente y no se invente una
+    // cuenta: el dinero entró de verdad, así que el pago se confirma y el
+    // pedido avanza, pero sin asiento. La casilla «todo el dinero que entró
+    // tiene su asiento» del cierre lo canta hasta que alguien lo anote.
+    //
+    // Se inserta directo porque `registrarComprobante` rechaza un método que
+    // no es manual, que es correcto: por la puerta de entrada esto no pasa.
+    const p = await unPedido();
+    const pagoId = `pago-raro-${Date.now()}-${n++}`;
+    await env.DB.prepare(
+      `INSERT INTO pagos (id,pedido_id,proveedor,metodo,tipo,estado,monto_cents,
+         intento_ref,creado_en,actualizado_en)
+       VALUES (?,?,'manual','cheque','abono','confirmando',2000,?,?,?)`,
+    )
+      .bind(pagoId, p.id, `raro-${pagoId}`, ahora(), ahora())
+      .run();
+
+    expect((await confirmarPago(ctx(), pagoId)).ok).toBe(true);
+
+    expect((await estadoDe(p.id))?.pagado_cents).toBe(2000);
+    expect(await asientoDelPago(pagoId)).toBeNull();
+  });
+
+  it("un comprobante rechazado no deja asiento: no entró dinero", async () => {
+    const p = await unPedido();
+    const c = await comprobante(p.id, 2500);
+    if (!c.ok) throw new Error(c.mensaje);
+
+    expect((await rechazarPago(ctx(), c.datos.pagoId, "la captura es de otro pedido")).ok).toBe(
+      true,
+    );
+    expect(await asientoDelPago(c.datos.pagoId)).toBeNull();
+  });
+
+  it("después de entregar, un pago por Yappy DESCARGA lo por cobrar, no abre un anticipo", async () => {
+    const p = await unPedido();
+    // El pedido ya salió. Se pone a mano porque lo que se prueba es la rama de
+    // `confirmarPago`, no el camino de la entrega (eso vive en
+    // `src/db/entregas.test.ts`, con sus propios asientos 3 y 4).
+    await env.DB.prepare("UPDATE pedidos SET estado = 'entregado' WHERE id = ?").bind(p.id).run();
+
+    const c = await comprobante(p.id, 3000, { tipo: "saldo" });
+    if (!c.ok) throw new Error(c.mensaje);
+    expect((await confirmarPago(ctx(), c.datos.pagoId)).ok).toBe(true);
+
+    const a = await asientoDelPago(c.datos.pagoId);
+    expect(a, "falta el asiento del saldo").not.toBeNull();
+    // 4b y no 1: la venta ya se reconoció al entregar y 1201 lleva el saldo.
+    // Un anticipo aquí dejaría a la clienta debiendo Y con saldo a favor a la
+    // vez, y las dos cifras cuadrarían por separado.
+    expect(a?.hecho).toBe("4b");
+    expect(await lineasDe(a!.id)).toEqual([
+      { codigo: "1101", debe: 3000, haber: 0 },
+      { codigo: "1201", debe: 0, haber: 3000 },
+    ]);
+  });
+
+  it("después de entregar, un efectivo o una transferencia se quedan sin asiento, y se dice", async () => {
+    // Los dieciocho asientos del documento solo contemplan Yappy para cobrar
+    // un saldo después de la entrega (es como pagan las clientas que se
+    // quedaron debiendo). Un efectivo o una transferencia que llegan después
+    // no tienen asiento, y el diecinueve no me lo invento yo: lo decide la
+    // dueña con su contadora. El dinero se cobra igual y la casilla del cierre
+    // lo canta.
+    for (const metodo of ["efectivo", "transferencia"] as const) {
+      const p = await unPedido();
+      await env.DB.prepare("UPDATE pedidos SET estado = 'entregado' WHERE id = ?").bind(p.id).run();
+      const c = await comprobante(p.id, 1000, { metodo, tipo: "saldo" });
+      if (!c.ok) throw new Error(c.mensaje);
+      expect((await confirmarPago(ctx(), c.datos.pagoId)).ok, metodo).toBe(true);
+      expect((await estadoDe(p.id))?.pagado_cents, metodo).toBe(1000);
+      expect(await asientoDelPago(c.datos.pagoId), metodo).toBeNull();
+    }
+  });
+});
+
+describe("cuando la tabla rechaza el dato", () => {
+  /**
+   * El `catch` de `registrarComprobante` decía «repetido» a todo.
+   *
+   * En SQLite las dos restricciones hablan igual: «UNIQUE constraint failed» y
+   * «CHECK constraint failed». El `catch` miraba `/UNIQUE|constraint/i`, así
+   * que un `tipo` que no existe respondía «ese comprobante ya estaba
+   * registrado» — y quien lo recibe se pone a buscar un comprobante repetido
+   * que no existe en vez de mirar lo que mandó.
+   *
+   * Hay una guarda en la ruta `/cobros` que da un mensaje mejor antes de
+   * llegar aquí, y por eso esta prueba llama al MÓDULO directo: con la ruta
+   * en medio, la mutación que devuelve el `catch` a su estado anterior no
+   * pone roja ninguna prueba. Lo comprobé, y es la razón de que esta exista.
+   *
+   * El `as` no es pereza: el tipo ya prohíbe este valor en tiempo de
+   * compilación y lo que se prueba es qué pasa cuando llega de todas formas,
+   * que es lo que hace un cliente que no es este código.
+   */
+  it("un tipo que no existe es «entrada_invalida», no «repetido»", async () => {
+    const p = await unPedido();
+    const r = await registrarComprobante(ctx(), {
+      idempotencia: `malo-${Date.now()}-${n++}`,
+      pedidoId: p.id,
+      montoCents: 1000,
+      metodo: "yappy",
+      tipo: "inventado" as "abono",
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("entrada_invalida");
+    expect(r.mensaje).not.toContain("ya estaba registrado");
+  });
+
+  it("y la clave repetida sigue siendo «repetido»: el caso bueno no se perdió", async () => {
+    const p = await unPedido();
+    const clave = `misma-${Date.now()}-${n++}`;
+    const uno = await registrarComprobante(ctx(), {
+      idempotencia: clave,
+      pedidoId: p.id,
+      montoCents: 1000,
+      metodo: "yappy",
+      tipo: "abono",
+    });
+    expect(uno.ok).toBe(true);
+
+    const dos = await registrarComprobante(ctx(), {
+      idempotencia: clave,
+      pedidoId: p.id,
+      montoCents: 1000,
+      metodo: "yappy",
+      tipo: "abono",
+    });
+    expect(dos.ok).toBe(false);
+    if (dos.ok) return;
+    expect(dos.codigo).toBe("repetido");
+  });
+});

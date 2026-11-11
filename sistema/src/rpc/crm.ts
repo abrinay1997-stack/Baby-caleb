@@ -36,10 +36,26 @@ import { zonasParaBuscar } from "./zonas";
  * credencial.
  */
 
+/**
+ * El stock detallado, para la DUEÑA (nunca para el bot: lo cierra `comoDuena`).
+ *
+ * Lleva `libres` y `hay` además de `fisico` y `reservado`, y no es un lujo: al
+ * otro lado del binding hay un modelo leyendo esto, y «fisico: 20,
+ * reservado: 18» contestado de memoria se vuelve «hay 20». Lo que se puede
+ * vender son 2. La resta la hace el sistema, que es quien sabe hacerla, y la
+ * etiqueta viene de la misma función que usa el catálogo.
+ */
 export interface StockPorBodega {
   readonly codigo: string;
   readonly nombre: string;
-  readonly porBodega: { bodega: string; fisico: number; reservado: number }[];
+  readonly porBodega: {
+    bodega: string;
+    fisico: number;
+    reservado: number;
+    /** Lo que de verdad se puede vender: `fisico - reservado`. */
+    libres: number;
+    hay: Disponibilidad;
+  }[];
 }
 
 export interface MovimientoVista {
@@ -72,6 +88,18 @@ function normalizarCantidad(c: number | undefined): number | undefined | "invali
   return Number.isSafeInteger(c) && c > 0 ? c : "invalida";
 }
 
+/**
+ * La misma clave con otra entrada.
+ *
+ * No se contesta `ok` con la respuesta vieja —eso daría por hecha una venta
+ * que no ocurrió— ni se ejecuta la nueva —eso sería no tener idempotencia—.
+ * Se dice que la clave ya se usó, para que quien llama mande otra.
+ */
+const CHOQUE_DE_CLAVE = fallo(
+  "repetido",
+  "esa clave ya se usó para otra cosa: use una clave nueva para esta operación",
+);
+
 export class SistemaCRM extends WorkerEntrypoint<Env> {
   // -------------------------------------------------------------------------
   // Catálogo · lo que reemplaza a CatalogRepo del CRM
@@ -81,6 +109,12 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
    * `cantidad` es la única forma en que un número de inventario sale hacia el
    * bot, y solo cuando NO alcanza: «de 30 no, de 25 sí» es la respuesta útil y
    * no hay manera de darla sin el número. Si alcanza, basta un sí.
+   *
+   * El número sale UNA VEZ por llamada, en el artículo que mejor casa con `q`
+   * —el que la clienta nombró—. Los demás aciertos se llevan el sí o el no.
+   * Antes lo llevaban todos, y entonces `buscarCatalogo("", 100, 999999)` no
+   * era una pregunta: era el inventario exacto del catálogo entero en una sola
+   * llamada, por la puerta pensada para hacer un contraofrecimiento.
    */
   async buscarCatalogo(
     q: string,
@@ -94,6 +128,10 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
     return ok(await buscar(this.env.DB, q, limite ?? 20, pedida));
   }
 
+  /**
+   * El catálogo entero. Con `cantidad`, el sí o el no de cada artículo y de
+   * ninguno el número: una lista completa no es la pregunta de una clienta.
+   */
   async listarCatalogo(cantidad?: number): Promise<Resultado<VariantePublica[]>> {
     const pedida = normalizarCantidad(cantidad);
     if (pedida === "invalida") {
@@ -240,7 +278,17 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
     const porCodigo = new Map<string, StockPorBodega>();
     for (const f of results) {
       const ya = porCodigo.get(f.codigo);
-      const fila = { bodega: f.bodega, fisico: f.fisico, reservado: f.reservado };
+      // `reservado <= fisico` lo garantiza el esquema, así que la resta no se
+      // recorta en cero: si saliera negativa sería un descuadre y conviene que
+      // se vea, no que se maquille.
+      const libres = f.fisico - f.reservado;
+      const fila = {
+        bodega: f.bodega,
+        fisico: f.fisico,
+        reservado: f.reservado,
+        libres,
+        hay: disponibilidad(libres, UMBRAL_POCAS),
+      };
       if (ya === undefined) {
         porCodigo.set(f.codigo, { codigo: f.codigo, nombre: f.nombre, porBodega: [fila] });
       } else {
@@ -315,12 +363,13 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
     const quien = await comoDuena(this.env.DB, actor);
     if (!quien.ok) return quien;
 
-    const repetida = await this.#yaHecha<{
+    const antes = await this.#yaHecha<{
       numero: string;
       deshacerId: string;
       etiquetas: Record<string, Disponibilidad>;
-    }>(e.idempotencia, "registrarVenta");
-    if (repetida !== null) return ok(repetida);
+    }>(e.idempotencia, "registrarVenta", e);
+    if (antes.estado === "repetida") return ok(antes.respuesta);
+    if (antes.estado === "choque") return CHOQUE_DE_CLAVE;
 
     const resueltas = await resolverLineas(this.env.DB, e.lineas);
     if (!resueltas.ok) return resueltas;
@@ -347,7 +396,7 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
     );
 
     const respuesta = { numero, deshacerId: referenciaId, etiquetas };
-    await this.#anotarHecha(e.idempotencia, "registrarVenta", respuesta, ahora);
+    await this.#anotarHecha(e.idempotencia, "registrarVenta", e, respuesta, ahora);
     return ok(respuesta);
   }
 
@@ -377,11 +426,13 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
       return fallo("entrada_invalida", "una devolución necesita motivo");
     }
 
-    const repetida = await this.#yaHecha<{ deshacerId: string }>(
+    const antes = await this.#yaHecha<{ deshacerId: string }>(
       e.idempotencia,
       "registrarDevolucion",
+      e,
     );
-    if (repetida !== null) return ok(repetida);
+    if (antes.estado === "repetida") return ok(antes.respuesta);
+    if (antes.estado === "choque") return CHOQUE_DE_CLAVE;
 
     const resueltas = await resolverLineas(this.env.DB, [
       // Una devolución ENTRA, así que no hace falta que haya existencia: se
@@ -434,7 +485,7 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
     if (!movido.ok) return movido;
 
     const respuesta = { deshacerId: referenciaId };
-    await this.#anotarHecha(e.idempotencia, "registrarDevolucion", respuesta, ahora);
+    await this.#anotarHecha(e.idempotencia, "registrarDevolucion", e, respuesta, ahora);
     return ok(respuesta);
   }
 
@@ -466,8 +517,9 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
       return fallo("entrada_invalida", "la cantidad tiene que ser un entero de cero para arriba");
     }
 
-    const repetida = await this.#yaHecha<{ deshacerId: string }>(e.idempotencia, "ajustarStock");
-    if (repetida !== null) return ok(repetida);
+    const antes = await this.#yaHecha<{ deshacerId: string }>(e.idempotencia, "ajustarStock", e);
+    if (antes.estado === "repetida") return ok(antes.respuesta);
+    if (antes.estado === "choque") return CHOQUE_DE_CLAVE;
 
     const fila = await this.env.DB.prepare(
       `SELECT e.fisico, e.bodega_id FROM existencias e JOIN bodegas b ON b.id = e.bodega_id
@@ -500,7 +552,7 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
     if (!movido.ok) return movido;
 
     const respuesta = { deshacerId: referenciaId };
-    await this.#anotarHecha(e.idempotencia, "ajustarStock", respuesta, ahora);
+    await this.#anotarHecha(e.idempotencia, "ajustarStock", e, respuesta, ahora);
     return ok(respuesta);
   }
 
@@ -529,34 +581,101 @@ export class SistemaCRM extends WorkerEntrypoint<Env> {
   // -------------------------------------------------------------------------
 
   /**
-   * Lo mismo pedido dos veces se contesta una vez.
+   * Lo mismo pedido dos veces se contesta una vez. **Lo DISTINTO pedido con la
+   * misma clave se rechaza.**
    *
    * La consola reintenta, la red se corta y un botón se toca dos veces. Sin
    * esto, cada una de esas tres cosas descuenta el inventario otra vez.
+   *
+   * POR QUÉ SE COMPARA LA ENTRADA, Y NO SOLO LA CLAVE
+   *
+   * Antes aquí se guardaba `huella_entrada` como cadena vacía y la búsqueda
+   * miraba solo clave y ruta. Eso convertía una clave repetida por error en
+   * algo peor que una venta doble: la segunda venta —otro producto, otra
+   * cantidad— **devolvía la respuesta de la primera con `ok: true` y no
+   * descontaba nada**. El inventario se quedaba quieto y el bot le decía a
+   * quien preguntara que la venta estaba hecha. Una venta perdida reportada
+   * como cumplida es peor que un error, porque nadie la va a buscar.
+   *
+   * El contrato ya lo decía («misma clave con otra entrada → `repetido`») y el
+   * código no lo cumplía.
    */
-  async #yaHecha<T>(clave: string, ruta: string): Promise<T | null> {
-    if (clave.trim() === "") return null;
+  async #yaHecha<T>(
+    clave: string,
+    ruta: string,
+    entrada: unknown,
+  ): Promise<{ estado: "nueva" } | { estado: "repetida"; respuesta: T } | { estado: "choque" }> {
+    if (clave.trim() === "") return { estado: "nueva" };
     const fila = await this.env.DB.prepare(
-      "SELECT respuesta_json FROM idempotencia WHERE clave = ? AND ruta = ? AND vence_en > ?",
+      "SELECT huella_entrada, respuesta_json FROM idempotencia WHERE clave = ? AND ruta = ? AND vence_en > ?",
     )
       .bind(clave, ruta, Date.now())
-      .first<{ respuesta_json: string | null }>();
+      .first<{ huella_entrada: string; respuesta_json: string | null }>();
 
-    if (fila?.respuesta_json == null) return null;
+    if (fila == null) return { estado: "nueva" };
+
+    const huella = await huellaDe(entrada);
+    if (fila.huella_entrada !== huella) return { estado: "choque" };
+
+    if (fila.respuesta_json == null) return { estado: "nueva" };
     try {
-      return JSON.parse(fila.respuesta_json) as T;
+      return { estado: "repetida", respuesta: JSON.parse(fila.respuesta_json) as T };
     } catch {
-      return null;
+      return { estado: "nueva" };
     }
   }
 
-  async #anotarHecha(clave: string, ruta: string, respuesta: unknown, ahora: number): Promise<void> {
+  async #anotarHecha(
+    clave: string,
+    ruta: string,
+    entrada: unknown,
+    respuesta: unknown,
+    ahora: number,
+  ): Promise<void> {
     if (clave.trim() === "") return;
     await this.env.DB.prepare(
       `INSERT OR REPLACE INTO idempotencia (clave, ruta, huella_entrada, respuesta_json, creado_en, vence_en)
        VALUES (?,?,?,?,?,?)`,
     )
-      .bind(clave, ruta, "", JSON.stringify(respuesta), ahora, ahora + 24 * 60 * 60 * 1000)
+      .bind(
+        clave,
+        ruta,
+        await huellaDe(entrada),
+        JSON.stringify(respuesta),
+        ahora,
+        ahora + 24 * 60 * 60 * 1000,
+      )
       .run();
   }
+}
+
+/**
+ * Una huella estable de la entrada.
+ *
+ * Las claves se ordenan antes de serializar: `{a:1,b:2}` y `{b:2,a:1}` son la
+ * MISMA petición, y `JSON.stringify` las convierte en textos distintos según
+ * el orden en que se construyó el objeto. Sin ordenar, un reintento legítimo
+ * desde otro camino del código se tomaría por un choque de claves y el bot
+ * recibiría un «repetido» por una petición idéntica.
+ *
+ * SHA-256 y no el texto entero porque lo que se guarda es una columna de una
+ * tabla que vive 24 horas por cada venta: la huella ocupa lo mismo para una
+ * entrada de dos campos que para una de doscientos.
+ */
+async function huellaDe(entrada: unknown): Promise<string> {
+  const canon = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(canon);
+    if (v !== null && typeof v === "object") {
+      return Object.fromEntries(
+        Object.entries(v as Record<string, unknown>)
+          .filter(([, x]) => x !== undefined)
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([k, x]) => [k, canon(x)]),
+      );
+    }
+    return v;
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(canon(entrada)));
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }

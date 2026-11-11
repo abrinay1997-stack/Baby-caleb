@@ -44,6 +44,18 @@ export const SECCIONES: Seccion[] = [
     titulo: "Lo que se vende",
     destinos: [
       {
+        ruta: "/pedidos",
+        nombre: "Pedidos",
+        descripcion: "Las ventas: en qué va cada una y qué falta por cobrar",
+        permiso: "pedidos",
+      },
+      {
+        ruta: "/cobros",
+        nombre: "Cobros",
+        descripcion: "Los comprobantes que hay que mirar",
+        permiso: "cobros",
+      },
+      {
         ruta: "/catalogo",
         nombre: "Catálogo",
         descripcion: "Productos, tallas y precios",
@@ -67,10 +79,27 @@ export const SECCIONES: Seccion[] = [
     titulo: "Entregas",
     destinos: [
       {
+        ruta: "/entregas",
+        nombre: "Entregas del día",
+        descripcion: "Qué sale hoy, quién lo lleva y qué se cobró",
+        permiso: "pedidos",
+      },
+      {
         ruta: "/zonas",
         nombre: "Zonas de envío",
         descripcion: "A dónde se entrega y cuánto cuesta",
         permiso: "pedidos",
+      },
+    ],
+  },
+  {
+    titulo: "El dinero",
+    destinos: [
+      {
+        ruta: "/contabilidad",
+        nombre: "Contabilidad",
+        descripcion: "Los libros, el estado de resultados y el cierre de mes",
+        permiso: "contabilidad",
       },
     ],
   },
@@ -81,6 +110,12 @@ export const SECCIONES: Seccion[] = [
         ruta: "/ajustes",
         nombre: "Ajustes",
         descripcion: "Las reglas con cifras del negocio",
+        permiso: "ajustes",
+      },
+      {
+        ruta: "/pasarelas",
+        nombre: "Pasarelas de cobro",
+        descripcion: "Con qué se cobra en la web, y si está en prueba o en real",
         permiso: "ajustes",
       },
       {
@@ -100,8 +135,13 @@ export const TODOS_LOS_DESTINOS: Destino[] = SECCIONES.flatMap((s) => s.destinos
  *
  * Cuatro y no catorce: la barra deja a la vista lo que se usa a diario y el
  * resto se va al cajón. El cuarto es el propio cajón, no un destino.
+ *
+ * Son Resumen, Pedidos y Entregas, y no el catálogo: el catálogo se toca
+ * cuando cambia un precio, que es de vez en cuando. Lo que se abre todos los
+ * días es «qué vendí» y «qué sale hoy». El criterio es el uso diario, no la
+ * importancia.
  */
-export const RUTAS_BARRA = ["/", "/catalogo", "/existencias"] as const;
+export const RUTAS_BARRA = ["/", "/pedidos", "/entregas"] as const;
 
 export function destinosDeLaBarra(puede: (p: Permiso) => boolean): Destino[] {
   return RUTAS_BARRA.map((r) => TODOS_LOS_DESTINOS.find((d) => d.ruta === r)).filter(

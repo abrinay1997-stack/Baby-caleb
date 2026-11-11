@@ -24,6 +24,28 @@ const codigo = z.string().min(1).max(64);
 /** Los tres valores del CRM (`src/catalog/validation.ts`). */
 export const Disponibilidad = z.enum(["disponible", "pocas", "agotado"]);
 
+/**
+ * La respuesta a «¿alcanza para 30?».
+ *
+ * Está aquí porque es la ÚNICA puerta por la que una cantidad de inventario
+ * sale del sistema, y hasta ahora no estaba: `buscarCatalogo` devolvía el campo
+ * `pedido` y el contrato no lo mencionaba, así que la huella no vigilaba
+ * precisamente el campo que lleva el número exacto. Un dato sin dueño en el
+ * contrato es un dato que los dos repos pueden entender distinto sin que nada
+ * se ponga rojo.
+ *
+ * `alcanza` es un sí o un no y puede venir en cada artículo de la respuesta.
+ * `maximoDisponible` es la cantidad exacta y viene UNA VEZ por llamada, en el
+ * artículo que mejor casa con lo buscado: «de 30 no, de 20 sí» es la respuesta
+ * útil y no hay manera de darla sin el número, pero el catálogo entero con su
+ * número cada uno no es una respuesta, es el inventario.
+ */
+export const Cobertura = z.object({
+  cantidadPedida: z.number().int().positive(),
+  alcanza: z.boolean(),
+  maximoDisponible: z.number().int().nonnegative().optional(),
+});
+
 export const VariantePublica = z.object({
   codigo,
   slug: z.string().min(1),
@@ -34,6 +56,8 @@ export const VariantePublica = z.object({
   unidadesPorCaja: z.number().int().positive(),
   precioCents: centavos.positive(),
   disponibilidad: Disponibilidad,
+  /** Solo si se preguntó por una cantidad concreta. La web nunca lo recibe. */
+  pedido: Cobertura.optional(),
   // Deliberadamente NO hay costo, ni stock, ni bodega.
 });
 
@@ -206,6 +230,7 @@ export const CotizarEnvioSalida = z.union([
  */
 export const ESQUEMAS = {
   Disponibilidad,
+  Cobertura,
   VariantePublica,
   CatalogoPublico,
   ZonaPublica,
@@ -224,6 +249,7 @@ export const ESQUEMAS = {
 } as const;
 
 export type Disponibilidad = z.infer<typeof Disponibilidad>;
+export type Cobertura = z.infer<typeof Cobertura>;
 export type VariantePublica = z.infer<typeof VariantePublica>;
 export type CatalogoPublico = z.infer<typeof CatalogoPublico>;
 export type ZonaPublica = z.infer<typeof ZonaPublica>;

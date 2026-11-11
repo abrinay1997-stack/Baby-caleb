@@ -21,6 +21,39 @@ import { ulid } from "../ids";
  * control para que el stock quedara en negativo sin que nada protestara.
  */
 
+/**
+ * Las unidades libres de una variante, en SQL, contando los combos.
+ *
+ * Un combo no tiene existencias propias: caben tantos como permita el
+ * componente que menos alcance. Es la MISMA regla que `src/dominio/combos.ts`,
+ * escrita en SQL porque el catálogo entero sale en una consulta y traerse las
+ * recetas para calcularlo en JavaScript serían N+1 consultas en el camino que
+ * más se usa.
+ *
+ * Vive AQUÍ y no dentro de cada consulta porque ya tenía dos copias —el
+ * catálogo público y, a punto de nacer, las herramientas del asistente— y tres
+ * copias de una regla discrepan antes o después. La que se equivoca del lado
+ * flojo es la que nadie revisa. `test/combos-catalogo.test.ts` siembra combos
+ * en D1 y exige que esta expresión y `cuantosCombos` den el MISMO número; con
+ * un solo dueño, esa prueba ahora cubre también al asistente.
+ *
+ * `MIN` sobre un conjunto vacío da NULL, así que un combo sin receta sale con
+ * libres nulo: quien lo lea tiene que decidir qué significa eso, y no es lo
+ * mismo hacia fuera (agotado, para no prometer) que hacia dentro (no se sabe).
+ * Y la división de dos enteros en SQLite trunca, igual que el `Math.floor` de
+ * la regla pura.
+ */
+export const libresSQL = (v = "v"): string => `
+         CASE WHEN ${v}.es_combo = 1 THEN (
+           SELECT MIN(
+             (SELECT COALESCE(SUM(e.fisico - e.reservado), 0)
+                FROM existencias e WHERE e.codigo = cc.codigo) / cc.cantidad
+           )
+           FROM combo_componentes cc WHERE cc.combo_codigo = ${v}.codigo
+         ) ELSE (
+           SELECT SUM(e.fisico - e.reservado) FROM existencias e WHERE e.codigo = ${v}.codigo
+         ) END`;
+
 /** Los tipos de movimiento que estas funciones escriben. */
 export type TipoMovimiento =
   | "apertura"

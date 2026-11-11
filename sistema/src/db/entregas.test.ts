@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { token, ulid } from "../ids";
 import { crearPedido } from "./pedidos";
 import { agendar } from "./transiciones";
+import { guardar as guardarAjuste } from "./ajustes";
+import { revisionDeCierre } from "./contabilidad";
 import {
   type ContextoEntrega,
   ajustesDeEntrega,
@@ -53,6 +55,16 @@ let zonaId: string;
 let zona: string;
 
 beforeEach(async () => {
+  // Los ajustes se limpian entre pruebas. El pool de vitest rehace el esquema
+  // una vez por ARCHIVO, no por prueba, así que una prueba que decide las
+  // ventanas de entrega se las deja decididas a las siguientes — y las que
+  // comprueban «mientras la dueña no las decida» pasarían a probar lo
+  // contrario de lo que dicen.
+  //
+  // Sin filas, cada prueba arranca en los valores de fábrica de reglas.json,
+  // que es el estado real de un sistema recién instalado.
+  await env.DB.prepare("DELETE FROM ajustes").run();
+
   productoId = id("prod");
   bodegaId = id("bod");
   bodega = `Bodega ${bodegaId}`;
@@ -632,6 +644,42 @@ describe("crearEnvio", () => {
     if (!r.ok) expect(r.mensaje).toMatch(/más de una bodega/i);
   });
 
+  it("lo que guarda el panel es lo que lee la entrega (el choque que hubo)", async () => {
+    // Esta prueba existe por un fallo que vivió unas horas: el módulo de
+    // ajustes definía `ventanas_entrega` como objetos y el de entregas la
+    // leía como textos, cada uno con su propia consulta a la misma tabla. La
+    // dueña habría decidido sus ventanas desde el panel y el sistema habría
+    // seguido diciendo que faltaban.
+    //
+    // La diferencia con la prueba de abajo es DE DÓNDE sale el dato: aquí se
+    // guarda por el mismo camino que usa el panel, no con un INSERT montado a
+    // mano. Un dato de prueba escrito a mano prueba lo que uno cree; este
+    // prueba lo que el otro lado escribe de verdad.
+    const guardado = await guardarAjuste(
+      { db: env.DB, ahora: ahora(), actor: "duena@babycaleb.com" },
+      {
+        clave: "ventanas_entrega",
+        valor: [
+          { id: "manana", etiqueta: "Mañana", desde: "08:00", hasta: "12:00" },
+          { id: "tarde", etiqueta: "Tarde", desde: "13:00", hasta: "18:00" },
+        ],
+        motivo: "las que de verdad reparte el motorizado",
+      },
+    );
+    expect(guardado.ok, "el panel no pudo guardar las ventanas").toBe(true);
+
+    const vigentes = await ajustesDeEntrega(env.DB, ahora());
+    expect(vigentes.ventanas, "la entrega no ve lo que el panel guardó").toEqual([
+      "manana",
+      "tarde",
+    ]);
+
+    // Y una ventana decidida se acepta de verdad al crear el envío.
+    const p = await pedidoAgendado();
+    const r = await crearEnvio(ctx(), { pedidoId: p.pedidoId, ventana: "manana" });
+    expect(r.ok, "una ventana ya decidida tendría que aceptarse").toBe(true);
+  });
+
   it("una ventana de entrega no se acepta mientras la dueña no las decida", async () => {
     const p = await pedidoAgendado();
     const r = await crearEnvio(ctx(), { pedidoId: p.pedidoId, ventana: "manana" });
@@ -642,15 +690,32 @@ describe("crearEnvio", () => {
   });
 
   it("y sí se acepta cuando el ajuste está puesto", async () => {
+    // La forma REAL que guarda el panel: objetos con código, nombre y horario.
+    //
+    // Esta prueba guardaba antes `["manana","tarde"]`, que era la forma que
+    // esta función se imaginaba y que el panel nunca escribe. Pasaba en verde
+    // mientras el sistema entero habría dicho «las ventanas no están
+    // decididas» con la dueña habiéndolas decidido.
+    //
+    // Ese es el riesgo de montar un dato de prueba a mano: se prueba contra lo
+    // que uno cree, no contra lo que el otro lado escribe.
     await env.DB.prepare(
       `INSERT INTO ajustes (clave,version,valor_json,vigente_desde,cambiado_por)
-       VALUES ('ventanas_entrega',1,'["manana","tarde"]',?,'prueba')`,
+       VALUES ('ventanas_entrega',1,?,?,'prueba')`,
     )
-      .bind(ahora() - 1000)
+      .bind(
+        JSON.stringify([
+          { id: "manana", etiqueta: "Mañana", desde: "08:00", hasta: "12:00" },
+          { id: "tarde", etiqueta: "Tarde", desde: "13:00", hasta: "18:00" },
+        ]),
+        ahora() - 1000,
+      )
       .run();
 
     try {
       const vigentes = await ajustesDeEntrega(env.DB, ahora());
+      // Lo que vuelve son los CÓDIGOS, que es lo que se escribe en el envío:
+      // el nombre se puede cambiar y el código no.
       expect(vigentes.ventanas).toEqual(["manana", "tarde"]);
       // Y lo que la dueña NO decidió sigue diciendo que falta.
       expect(vigentes.comisiones).toBe("PENDIENTE");
@@ -1596,5 +1661,419 @@ describe("fechaDePanama", () => {
     // día siguiente y la ruta de hoy saldría partida en dos días.
     expect(fechaDePanama(Date.UTC(2026, 10, 12, 2, 0, 0))).toBe("2026-11-11");
     expect(fechaDePanama(Date.UTC(2026, 10, 11, 17, 0, 0))).toBe("2026-11-11");
+  });
+});
+
+/**
+ * Los asientos de la entrega (F5.1 enganchada).
+ *
+ * Son lo último que faltaba y lo más fácil de dar por hecho: los veinte
+ * constructores de `dominio/contabilidad.ts` ya existían, cuadraban y tenían
+ * sus propias pruebas… y nadie los llamaba. Las 76 pruebas de este archivo
+ * pasaban en verde con los libros vacíos, que es exactamente por qué estas
+ * pruebas miran la TABLA `asientos` y no el valor que devuelve la función.
+ *
+ * Cada una se validó quitando del batch el asiento que vigila.
+ */
+describe("los asientos que deja una entrega", () => {
+  const asientosDe = async (pedidoId: string) => {
+    const { results } = await env.DB.prepare(
+      // Todo lo que explica este pedido, por los DOS caminos: la venta y su
+      // costo apuntan al pedido (pasan una vez), y cada cobro apunta a SU
+      // pago, porque un pedido tiene varios y cada uno lleva su asiento.
+      `SELECT a.id, a.hecho, a.fecha, a.origen, a.descripcion, cc.diferencia
+         FROM asientos a LEFT JOIN control_cuadre cc ON cc.asiento_id = a.id
+        WHERE (a.referencia_tipo = 'pedido' AND a.referencia_id = ?1)
+           OR (a.referencia_tipo = 'pago'
+               AND a.referencia_id IN (SELECT id FROM pagos WHERE pedido_id = ?1))
+        ORDER BY a.hecho`,
+    )
+      .bind(pedidoId)
+      .all<{
+        id: string;
+        hecho: string;
+        fecha: string;
+        origen: string;
+        descripcion: string;
+        diferencia: number | null;
+      }>();
+    return results;
+  };
+
+  const lineasDe = async (asientoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT c.codigo, l.debe_cents AS debe, l.haber_cents AS haber
+         FROM asiento_lineas l JOIN cuentas c ON c.id = l.cuenta_id
+        WHERE l.asiento_id = ? ORDER BY c.codigo`,
+    )
+      .bind(asientoId)
+      .all<{ codigo: string; debe: number; haber: number }>();
+    return results;
+  };
+
+  /** El costo promedio cargado, que es lo que hace posible el asiento 3b. */
+  const conCosto = (codigo: string, unidades: number, valorCents: number) =>
+    env.DB.prepare("INSERT INTO valor_inventario (codigo,unidades,valor_cents) VALUES (?,?,?)")
+      .bind(codigo, unidades, valorCents)
+      .run();
+
+  it("reconoce la venta al entregar: anticipo fuera, por cobrar dentro, ingreso sin ITBMS", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const antes = await env.DB.prepare(
+      `SELECT total_cents, pagado_cents, subtotal_cents, envio_cents, descuento_cents, itbms_cents
+         FROM pedidos WHERE id = ?`,
+    )
+      .bind(e.pedidoId)
+      .first<{
+        total_cents: number;
+        pagado_cents: number;
+        subtotal_cents: number;
+        envio_cents: number;
+        descuento_cents: number;
+        itbms_cents: number;
+      }>();
+    const total = antes!.total_cents;
+    const abonado = antes!.pagado_cents;
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const asientos = await asientosDe(e.pedidoId);
+    const venta = asientos.find((a) => a.hecho === "3");
+    expect(venta, `asientos: ${JSON.stringify(asientos)}`).toBeDefined();
+    expect(venta?.origen).toBe("entrega");
+    expect(venta?.descripcion).toContain(e.numero);
+
+    const lineas = await lineasDe(venta!.id);
+    // El anticipo que había deja de ser deuda y lo que falta se vuelve cuenta
+    // por cobrar. Del otro lado, el ingreso NO entra de una pieza:
+    //
+    //  · 4101 lleva la mercancía (subtotal menos descuento),
+    //  · 4102 lleva el envío, aparte, porque la dueña necesita poder ver si
+    //    el envío le cuesta más de lo que cobra por él —es una de las once
+    //    cosas que todavía están PENDIENTES en su documento—, y metido en
+    //    ventas esa pregunta ya no se puede contestar;
+    //  · 2201 no tiene línea porque hoy el ITBMS es 0, y eso no es «el
+    //    impuesto es cero»: es que la tasa sigue PENDIENTE y por eso la
+    //    columna vale 0. Cuando ella la decida, esta línea aparece sola.
+    //
+    // Esta prueba empezó esperando `4101 = total` y se puso roja. El código
+    // tenía razón y la expectativa no; se queda así de explícita para que la
+    // separación del envío sea algo que una prueba defiende, no un detalle.
+    expect(antes!.envio_cents, "el escenario tiene que traer envío").toBeGreaterThan(0);
+    expect(lineas).toEqual([
+      { codigo: "1201", debe: total - abonado, haber: 0 },
+      { codigo: "2101", debe: abonado, haber: 0 },
+      { codigo: "4101", debe: 0, haber: antes!.subtotal_cents - antes!.descuento_cents },
+      { codigo: "4102", debe: 0, haber: antes!.envio_cents },
+    ]);
+    // Y el asiento entero suma lo mismo por los dos lados.
+    expect(lineas.reduce((t, l) => t + l.debe, 0)).toBe(total);
+    expect(lineas.reduce((t, l) => t + l.haber, 0)).toBe(total);
+  });
+
+  it("el cobro en efectivo va a la caja del motorizado, y la caja nace en el mismo batch", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const antes = await leerPedido(e.pedidoId);
+    const saldo = antes!.total_cents - antes!.pagado_cents;
+
+    // La caja no existe ANTES: la crea el primer cobro que la usa.
+    const codigoCaja = `1104-${e.motorizado.id}`;
+    const sinCaja = await env.DB.prepare("SELECT codigo FROM cuentas WHERE codigo = ?")
+      .bind(codigoCaja)
+      .first();
+    expect(sinCaja).toBeNull();
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const caja = await env.DB.prepare(
+      "SELECT nombre, tipo, subtipo, motorizado_id FROM cuentas WHERE codigo = ?",
+    )
+      .bind(codigoCaja)
+      .first<{ nombre: string; tipo: string; subtipo: string; motorizado_id: string }>();
+    expect(caja).toEqual({
+      nombre: `Caja de ${e.motorizado.nombre}`,
+      tipo: "activo",
+      subtipo: "caja_motorizado",
+      motorizado_id: e.motorizado.id,
+    });
+
+    const cobro = (await asientosDe(e.pedidoId)).find((a) => a.hecho === "4");
+    expect(cobro, "falta el asiento 4").toBeDefined();
+    expect(await lineasDe(cobro!.id)).toEqual([
+      { codigo: codigoCaja, debe: saldo, haber: 0 },
+      { codigo: "1201", debe: 0, haber: saldo },
+    ]);
+  });
+
+  it("por Yappy es el 4b y el dinero está ya en la cuenta, no en la calle", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const antes = await leerPedido(e.pedidoId);
+    const saldo = antes!.total_cents - antes!.pagado_cents;
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "yappy",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const asientos = await asientosDe(e.pedidoId);
+    expect(asientos.map((a) => a.hecho)).toContain("4b");
+    expect(asientos.map((a) => a.hecho)).not.toContain("4");
+
+    const cobro = asientos.find((a) => a.hecho === "4b")!;
+    expect(await lineasDe(cobro.id)).toEqual([
+      { codigo: "1101", debe: saldo, haber: 0 },
+      { codigo: "1201", debe: 0, haber: saldo },
+    ]);
+    // Y no se creó ninguna caja: por Yappy el motorizado no toca el dinero.
+    const caja = await env.DB.prepare("SELECT codigo FROM cuentas WHERE codigo = ?")
+      .bind(`1104-${e.motorizado.id}`)
+      .first();
+    expect(caja).toBeNull();
+  });
+
+  it("cobrar con «otro» no inventa una cuenta: deja el saldo en 1201 y el pedido pagado", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const antes = await leerPedido(e.pedidoId);
+    const saldo = antes!.total_cents - antes!.pagado_cents;
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "otro",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    // El dinero entró de verdad: esto no es un cobro a medias.
+    expect(r.datos.cobradoCents).toBe(saldo);
+    expect((await leerPedido(e.pedidoId))?.estado_pago).toBe("pagado");
+
+    // Pero NO hay asiento de cobro, porque no se sabe a qué cuenta entró y los
+    // dieciocho asientos del documento no tienen uno para «no sé dónde está».
+    // Meterlo en 1103 «porque suena razonable» sería una cifra a ojo.
+    const asientos = await asientosDe(e.pedidoId);
+    expect(asientos.map((a) => a.hecho)).toContain("3");
+    expect(asientos.map((a) => a.hecho)).not.toContain("4");
+    expect(asientos.map((a) => a.hecho)).not.toContain("4b");
+
+    // El hueco queda a la vista, que es el punto: 1201 se queda con el saldo
+    // mientras el pedido dice que está pagado. Lo canta la casilla «lo por
+    // cobrar cuadra con 1201» del cierre de mes.
+    const venta = asientos.find((a) => a.hecho === "3")!;
+    const porCobrar = (await lineasDe(venta.id)).find((l) => l.codigo === "1201");
+    expect(porCobrar?.debe).toBe(saldo);
+  });
+
+  it("sin costo promedio no escribe un cero: el 3b no existe y el pedido queda sin costo", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.costoDesconocido).toBe(true);
+
+    // Un 3b en cero afirmaría que la mercancía no costó nada, y eso pone el
+    // margen en 100 %: la ganancia más bonita y más falsa que hay.
+    expect((await asientosDe(e.pedidoId)).map((a) => a.hecho)).not.toContain("3b");
+  });
+
+  it("con costo promedio cargado sí escribe el 3b, y es el costo del momento", async () => {
+    const codigo = await variante(10);
+    // 10 unidades valen $20.00 → $2.00 cada una. Se llevan 3 → $6.00.
+    await conCosto(codigo, 10, 2000);
+    const e = await enLaCalle({ cantidad: 3, codigo });
+
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.costoDesconocido).toBe(false);
+
+    const costo = (await asientosDe(e.pedidoId)).find((a) => a.hecho === "3b");
+    expect(costo, "falta el asiento 3b").toBeDefined();
+    expect(await lineasDe(costo!.id)).toEqual([
+      { codigo: "1301", debe: 0, haber: 600 },
+      { codigo: "5101", debe: 600, haber: 0 },
+    ]);
+  });
+
+  it("todos los asientos de la entrega cuadran y llevan la fecha de Panamá", async () => {
+    const codigo = await variante(10);
+    await conCosto(codigo, 10, 2000);
+    const T = Date.UTC(2026, 10, 12, 2, 0, 0); // 11 de noviembre, 21:00 en Panamá
+    const e = await enLaCalle({ cantidad: 2, codigo });
+
+    const r = await marcarEntregada(
+      { db: env.DB, ahora: T, actor: "yarielis@babycaleb.com" },
+      {
+        idempotencia: id("idem"),
+        envioId: e.envioId,
+        motorizadoId: e.motorizado.id,
+        metodoCobro: "efectivo",
+      },
+    );
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    const asientos = await asientosDe(e.pedidoId);
+    expect(asientos.map((a) => a.hecho).sort()).toEqual(["3", "3b", "4"]);
+    for (const a of asientos) {
+      // Su fila de cuadre existe y la diferencia es cero. Sin la fila, el
+      // asiento estaría a medias y el cierre lo cantaría.
+      expect(a.diferencia, `asiento ${a.hecho} sin cuadrar`).toBe(0);
+      // El día del negocio, no el de UTC: a las 21:00 de Panamá UTC ya es el 12.
+      expect(a.fecha, `asiento ${a.hecho}`).toBe("2026-11-11");
+    }
+  });
+
+  it("el mismo toque dos veces no duplica los asientos", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const entrada = {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo" as const,
+    };
+
+    expect((await marcarEntregada(ctx(), entrada)).ok).toBe(true);
+    const unaVez = await asientosDe(e.pedidoId);
+    expect((await marcarEntregada(ctx(), entrada)).ok).toBe(true);
+
+    // Dos asientos iguales descuadran nada —cada uno cuadra por su lado— así
+    // que nada los delataría salvo el saldo, que estaría al doble.
+    expect((await asientosDe(e.pedidoId)).map((a) => a.hecho)).toEqual(
+      unaVez.map((a) => a.hecho),
+    );
+  });
+
+  /**
+   * Las dos casillas del cierre que vigilan justo esto.
+   *
+   * Cada prueba entrega en un MES PROPIO del pasado —`marcarEntregada` no
+   * valida la fecha y `entregado_en` sale de `ctx.ahora`— porque la revisión se
+   * pide por mes y este archivo no aísla el almacenamiento entre pruebas: si
+   * las dos miraran el mes de hoy, la que espera «ok» dependería de correr
+   * antes que la que entrega con «otro».
+   */
+  const casilla = async (mes: string, clave: string) => {
+    const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, mes);
+    if (!r.ok) throw new Error(`no se pudo revisar ${mes}: ${r.mensaje}`);
+    const c = r.datos.casillas.find((x) => x.clave === clave);
+    if (c === undefined) throw new Error(`no existe la casilla ${clave}`);
+    return c;
+  };
+
+  it("un mes cobrado como se debe deja las dos casillas del cierre en «ok»", async () => {
+    const codigo = await variante(10);
+    await conCosto(codigo, 10, 2000);
+    const e = await enLaCalle({ cantidad: 2, codigo });
+    const T = Date.UTC(2025, 2, 18, 15, 0, 0); // marzo de 2025, mes propio
+
+    expect(
+      (
+        await marcarEntregada(
+          { db: env.DB, ahora: T, actor: "yarielis@babycaleb.com" },
+          {
+            idempotencia: id("idem"),
+            envioId: e.envioId,
+            motorizadoId: e.motorizado.id,
+            metodoCobro: "efectivo",
+          },
+        )
+      ).ok,
+    ).toBe(true);
+
+    expect((await casilla("2025-03", "venta_sin_asiento")).estado).toBe("ok");
+    expect((await casilla("2025-03", "pago_sin_asiento")).estado).toBe("ok");
+  });
+
+  it("una entrega sin asiento de venta bloquea el cierre: es la historia de antes", async () => {
+    // Lo que esta casilla defiende de verdad NO se puede provocar con
+    // `marcarEntregada`, porque desde hoy toda entrega escribe su asiento 3.
+    // Defiende lo de ANTES: las entregas que Baby Caleb ya hizo mientras el
+    // sistema no llevaba libros, y que van a aparecer en cuanto se importe
+    // historia o se mueva un pedido a mano. Así que el escenario se arma con
+    // UPDATE, que es exactamente la forma en que ese estado puede existir.
+    //
+    // Sin esta prueba la casilla sobrevivía a la mutación «estado: siempre
+    // ok»: las otras dos pruebas solo la veían decir «ok», que es lo que una
+    // casilla rota también dice.
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const T = Date.UTC(2025, 4, 18, 15, 0, 0); // mayo de 2025, mes propio
+
+    expect((await casilla("2025-05", "venta_sin_asiento")).estado).toBe("ok");
+
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE envios SET estado = 'entregado', entregado_en = ?, cobrado_cents = 0 WHERE id = ?",
+      ).bind(T, e.envioId),
+      env.DB.prepare("UPDATE pedidos SET estado = 'entregado' WHERE id = ?").bind(e.pedidoId),
+    ]);
+
+    const c = await casilla("2025-05", "venta_sin_asiento");
+    expect(c.estado).toBe("falta");
+    expect(c.detalle).toContain("1 pedidos");
+
+    const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, "2025-05");
+    expect(r.ok && r.datos.sePuedeCerrar).toBe(false);
+  });
+
+  it("cobrar con «otro» bloquea el cierre del mes y dice qué hacer", async () => {
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    const T = Date.UTC(2025, 3, 18, 15, 0, 0); // abril de 2025, mes propio
+
+    expect((await casilla("2025-04", "pago_sin_asiento")).estado).toBe("ok");
+
+    expect(
+      (
+        await marcarEntregada(
+          { db: env.DB, ahora: T, actor: "yarielis@babycaleb.com" },
+          {
+            idempotencia: id("idem"),
+            envioId: e.envioId,
+            motorizadoId: e.motorizado.id,
+            metodoCobro: "otro",
+          },
+        )
+      ).ok,
+    ).toBe(true);
+
+    // La venta SÍ quedó escrita: lo que falta es solo saber dónde entró el
+    // dinero. Las dos casillas dicen cosas distintas a propósito.
+    expect((await casilla("2025-04", "venta_sin_asiento")).estado).toBe("ok");
+
+    const c = await casilla("2025-04", "pago_sin_asiento");
+    expect(c.estado).toBe("falta");
+    expect(c.detalle).toContain("1 pagos");
+    // Y no se queda en el diagnóstico: dice dónde se arregla.
+    expect(c.detalle).toMatch(/asiento nuevo/);
+
+    // «falta» bloquea el cierre. Es el punto de la casilla: no saber dónde
+    // está el dinero no se cierra, se resuelve.
+    const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, "2025-04");
+    expect(r.ok && r.datos.sePuedeCerrar).toBe(false);
   });
 });

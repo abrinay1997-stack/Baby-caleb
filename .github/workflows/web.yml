@@ -154,10 +154,41 @@ jobs:
           # puede fallar y el paso se da por bueno porque `tee` salió bien.
           # Pasó de verdad en el primer despliegue del sistema.
           set -o pipefail
-          npx wrangler deploy --var VERSION:"$GITHUB_SHA" | tee salida.txt
-          url="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' salida.txt | head -1)"
+          npx wrangler deploy --var VERSION:"$GITHUB_SHA"
+
+          # La URL sale de la CONFIGURACIÓN, no de lo que imprima wrangler.
+          #
+          # Antes se sacaba con `grep` de una URL de `workers.dev` en la salida
+          # del comando, y esta web no se despliega ahí: va a dominio propio
+          # (`routes` con `custom_domain`). Así que el grep no encontraba nada,
+          # el guardia saltaba y el flujo salía EN ROJO en cada despliegue
+          # bueno — con dos consecuencias, y la segunda es la cara:
+          #
+          #  1. Un despliegue correcto se reportaba como fallido, que es la
+          #     forma más rápida de enseñarle a todo el mundo a ignorar los
+          #     rojos.
+          #  2. El paso siguiente —el que comprueba que el Worker reescribe el
+          #     <head> por ruta— NO LLEGABA A CORRER NUNCA. Ese paso existe
+          #     justo para cazar un fallo que un «200 OK» no ve, y llevaba
+          #     muerto desde que se puso el dominio propio.
+          #
+          # Y no se arregla ampliando el `grep` para que también reconozca la
+          # línea del dominio: eso es volver a apostar a cómo redacta su salida
+          # un comando ajeno, que es la apuesta que este proyecto ya perdió una
+          # vez con «already exists» contra «is already taken». `SITE_URL` es
+          # lo que el propio `wrangler.jsonc` declara que es este sitio.
+          url="$(node -e '
+            const fs = require("node:fs");
+            const crudo = fs.readFileSync("wrangler.jsonc", "utf8");
+            // Solo las líneas que EMPIEZAN por //: quitar cualquier // rompería
+            // las URLs de dentro de las cadenas.
+            const limpio = crudo.replace(/^\s*\/\/.*$/gm, "");
+            const url = JSON.parse(limpio).vars?.SITE_URL;
+            if (!url) { console.error("falta vars.SITE_URL en wrangler.jsonc"); process.exit(1); }
+            process.stdout.write(url);
+          ')"
           if [ -z "$url" ]; then
-            echo "::error::el despliegue no imprimió ninguna URL de workers.dev"
+            echo "::error::no se pudo leer SITE_URL de wrangler.jsonc"
             exit 1
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"

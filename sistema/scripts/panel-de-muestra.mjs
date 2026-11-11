@@ -73,6 +73,173 @@ const PERMISOS_DUENA = {
   ajustes: "editar",
 };
 
+/**
+ * El resumen del inicio, en sus DOS estados.
+ *
+ * Con `MUESTRA=vacia` sale el de hoy —0 clientas, 0 pedidos, inventario sin
+ * cargar— y sin eso sale un negocio en marcha. Hacen falta los dos: la pantalla
+ * que solo se ha mirado con datos de ejemplo es una pantalla que no se ha
+ * probado, y el estado vacío es el que la dueña va a ver primero.
+ *
+ *   node scripts/panel-de-muestra.mjs                 negocio en marcha
+ *   MUESTRA=vacia node scripts/panel-de-muestra.mjs   la base de hoy
+ */
+const VACIA = process.env.MUESTRA === "vacia";
+
+// Solo para inventarle fechas a la muestra. La regla del huso de verdad vive en
+// `DESFASE_PANAMA_MS` (src/dominio/metricas.ts) y es la que usa el Worker; esto
+// no calcula nada del negocio, dibuja un decorado.
+const DESFASE_PANAMA = 5 * 60 * 60 * 1000;
+const diaPanama = (ms) => new Date(ms - DESFASE_PANAMA).toISOString().slice(0, 10);
+const masDias = (f, n) =>
+  new Date(Date.parse(`${f}T00:00:00Z`) + n * dia).toISOString().slice(0, 10);
+const medianoche = (f) => Date.parse(`${f}T00:00:00Z`) + DESFASE_PANAMA;
+
+/** Lo que entró cada día, con forma de semana de verdad: flojo el domingo. */
+const SERIE = [0, 3450, 1200, 0, 8900, 4500, 2300, 11_200, 0, 6700, 3100, 9800, 5400, 2600];
+
+function resumenDeMuestra(nombre) {
+  const ahora = Date.now();
+  const hoy = diaPanama(ahora);
+  const diasDesdeLunes = (new Date(`${hoy}T00:00:00Z`).getUTCDay() + 6) % 7;
+  const desdeFecha = nombre === "hoy" ? hoy : masDias(hoy, -diasDesdeLunes);
+  const salto = (nombre === "hoy" ? 1 : 7) * dia;
+  const periodo = {
+    nombre,
+    desde: medianoche(desdeFecha),
+    hasta: ahora,
+    desdeFecha,
+    hastaFecha: hoy,
+    dias: nombre === "hoy" ? 1 : diasDesdeLunes + 1,
+  };
+  const anterior = {
+    nombre,
+    desde: periodo.desde - salto,
+    hasta: periodo.hasta - salto,
+    desdeFecha: diaPanama(periodo.desde - salto),
+    hastaFecha: diaPanama(periodo.hasta - salto),
+    dias: periodo.dias,
+  };
+
+  if (VACIA) {
+    return {
+      ahora,
+      hoy,
+      periodo,
+      anterior,
+      avisos: { sinPublicar: 0, masViejo: null },
+      atencion: {
+        pedidosEnTotal: 0, porAbonar: 0, porAbonarVencidos: 0, agendadosSinDespachar: 0,
+        pagosPorRevisar: 0, pagosEsperandoClienta: 0, entregasAtrasadas: 0,
+        entregasFallidas: 0, paradasDeHoySinAsignar: 0, rutasDeHoySinSalir: 0,
+      },
+      actividad: {
+        pedidosNuevos: 0, pedidosNuevosAnterior: 0, clientasNuevas: 0,
+        clientasNuevasAnterior: 0, clientasEnTotal: 0,
+      },
+      // Treinta y seis filas en cero y ningún movimiento: las creó la carga
+      // inicial, no es que se haya vendido todo.
+      inventario: { cargado: false, filas: 36, sinMinimo: 36 },
+      dinero: {
+        entro: 0, entroAnterior: 0, pagosSinFecha: 0,
+        entregado: { total: 0, pedidos: 0 },
+        entregadoAnterior: { total: 0, pedidos: 0 },
+        devueltos: 0,
+        porCobrar: { total: 0, pedidos: 0 },
+        serie: [],
+      },
+    };
+  }
+
+  const deLaSemana = nombre === "semana";
+  return {
+    ahora,
+    hoy,
+    periodo,
+    anterior,
+    // Distinto de cero a propósito: es la tarjeta que solo aparece cuando algo
+    // va mal, y si nunca se ve no se sabe si está bien escrita.
+    avisos: { sinPublicar: 2, masViejo: ahora - 23 * 60_000 },
+    atencion: {
+      pedidosEnTotal: 312,
+      porAbonar: 6,
+      porAbonarVencidos: 2,
+      agendadosSinDespachar: 3,
+      pagosPorRevisar: 4,
+      pagosEsperandoClienta: 1,
+      entregasAtrasadas: 1,
+      entregasFallidas: 2,
+      paradasDeHoySinAsignar: 5,
+      rutasDeHoySinSalir: 1,
+    },
+    actividad: {
+      pedidosNuevos: deLaSemana ? 23 : 4,
+      pedidosNuevosAnterior: deLaSemana ? 19 : 6,
+      clientasNuevas: deLaSemana ? 7 : 1,
+      clientasNuevasAnterior: deLaSemana ? 7 : 0,
+      clientasEnTotal: 247,
+    },
+    inventario: {
+      cargado: true,
+      filas: 118,
+      sinMinimo: 41,
+      unidades: 466,
+      reservadas: 54,
+      agotadas: 3,
+      porAcabarse: 4,
+      lista: [
+        { codigo: "BC-003-RN", nombre: "Gorro de punto recién nacido", bodega: "Principal", libres: 0, minimo: 3 },
+        { codigo: "BC-007-U", nombre: "Babero impermeable", bodega: "Casa", libres: 0, minimo: null },
+        { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", bodega: "Principal", libres: 2, minimo: 6 },
+        { codigo: "BC-011-6M", nombre: "Pijama de algodón 6 meses", bodega: "Casa", libres: 4, minimo: 4 },
+      ],
+      listaTruncada: false,
+    },
+    dinero: {
+      entro: deLaSemana ? 38_900 : 7450,
+      entroAnterior: deLaSemana ? 31_200 : 9800,
+      // Uno sin ubicar, para que se vea la tarjeta que lo avisa.
+      pagosSinFecha: 1,
+      entregado: deLaSemana ? { total: 42_300, pedidos: 9 } : { total: 9900, pedidos: 2 },
+      entregadoAnterior: deLaSemana ? { total: 51_000, pedidos: 11 } : { total: 4500, pedidos: 1 },
+      devueltos: deLaSemana ? 1 : 0,
+      porCobrar: { total: 27_650, pedidos: 8 },
+      serie: SERIE.map((centavos, i) => ({ fecha: masDias(hoy, i - (SERIE.length - 1)), centavos })),
+    },
+  };
+}
+
+/**
+ * Un asiento del libro con sus líneas, para no repetir la forma ocho veces.
+ *
+ * `totalCents` es la suma de un lado —los dos dan lo mismo, porque cuadra— y
+ * se pasa a mano en vez de calcularlo: si un día una línea se escribe mal, el
+ * total deja de coincidir y la pantalla lo enseña, que es lo que se quiere de
+ * unos datos de muestra de contabilidad.
+ */
+const asiento = (id, fecha, descripcion, origen, hecho, totalCents, lineas, extra = {}) => ({
+  id,
+  fecha,
+  descripcion,
+  origen,
+  hecho,
+  referenciaTipo: null,
+  referenciaId: null,
+  revierteId: null,
+  revertido: false,
+  creadoPor: "yarielis@babycaleb.com",
+  creadoEn: Date.parse(`${fecha}T15:00:00Z`),
+  totalCents,
+  lineas: lineas.map(([codigo, cuenta, debeCents, haberCents]) => ({
+    codigo,
+    cuenta,
+    debeCents,
+    haberCents,
+    detalle: null,
+  })),
+  ...extra,
+});
+
 const RESPUESTAS = {
   "/api/yo": ok({
     usuario: {
@@ -85,20 +252,268 @@ const RESPUESTAS = {
     permisos: PERMISOS_DUENA,
   }),
 
-  // `/resumen`: cuentas + `porAcabarse` (codigo, nombre, bodega, libres, minimo).
-  "/api/resumen": ok({
-    variantes: 118,
-    bodegas: 2,
-    zonas: 11,
-    clientes: 247,
-    // A propósito distinto de cero: es la tarjeta que solo aparece cuando algo
-    // va mal, y si nunca se ve no se sabe si está bien escrita.
-    avisosSinPublicar: 2,
-    avisoMasViejo: Date.now() - 23 * 60_000,
-    porAcabarse: [
-      { codigo: "BC-003-RN", nombre: "Gorro de punto recién nacido", bodega: "Principal", libres: 0, minimo: 3 },
-      { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", bodega: "Principal", libres: 2, minimo: 6 },
-      { codigo: "BC-011-6M", nombre: "Pijama de algodón 6 meses", bodega: "Casa", libres: 4, minimo: 4 },
+  // `/resumen`: la forma de `ResumenDelNegocio` (src/db/metricas.ts). Es una
+  // función y no un objeto porque la pantalla pide `?periodo=` y porque tiene
+  // DOS estados que hay que poder mirar (ver `resumenDeMuestra`).
+  "/api/resumen": (url) =>
+    ok(resumenDeMuestra(url.searchParams.get("periodo") === "semana" ? "semana" : "hoy")),
+
+  /**
+   * `/cobros`: la bandeja de comprobantes, con los cuatro casos que la
+   * pantalla tiene que saber pintar distinto.
+   *
+   * Uno viejo (que pide atención), uno sin captura (que avisa de que no se
+   * puede comprobar mirando), uno de un pedido YA ENTREGADO por un método que
+   * todavía no tiene asiento para ese caso, y uno que se pasaría del total
+   * (la señal de que la captura puede ser de otro pedido). Con un solo caso
+   * bonito, los avisos no se ven nunca y nadie los revisa.
+   */
+  "/api/cobros": ok({
+    hayMas: false,
+    comprobantes: [
+      {
+        pagoId: "01JBCY0000000000000000001",
+        pedidoId: "01JBCP0000000000000000001",
+        numero: "BC-000412",
+        cliente: "Ana Gómez",
+        montoCents: 1500,
+        metodo: "yappy",
+        tipo: "abono",
+        comprobanteR2: "comprobantes/ana.jpg",
+        creadoEn: Date.now() - 3 * 60 * 60 * 1000,
+        totalCents: 4650,
+        pagadoCents: 0,
+        estadoPedido: "por_abonar",
+      },
+      {
+        pagoId: "01JBCY0000000000000000002",
+        pedidoId: "01JBCP0000000000000000002",
+        numero: "BC-000408",
+        cliente: "Marielys Pérez",
+        montoCents: 3150,
+        metodo: "transferencia",
+        tipo: "saldo",
+        comprobanteR2: null,
+        creadoEn: Date.now() - 2 * 24 * 60 * 60 * 1000,
+        totalCents: 3150,
+        pagadoCents: 0,
+        estadoPedido: "agendado",
+      },
+      {
+        pagoId: "01JBCY0000000000000000003",
+        pedidoId: "01JBCP0000000000000000003",
+        numero: "BC-000399",
+        cliente: null,
+        montoCents: 2000,
+        metodo: "transferencia",
+        tipo: "saldo",
+        comprobanteR2: "comprobantes/sin-nombre.jpg",
+        creadoEn: Date.now() - 20 * 60 * 1000,
+        totalCents: 9300,
+        pagadoCents: 1000,
+        // Entregado: por eso este saldo no va a dejar asiento, y la ficha lo
+        // avisa antes de confirmar.
+        estadoPedido: "entregado",
+      },
+      {
+        pagoId: "01JBCY0000000000000000004",
+        pedidoId: "01JBCP0000000000000000004",
+        numero: "BC-000387",
+        cliente: "Yoselin Rodríguez de la Espriella",
+        montoCents: 5000,
+        metodo: "efectivo",
+        tipo: "total",
+        comprobanteR2: null,
+        creadoEn: Date.now() - 9 * 24 * 60 * 60 * 1000,
+        totalCents: 4650,
+        pagadoCents: 1000,
+        estadoPedido: "entregado",
+      },
+    ],
+  }),
+
+  /**
+   * `/contabilidad` y sus cuatro hermanas.
+   *
+   * Esta pantalla NUNCA se había renderizado aquí, y es la que más falta hacía:
+   * hasta que se engancharon los asientos, el libro diario de verdad salía
+   * vacío siempre, así que nadie —ni una prueba ni una persona— había visto la
+   * pantalla con datos dentro.
+   *
+   * LOS NÚMEROS CUADRAN ENTRE SÍ, Y ESO ES EL PUNTO. Son un mes de verdad:
+   * tres abonos, dos entregas con su costo y un saldo cobrado en efectivo.
+   * Ocho asientos. Si se inventan cifras sueltas, la pantalla sale bonita y no
+   * se puede ver si MIENTE — que es justo lo que una pantalla de contabilidad
+   * no puede hacer.
+   *
+   *   1101 Yappy      4 650   (abonos de BC-000412 y BC-000408)
+   *   1103 Efectivo   1 000   (abono de BC-000399)
+   *   1104-mot-01     3 150   (el saldo que cobró el motorizado y no ha entregado)
+   *   1201 Por cobrar 8 300   (BC-000399, entregado y sin cobrar)
+   *   1301 Inventario −5 700
+   *   2101 Anticipos  3 150   (el abono de BC-000408, que no ha salido)
+   *
+   *   Activo 11 400 = pasivo 3 150 + patrimonio 0 + resultado 8 250 ✓
+   *
+   * **El inventario en NEGATIVO es a propósito y es el estado real de hoy.**
+   * Salió mercancía que nunca entró en los libros, porque no hay asiento de
+   * apertura: la fecha de arranque y los costos de apertura siguen PENDIENTES
+   * de la dueña. Poner aquí un inventario positivo inventado escondería
+   * exactamente lo que hay que ver antes de empezar a usar esto en serio.
+   */
+  "/api/contabilidad": ok({
+    resumen: {
+      desde: "2026-11-01",
+      hasta: "2026-11-30",
+      dinero: [
+        { codigo: "1101", nombre: "Yappy Comercial (Banco General)", saldoCents: 4650 },
+        { codigo: "1103", nombre: "Efectivo en caja", saldoCents: 1000 },
+        { codigo: "1104-mot-01", nombre: "Caja de Luis", saldoCents: 3150 },
+      ],
+      dineroTotalCents: 8800,
+      teDebenCents: 8300,
+      debesCents: 3150,
+      inventarioCents: -5700,
+      resultados: {
+        ventasCents: 12950,
+        devolucionesCents: 0,
+        costoDeVentasCents: 5700,
+        mermasCents: 0,
+        gananciaBrutaCents: 7250,
+        ingresosEnvioCents: 1000,
+        gastosCents: 0,
+        gananciaNetaCents: 8250,
+        margenBrutoBp: 5598,
+        entregasSinCosto: 0,
+        porCuenta: [
+          { codigo: "4101", nombre: "Ventas", tipo: "ingreso", subtipo: null,
+            debeCents: 0, haberCents: 12950, saldoCents: 12950 },
+          { codigo: "4102", nombre: "Ingresos por envío", tipo: "ingreso", subtipo: null,
+            debeCents: 0, haberCents: 1000, saldoCents: 1000 },
+          { codigo: "5101", nombre: "Costo de lo vendido", tipo: "costo", subtipo: null,
+            debeCents: 5700, haberCents: 0, saldoCents: 5700 },
+        ],
+      },
+      balance: {
+        activoCents: 11400, pasivoCents: 3150, patrimonioCents: 0,
+        resultadoCents: 8250, diferenciaCents: 0, cuadra: true,
+      },
+      asientos: 8,
+      asientosSinCuadre: 0,
+      // Efectivo que está en la calle. A fin de mes tiene que estar en cero.
+      cajasConSaldo: [{ codigo: "1104-mot-01", nombre: "Caja de Luis", saldoCents: 3150 }],
+    },
+    huecos: [
+      { clave: "itbms", que: "Si los pañales, los wipes y los fulares llevan ITBMS, y a qué tasa cada uno.",
+        quien: "La dueña con su contadora.", estado: "abierto", nota: "Hoy la columna vale 0 en los 36 artículos.",
+        sinEsto: "El ITBMS no se cobra ni se separa, y la cuenta 2201 se queda vacía.",
+        fuente: "05-contabilidad §2" },
+      { clave: "banco", que: "En qué banco está la cuenta corriente del negocio.",
+        quien: "La dueña.", estado: "abierto", nota: null,
+        sinEsto: "La cuenta 1102 se sigue llamando «Banco (cuál: PENDIENTE)» en todos los informes.",
+        fuente: "05-contabilidad §2" },
+      { clave: "fecha_arranque", que: "El día 1 del mes en que la contabilidad arranca de verdad.",
+        quien: "La dueña.", estado: "abierto",
+        nota: "Mientras falte, el inventario sale en negativo: sale mercancía que nunca entró.",
+        sinEsto: "No hay asiento de apertura, y los meses anteriores no se pueden dar por cerrados.",
+        fuente: "05-contabilidad §7" },
+      { clave: "costos_apertura", que: "Cuánto costó cada talla que hay hoy en bodega.",
+        quien: "La contadora, con las facturas del proveedor.", estado: "lo_dice_una_persona", nota: null,
+        sinEsto: "Las entregas salen sin costo y el margen no se puede calcular.",
+        fuente: "05-contabilidad §7" },
+    ],
+  }),
+
+  // Los ocho asientos del mes, en el orden en que pasaron. Cada uno cuadra.
+  "/api/contabilidad/diario": ok({
+    asientos: [
+      asiento("01JBD1", "2026-11-03", "Abono recibido · Pedido BC-000412", "pago", "1", 1500,
+        [["1101", "Yappy Comercial (Banco General)", 1500, 0], ["2101", "Anticipos de clientas", 0, 1500]],
+        { referenciaTipo: "pago", referenciaId: "01JBCY0000000000000000001" }),
+      asiento("01JBD2", "2026-11-05", "Abono recibido · Pedido BC-000399", "pago", "1", 1000,
+        [["1103", "Efectivo en caja", 1000, 0], ["2101", "Anticipos de clientas", 0, 1000]],
+        { referenciaTipo: "pago", referenciaId: "01JBCY0000000000000000005" }),
+      asiento("01JBD3", "2026-11-07", "Entrega del pedido BC-000412", "entrega", "3", 4650,
+        [["2101", "Anticipos de clientas", 1500, 0], ["1201", "Cuentas por cobrar a clientas", 3150, 0],
+         ["4101", "Ventas", 0, 4150], ["4102", "Ingresos por envío", 0, 500]],
+        { referenciaTipo: "pedido", referenciaId: "01JBCP0000000000000000001" }),
+      asiento("01JBD4", "2026-11-07", "Costo de lo vendido del pedido BC-000412", "entrega", "3b", 1800,
+        [["5101", "Costo de lo vendido", 1800, 0], ["1301", "Inventario", 0, 1800]],
+        { referenciaTipo: "pedido", referenciaId: "01JBCP0000000000000000001" }),
+      asiento("01JBD5", "2026-11-07", "Cobro del saldo del pedido BC-000412", "cobro", "4", 3150,
+        [["1104-mot-01", "Caja de Luis", 3150, 0], ["1201", "Cuentas por cobrar a clientas", 0, 3150]],
+        { referenciaTipo: "pago", referenciaId: "01JBCY0000000000000000006" }),
+      asiento("01JBD6", "2026-11-09", "Entrega del pedido BC-000399", "entrega", "3", 9300,
+        [["2101", "Anticipos de clientas", 1000, 0], ["1201", "Cuentas por cobrar a clientas", 8300, 0],
+         ["4101", "Ventas", 0, 8800], ["4102", "Ingresos por envío", 0, 500]],
+        { referenciaTipo: "pedido", referenciaId: "01JBCP0000000000000000003" }),
+      asiento("01JBD7", "2026-11-09", "Costo de lo vendido del pedido BC-000399", "entrega", "3b", 3900,
+        [["5101", "Costo de lo vendido", 3900, 0], ["1301", "Inventario", 0, 3900]],
+        { referenciaTipo: "pedido", referenciaId: "01JBCP0000000000000000003" }),
+      asiento("01JBD8", "2026-11-10", "Abono recibido · Pedido BC-000408", "pago", "1", 3150,
+        [["1101", "Yappy Comercial (Banco General)", 3150, 0], ["2101", "Anticipos de clientas", 0, 3150]],
+        { referenciaTipo: "pago", referenciaId: "01JBCY0000000000000000002" }),
+    ],
+  }),
+
+  "/api/contabilidad/por-cobrar": ok({
+    al: "2026-11-30",
+    totalCents: 8300,
+    porTramo: { "0-7": 8300, "8-30": 0, "mas-de-30": 0 },
+    deudas: [
+      { pedidoId: "01JBCP0000000000000000003", numero: "BC-000399", cliente: null,
+        saldoCents: 8300, entregadoEl: "2026-11-09", dias: 2, tramo: "0-7" },
+    ],
+  }),
+
+  // El mayor de una cuenta: se abre tocando una del resumen.
+  "/api/contabilidad/cuentas/1201": ok({
+    codigo: "1201",
+    nombre: "Cuentas por cobrar a clientas",
+    apuntes: [
+      { asientoId: "01JBD3", fecha: "2026-11-07", descripcion: "Entrega del pedido BC-000412",
+        hecho: "3", debeCents: 3150, haberCents: 0, detalle: "Pedido BC-000412" },
+      { asientoId: "01JBD5", fecha: "2026-11-07", descripcion: "Cobro del saldo del pedido BC-000412",
+        hecho: "4", debeCents: 0, haberCents: 3150, detalle: "Pedido BC-000412" },
+      { asientoId: "01JBD6", fecha: "2026-11-09", descripcion: "Entrega del pedido BC-000399",
+        hecho: "3", debeCents: 8300, haberCents: 0, detalle: "Pedido BC-000399" },
+    ],
+  }),
+
+  /**
+   * El cierre, con la mezcla de estados que de verdad va a salir.
+   *
+   * No se puede cerrar, y por un motivo concreto: la caja del motorizado tiene
+   * $31.50 que él todavía no ha entregado. Es la casilla que hace que un
+   * cierre signifique algo.
+   */
+  "/api/contabilidad/cierre": ok({
+    mes: "2026-11",
+    estadoDelMes: "abierto",
+    sePuedeCerrar: false,
+    mesTerminado: false,
+    casillas: [
+      { clave: "extracto", titulo: "Extractos del mes importados y sin líneas por cruzar",
+        estado: "no_se_puede_comprobar",
+        detalle: "No se ha importado ningún extracto de este mes. La importación de CSV llega con la conciliación (F5.7)." },
+      { clave: "pagos", titulo: "Pagos aprobados sin conciliar", estado: "aviso",
+        detalle: "4 pagos aprobados que todavía no se han cruzado con un extracto." },
+      { clave: "liquidaciones", titulo: "Liquidaciones de las pasarelas recibidas",
+        estado: "no_se_puede_comprobar",
+        detalle: "Todavía no hay ninguna pasarela encendida: los trámites de Yappy, Tilopay y PayPal siguen en curso." },
+      { clave: "cajas", titulo: "Cajas de los motorizados en cero", estado: "falta",
+        detalle: "1 con saldo: Caja de Luis." },
+      { clave: "sin_costo", titulo: "Pedidos entregados sin costo", estado: "ok", detalle: "Ninguno." },
+      { clave: "facturas", titulo: "Compras recibidas sin factura adjunta",
+        estado: "no_se_puede_comprobar", detalle: "Las compras a proveedor llegan en otra parte del sistema (F5.4)." },
+      { clave: "existencias", titulo: "Las existencias cuadran con sus movimientos", estado: "ok", detalle: "Cuadran." },
+      { clave: "balance", titulo: "El balance cuadra", estado: "ok",
+        detalle: "Activos = pasivos + patrimonio + el resultado del periodo." },
+      { clave: "venta_sin_asiento", titulo: "Todas las entregas del mes tienen su asiento de venta",
+        estado: "ok", detalle: "Todas." },
+      { clave: "pago_sin_asiento", titulo: "Todo el dinero que entró tiene su asiento",
+        estado: "ok", detalle: "Todo." },
+      { clave: "cuadre", titulo: "Todos los asientos del mes tienen su cuadre", estado: "ok", detalle: "Todos." },
     ],
   }),
 
@@ -235,8 +650,9 @@ const servidor = createServer(async (pet, res) => {
   const ruta = new URL(pet.url ?? "/", "http://x").pathname;
 
   if (Object.hasOwn(RESPUESTAS, ruta)) {
+    const respuesta = RESPUESTAS[ruta];
     res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    res.end(RESPUESTAS[ruta]);
+    res.end(typeof respuesta === "function" ? respuesta(new URL(pet.url ?? "/", "http://x")) : respuesta);
     return;
   }
   // El veredicto de borrado, que la pantalla pide ANTES de enseñar el

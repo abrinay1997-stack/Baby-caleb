@@ -9,6 +9,16 @@ import { type Candidato, sugerirMotorizado } from "../dominio/asignacion";
 import { type Punto, esPuntoValido } from "../dominio/geo";
 import { esEstadoMotorizado, puedeRecibirEntregas } from "../dominio/motorizado";
 import reglas from "../../reglas.json";
+import { leerVigentes } from "./ajustes";
+import {
+  cobroDelSaldo,
+  codigoDeCaja,
+  costoDeLaEntrega,
+  entregaDelPedido,
+  fechaContable,
+} from "../dominio/contabilidad";
+import { enunciadosDeAsiento, enunciadosDeCuentaDeMotorizado } from "./contabilidad";
+import type { Ventana } from "../dominio/ajustes";
 
 /**
  * La entrega: de la bodega a la puerta (F4.5).
@@ -74,18 +84,27 @@ const VENCE_IDEMPOTENCIA_MS = 48 * 60 * 60 * 1000;
 // El día de Panamá
 // ---------------------------------------------------------------------------
 
-/** UTC−5 y sin horario de verano: Panamá no lo tiene. */
-const DESFASE_PANAMA_MS = 5 * 60 * 60 * 1000;
-
 /**
  * La fecha del negocio, 'YYYY-MM-DD'.
  *
  * No es la de UTC: con la fecha en UTC, todo lo que se entrega después de las
  * siete de la noche contaría como del día siguiente, y la ruta de hoy
  * aparecería partida en dos días.
+ *
+ * Es `fechaContable` del dominio y no una copia. Lo era hasta ahora —el mismo
+ * cálculo escrito dos veces, con su propia constante de cinco horas— y eso
+ * importa justo aquí: el día de la ruta y el mes del asiento de la entrega
+ * tienen que salir del MISMO cálculo, porque si un día se separan, una entrega
+ * de las siete de la noche cae en la ruta de hoy y en el mes contable de
+ * mañana, y eso no lo delata ninguna prueba: cuadra por los dos lados.
+ *
+ * Queda una tercera copia, `fechaPanama` en `dominio/metricas.ts`, con su
+ * propio `DESFASE_PANAMA_MS`. Esa sí tiene una prueba que la pega a esta
+ * instante a instante (`dominio/metricas.test.ts`), así que no puede separarse
+ * en silencio; unirlas es una limpieza aparte.
  */
 export function fechaDePanama(ahora: number): string {
-  return new Date(ahora - DESFASE_PANAMA_MS).toISOString().slice(0, 10);
+  return fechaContable(ahora);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,38 +140,50 @@ export async function ajustesDeEntrega(
   db: D1Database,
   ahora: number,
 ): Promise<AjustesDeEntrega> {
-  const { results } = await db
-    .prepare(
-      `SELECT a.clave, a.valor_json
-         FROM ajustes a
-        WHERE a.clave IN ('ventanas_entrega','comisiones')
-          AND a.vigente_desde <= ?1
-          AND a.version = (SELECT MAX(b.version) FROM ajustes b
-                            WHERE b.clave = a.clave AND b.vigente_desde <= ?1)`,
-    )
-    .bind(ahora)
-    .all<{ clave: string; valor_json: string }>();
-
-  const puesto = new Map<string, unknown>();
-  for (const a of results) {
-    try {
-      puesto.set(a.clave, JSON.parse(a.valor_json));
-    } catch {
-      // Un ajuste ilegible se trata como no puesto: cae en el de fábrica, que
-      // es PENDIENTE. Peor que no tener el dato es tener uno roto y creérselo.
-    }
+  // Lee del módulo de ajustes, no con una consulta propia.
+  //
+  // Antes esta función tenía su copia de la consulta Y entendía
+  // `ventanas_entrega` como una lista de textos (`["manana","tarde"]`),
+  // mientras el esquema de ajustes la define como objetos con código, nombre
+  // y horario. Dos lecturas del mismo dato con dos ideas distintas de qué es:
+  // el resultado habría sido que la dueña decidiera sus ventanas desde el
+  // panel y esta función siguiera diciendo «falta decidirlas».
+  //
+  // Fallaba del lado seguro —decía «falta», no un horario equivocado— pero
+  // era un error igual, y de los que nadie encuentra hasta que una clienta
+  // no puede agendar.
+  const r = await leerVigentes({ db, ahora });
+  if (!r.ok) {
+    // Sin poder leer los ajustes no se inventa ninguno: todo PENDIENTE, y
+    // quien llame decidirá si puede seguir sin ellos.
+    return { ventanas: "PENDIENTE", comisiones: "PENDIENTE" };
   }
 
-  const ventanasCrudas = puesto.get("ventanas_entrega") ?? deFabrica["ventanas_entrega"];
-  const ventanas =
-    Array.isArray(ventanasCrudas) && ventanasCrudas.every((v) => typeof v === "string")
-      ? (ventanasCrudas as string[])
-      : ("PENDIENTE" as const);
+  const de = (clave: string) => r.datos.ajustes.find((a) => a.clave === clave);
 
-  return {
-    ventanas,
-    comisiones: puesto.get("comisiones") ?? deFabrica["comisiones"] ?? "PENDIENTE",
-  };
+  const ve = de("ventanas_entrega");
+  /**
+   * De cada ventana se guarda su CÓDIGO, no su nombre.
+   *
+   * `envios.ventana` lleva escrito el código (`manana`), y por eso el esquema
+   * separa `id` de `etiqueta`: el día que la dueña renombre «Mañana» a «Antes
+   * del mediodía», los envíos que ya dicen `manana` tienen que seguir
+   * significando algo. Guardar aquí el nombre rompería esa promesa.
+   */
+  // `ve.pendiente` es la comprobación que dice lo que queremos decir; hoy
+  // `Array.isArray` sola bastaría, porque una clave sin decidir vale el texto
+  // «PENDIENTE» y eso no es una lista. Lo compruebo: quitar `ve.pendiente` no
+  // tumba ninguna prueba. Se queda por legible, no porque defienda algo — y
+  // lo digo aquí para que nadie cuente con ella como defensa.
+  const ventanas =
+    ve === undefined || ve.pendiente || !Array.isArray(ve.valor)
+      ? ("PENDIENTE" as const)
+      : (ve.valor as Ventana[]).map((v) => v.id);
+
+  const co = de("comisiones");
+  const comisiones = co === undefined || co.pendiente ? ("PENDIENTE" as const) : co.valor;
+
+  return { ventanas, comisiones };
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +218,13 @@ interface FilaPedido {
   numero: string;
   estado: string;
   total_cents: number;
+  // Las partes del total, que el asiento de la entrega necesita una por una:
+  // la venta va a 4101 sin ITBMS, el envío a 4102 y el impuesto a su pasivo
+  // (05-contabilidad §2). Con solo el total no se puede armar.
+  subtotal_cents: number;
+  envio_cents: number;
+  descuento_cents: number;
+  itbms_cents: number;
   pagado_cents: number;
   zona_id: string | null;
   direccion_id: string | null;
@@ -196,7 +234,8 @@ interface FilaPedido {
 const leerPedido = (db: D1Database, pedidoId: string) =>
   db
     .prepare(
-      `SELECT id, numero, estado, total_cents, pagado_cents, zona_id, direccion_id, version
+      `SELECT id, numero, estado, total_cents, subtotal_cents, envio_cents, descuento_cents,
+              itbms_cents, pagado_cents, zona_id, direccion_id, version
          FROM pedidos WHERE id = ?`,
     )
     .bind(pedidoId)
@@ -1359,6 +1398,14 @@ export async function marcarEntregada(
   }
 
   // El cobro del saldo.
+  //
+  // El id se nombra en vez de generarse dentro del `bind` porque el asiento 4
+  // lo necesita: su referencia apunta al PAGO, no al pedido. Un pedido tiene
+  // varios pagos (el abono, el saldo) y cada uno lleva su asiento, así que una
+  // referencia al pedido no permite preguntar «¿este cobro está en los
+  // libros?» — que es justo la casilla del cierre que lo vigila.
+  const pagoDelSaldo = ulid(ctx.ahora);
+
   if (cobrado > 0) {
     enunciados.push(
       ctx.db
@@ -1368,7 +1415,7 @@ export async function marcarEntregada(
            VALUES (?,?,'manual',?,'saldo','aprobado',?,?,?,?,?,?)`,
         )
         .bind(
-          ulid(ctx.ahora),
+          pagoDelSaldo,
           envio.pedido_id,
           e.metodoCobro ?? "otro",
           cobrado,
@@ -1405,6 +1452,141 @@ export async function marcarEntregada(
     );
   }
 
+  // ── Los asientos ─────────────────────────────────────────────────────────
+  //
+  // Van en ESTE batch porque son parte del hecho y no una consecuencia suya.
+  // Hasta hoy no iban: los veinte constructores de `dominio/contabilidad.ts`
+  // estaban escritos, cuadraban y tenían pruebas, y NADIE LOS LLAMABA. Así que
+  // una entrega descontaba el inventario, cobraba el saldo, movía el pedido
+  // a «entregado»… y dejaba los libros exactamente igual que antes: vacíos.
+  //
+  // Si fueran una escritura aparte, un corte en medio dejaría la venta sin
+  // asiento —mercancía fuera del inventario que ningún libro explica— o el
+  // asiento sin la venta. Ninguna de las dos se descubre hasta el cierre, que
+  // es un mes después, cuando ya nadie recuerda de qué entrega venía.
+  const fechaDelAsiento = fechaContable(ctx.ahora);
+  const referencia = { tipo: "pedido", id: p.id };
+
+  // Asiento 3 · la venta se reconoce AQUÍ, al entregar, no al cobrar.
+  //
+  // `abonadoCents` es lo que había pagado ANTES de esta entrega: ese anticipo
+  // deja de ser una deuda con la clienta y lo que falte se vuelve cuenta por
+  // cobrar — que es justo lo que descarga el asiento 4 de más abajo. Los dos
+  // tienen que ir juntos o 1201 queda con un saldo que nadie abrió.
+  //
+  // Un pedido de cero no genera asiento y el constructor lo rechaza. No es un
+  // error: es un regalo o un canje, y la mercancía que salió ya quedó escrita
+  // arriba como movimiento de inventario.
+  if (p.total_cents > 0) {
+    const venta = entregaDelPedido({
+      fecha: fechaDelAsiento,
+      referencia,
+      numero: p.numero,
+      totalCents: p.total_cents,
+      subtotalCents: p.subtotal_cents,
+      descuentoCents: p.descuento_cents,
+      envioCents: p.envio_cents,
+      itbmsCents: p.itbms_cents,
+      abonadoCents: p.pagado_cents,
+    });
+    // Si el asiento no se puede armar, NO se entrega. Lo pensé al revés
+    // primero, con el motorizado en la puerta: mejor registrar la entrega y
+    // apuntar el asiento para después.
+    //
+    // No. Lo único que puede fallar aquí es que las partes del pedido no sumen
+    // su total, y `pedidos` tiene ese mismo CHECK, así que con datos sanos no
+    // pasa. Si pasa, el pedido está roto. La alternativa —escribir la entrega
+    // y callar el asiento— es exactamente el descuadre silencioso que este
+    // sistema existe para evitar. Un error ahora se arregla hoy.
+    if (!venta.ok) return venta;
+    enunciados.push(...enunciadosDeAsiento(ctx, venta.datos).enunciados);
+
+    // Asiento 3b · lo que costó la mercancía que salió.
+    //
+    // Se salta cuando no se sabe, y eso es a propósito: el constructor falla
+    // con un costo nulo en vez de escribir un cero, porque un cero afirma que
+    // la mercancía no costó nada y convierte el margen en 100 %. El pedido
+    // queda en la casilla «pedidos entregados sin costo» del cierre de mes,
+    // que es donde la contadora lo ve y lo arregla con la factura.
+    if (!costoDesconocido) {
+      let costoTotal = 0;
+      for (const c of costoPorComponente.values()) costoTotal += c ?? 0;
+      // Cero SABIENDO el costo es otra cosa que cero por no saberlo: es
+      // mercancía valorada en cero (donada, de muestra). No hay costo que
+      // anotar, y tampoco nada que avisar.
+      if (costoTotal > 0) {
+        const costo = costoDeLaEntrega({
+          fecha: fechaDelAsiento,
+          referencia,
+          numero: p.numero,
+          costoCents: costoTotal,
+        });
+        if (!costo.ok) return costo;
+        enunciados.push(...enunciadosDeAsiento(ctx, costo.datos).enunciados);
+      }
+    }
+  }
+
+  // Asientos 4 y 4b · el cobro del saldo descarga la cuenta por cobrar que
+  // acaba de abrir el asiento 3.
+  //
+  // La cuenta sale del MÉTODO y no de un parámetro: en efectivo el dinero lo
+  // tiene el motorizado y vive en su caja (1104-xx, asiento 4); por Yappy ya
+  // está en la cuenta (1101, asiento 4b). Pasar el número del asiento aparte
+  // permitiría decir «4b» con la caja de un motorizado, que es un asiento que
+  // dice una cosa y hace otra.
+  if (cobrado > 0) {
+    const caja =
+      e.metodoCobro === "efectivo" && envio.motorizado_id !== null ? envio.motorizado_id : null;
+    const cuenta =
+      e.metodoCobro === "yappy" ? "1101" : caja === null ? null : codigoDeCaja(caja);
+
+    if (cuenta === null) {
+      // `otro`, o efectivo sin motorizado asignado (una recogida en el local).
+      //
+      // El dinero entró y el pedido queda pagado, pero NO SE SABE A QUÉ CUENTA
+      // entró, y los dieciocho asientos del documento no tienen uno para eso.
+      // Inventar la caja de un motorizado que no está, o meterlo en 1103
+      // «porque suena razonable», es poner una cifra a ojo en los libros —y la
+      // regla del proyecto es que lo que falta queda PENDIENTE, no aproximado.
+      //
+      // Así que no se escribe asiento, y el hueco queda a la vista en vez de
+      // enterrado: 1201 se queda con ese saldo mientras el pedido dice que
+      // está pagado, y la casilla «lo por cobrar cuadra con 1201» del cierre
+      // lo canta con su número y su pedido. Es la forma honesta de no saber.
+    } else {
+      if (caja !== null) {
+        const m = await ctx.db
+          .prepare("SELECT nombre FROM motorizados WHERE id = ?")
+          .bind(caja)
+          .first<{ nombre: string }>();
+        // La llave foránea de `envios.motorizado_id` ya lo garantiza; si
+        // llegara nulo es que la base está rota, y eso no se arregla
+        // entregando sin asiento.
+        if (m === null) return fallo("interno", "esta entrega apunta a un motorizado que no existe");
+        // La caja nace en el MISMO batch que el primer cobro que la usa, y
+        // ANTES de la línea del asiento: esa línea busca la cuenta por su
+        // código dentro del propio INSERT, así que si la cuenta no existiera
+        // todavía el `NOT NULL` de `cuenta_id` tumbaría el batch.
+        enunciados.push(...enunciadosDeCuentaDeMotorizado(ctx, caja, m.nombre));
+      }
+      const cobro = cobroDelSaldo({
+        fecha: fechaDelAsiento,
+        // Al PAGO y no al pedido: los asientos 3 y 3b son del pedido (la venta
+        // y su costo pasan una vez), pero un cobro es de UN pago concreto, y
+        // sin esa referencia no se puede preguntar por un pago si está
+        // anotado. La columna no tiene llave foránea a propósito, así que el
+        // orden dentro del batch da igual.
+        referencia: { tipo: "pago", id: pagoDelSaldo },
+        cuenta,
+        montoCents: cobrado,
+        numero: p.numero,
+      });
+      if (!cobro.ok) return cobro;
+      enunciados.push(...enunciadosDeAsiento(ctx, cobro.datos).enunciados);
+    }
+  }
+
   // Y el pedido. Va al final porque `enunciadosDeCobro` exige la versión que se
   // leyó, y la transición la sube otra vez.
   enunciados.push(
@@ -1429,6 +1611,18 @@ export async function marcarEntregada(
         cobradoCents: ahoraMismo.cobrado_cents,
         yaEstaba: true,
       });
+    }
+
+    // El mes de la entrega está cerrado: lo tumbó el trigger
+    // `asientos_periodo_cerrado`. No es una carrera, así que decirle «algo
+    // cambió, vuelva a intentarlo» lo manda a fallar otra vez igual. Hoy solo
+    // puede pasar si alguien cerró un mes que no había terminado; cuando haya
+    // entregas con fecha de ayer, será lo normal.
+    if (/periodo_cerrado/.test(texto)) {
+      return fallo(
+        "periodo_cerrado",
+        "el mes de esta entrega ya está cerrado: para registrarla hay que reabrir ese mes, y reabrir pide motivo",
+      );
     }
 
     return /CHECK|controles|UNIQUE|constraint|ABORT|abort/i.test(texto)

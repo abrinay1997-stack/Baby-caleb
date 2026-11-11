@@ -1,3 +1,4 @@
+import { libresSQL } from "../db/inventario";
 import { UMBRAL_POCAS, type Disponibilidad, disponibilidad } from "../dominio/existencias";
 
 /**
@@ -41,13 +42,20 @@ export interface VariantePublica {
  *
  * La regla es del CRM, que ya la tenía pensada así (`cobertura` en
  * `src/tools/catalogQuery.ts`), y se conserva entera al mudar el catálogo
- * aquí. El contrato de 03-contratos §3 no la recogía: `VariantePublica` no
- * lleva cantidad, así que sin esto el bot perdería una capacidad que hoy tiene.
+ * aquí.
+ *
+ * `alcanza` es un sí o un no, y eso puede salir para cada artículo de la
+ * respuesta: saber que 30 no alcanza para la L dice «menos de 30» y nada más.
+ * `maximoDisponible` ES la cantidad exacta, y por eso sale UNA VEZ por
+ * llamada, en el artículo que mejor casa con lo que se buscó — el que la
+ * clienta nombró. Con una `cantidad` aplicada a toda la lista, `listarCatalogo`
+ * devolvía en una sola llamada el número exacto de cada artículo publicado:
+ * el inventario entero, por la puerta pensada para un contraofrecimiento.
  */
 export interface Cobertura {
   readonly cantidadPedida: number;
   readonly alcanza: boolean;
-  /** Solo cuando NO alcanza: lo máximo que se puede prometer. */
+  /** Solo cuando NO alcanza, y solo en el mejor acierto: lo máximo que se puede prometer. */
   readonly maximoDisponible?: number;
 }
 
@@ -81,34 +89,20 @@ interface Fila {
 const CONSULTA = `
   SELECT v.codigo, p.slug AS slug_producto, v.nombre, v.talla,
          v.peso_min_lb, v.peso_max_lb, v.unidades_por_caja, v.precio_cents, v.version,
-         -- Un combo no tiene existencias propias: caben tantos como permita
-         -- el componente que menos alcance. Es la MISMA regla que
-         -- src/dominio/combos.ts, escrita aqui porque el catalogo entero sale
-         -- en una consulta y traerse las recetas para calcularlo en
-         -- JavaScript serian N+1 consultas en el camino que mas se usa.
-         --
-         -- Dos copias de una regla acaban discrepando, asi que hay una prueba
-         -- (test/combos-catalogo.test.ts) que siembra combos en D1 y exige que
-         -- esta consulta y cuantosCombos den el MISMO numero.
-         --
-         -- MIN sobre un conjunto vacio da NULL, asi que un combo sin receta
-         -- sale con libres nulo y se lee como 0, que es lo que dice la regla
-         -- pura: sin componentes no se arma ninguno. Y la division de dos
-         -- enteros en SQLite trunca, igual que el Math.floor de alla.
-         CASE WHEN v.es_combo = 1 THEN (
-           SELECT MIN(
-             (SELECT COALESCE(SUM(e.fisico - e.reservado), 0)
-                FROM existencias e WHERE e.codigo = cc.codigo) / cc.cantidad
-           )
-           FROM combo_componentes cc WHERE cc.combo_codigo = v.codigo
-         ) ELSE (
-           SELECT SUM(e.fisico - e.reservado) FROM existencias e WHERE e.codigo = v.codigo
-         ) END AS libres
+         -- La regla del combo tiene UN dueño: libresSQL en src/db/inventario.ts,
+         -- que es la misma expresión que usan las herramientas del asistente.
+         ${libresSQL("v")} AS libres
   FROM variantes v
   JOIN productos p ON p.id = v.producto_id
   WHERE v.activo = 1 AND v.publicado = 1 AND p.activo = 1`;
 
-function aPublica(f: Fila, cantidad?: number): VariantePublica {
+/**
+ * `conNumero` decide si este artículo puede soltar `maximoDisponible`.
+ *
+ * Se pasa explícito y por artículo, no se deduce: es el único interruptor de la
+ * cantidad exacta y tiene que verse en el sitio donde se decide.
+ */
+function aPublica(f: Fila, cantidad?: number, conNumero = false): VariantePublica {
   // Aguas arriba `normalizarCantidad` ya rechaza un 0, un negativo o un
   // decimal: si algo así llega hasta aquí es un error de programación, no una
   // entrada mala. Y el error de programación que ya pasó una vez fue
@@ -127,7 +121,14 @@ function aPublica(f: Fila, cantidad?: number): VariantePublica {
           pedido:
             libres >= cantidad
               ? { cantidadPedida: cantidad, alcanza: true }
-              : { cantidadPedida: cantidad, alcanza: false, maximoDisponible: libres },
+              : // El sí o el no siempre; el número exacto solo donde se
+                // autorizó. Sin `conNumero`, el bot se queda con «no alcanza
+                // para 30», que es verdad y no es el inventario.
+                {
+                  cantidadPedida: cantidad,
+                  alcanza: false,
+                  ...(conNumero ? { maximoDisponible: libres } : {}),
+                },
         }),
     codigo: f.codigo,
     // El slug del producto más el código: la web necesita una URL por variante
@@ -163,11 +164,19 @@ export async function catalogoPublico(db: D1Database, ahora: number): Promise<Ca
   };
 }
 
+/**
+ * El catálogo entero.
+ *
+ * Con una `cantidad` contesta «¿alcanza para 30?» de cada artículo con un sí o
+ * un no, y de NINGUNO suelta el número: una lista completa no es la pregunta de
+ * una clienta por un artículo, y aquí estaba la fuga —una sola llamada con una
+ * cantidad absurda devolvía el inventario exacto de todo lo publicado—.
+ */
 export async function listar(db: D1Database, cantidad?: number): Promise<VariantePublica[]> {
   const { results } = await db
     .prepare(`${CONSULTA} ORDER BY p.orden, p.nombre, v.talla, v.codigo`)
     .all<Fila>();
-  return results.map((f) => aPublica(f, cantidad));
+  return results.map((f) => aPublica(f, cantidad, false));
 }
 
 /**
@@ -212,5 +221,8 @@ export async function buscar(
     .bind(como, `${limpio}%`, tope)
     .all<Fila>();
 
-  return results.map((f) => aPublica(f, cantidad));
+  // El número exacto, solo en el primero. El ORDER BY de arriba pone delante lo
+  // que EMPIEZA por lo buscado, así que el primero es el artículo del que se
+  // preguntó; el resto se lleva el sí o el no y nada más.
+  return results.map((f, i) => aPublica(f, cantidad, i === 0));
 }

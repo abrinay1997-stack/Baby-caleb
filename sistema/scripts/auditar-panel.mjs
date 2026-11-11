@@ -25,6 +25,11 @@ const soloMedir = process.argv.includes("--solo-medir");
 /** Las pantallas que hay. El cajón se audita aparte, abierto. */
 const PANTALLAS = [
   ["resumen", "/"],
+  ["cobros", "/cobros"],
+  // La contabilidad no se había medido NUNCA, y es la pantalla más grande del
+  // panel (mil líneas). Hasta que se engancharon los asientos no tenía datos
+  // que enseñar, así que tampoco se había visto con nada dentro.
+  ["contabilidad", "/contabilidad"],
   ["catalogo", "/catalogo"],
   ["existencias", "/existencias"],
   ["bodegas", "/bodegas"],
