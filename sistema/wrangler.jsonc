@@ -179,7 +179,28 @@
         { "name": "LIMITE_CHECKOUT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
         { "name": "LIMITE_CODIGOS", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
       ],
-      "vars": { "ENTORNO": "production", "VERSION": "dev", "HSTS": "no", "ACCESS_EQUIPO": "", "ACCESS_AUD": "" }
+      // La aplicación de Access de producción, creada el 2026-11-11.
+      //
+      // El `https://` delante NO es un detalle: el panel de Cloudflare enseña
+      // el dominio del equipo SIN protocolo y `access.ts` lo valida CON él
+      // (`EQUIPO_VALIDO`). Pegarlo tal como se lee es el error fácil, y el
+      // síntoma sería un 403 en todo: idéntico a no tener Access, sin ninguna
+      // pista de que la configuración es lo que falla. Ya pasó en staging.
+      //
+      // Mismo equipo que staging (una sola cuenta de Zero Trust) y AUD
+      // DISTINTO: el AUD dice QUÉ aplicación firmó el token. Si los dos
+      // entornos compartieran AUD, un token de staging abriría producción.
+      //
+      // Ninguno de los dos es secreto: son identificadores públicos. Lo
+      // secreto es la llave privada con la que Cloudflare firma, y esa no
+      // sale de Cloudflare.
+      "vars": {
+        "ENTORNO": "production",
+        "VERSION": "dev",
+        "HSTS": "no",
+        "ACCESS_EQUIPO": "https://long-heart-eb45.cloudflareaccess.com",
+        "ACCESS_AUD": "ed1093d109ee3ec5350d97d8a889bfc714e08b048f961753edb46b19484e4a61"
+      }
     }
   }
 }
