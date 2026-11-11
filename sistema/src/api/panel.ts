@@ -471,16 +471,16 @@ function registrarRutas(panel: Hono<Entorno>): void {
     const enunciados = [
       c.env.DB.prepare(
         "UPDATE variantes SET imagen = ?, version = version + 1, actualizado_en = ? WHERE codigo = ?",
-      ).bind(`/img/${clave}`, ahora, codigo),
+      ).bind(`/foto/${clave}`, ahora, codigo),
     ];
-    if (existe.imagen !== null && existe.imagen.startsWith("/img/")) {
+    if (existe.imagen !== null && existe.imagen.startsWith("/foto/")) {
       enunciados.push(
-        ...enunciadosParaBorrar({ db: c.env.DB, ahora }, [existe.imagen.slice("/img/".length)]),
+        ...enunciadosParaBorrar({ db: c.env.DB, ahora }, [existe.imagen.slice("/foto/".length)]),
       );
     }
     await c.env.DB.batch(enunciados);
 
-    return c.json(ok({ imagen: `/img/${clave}`, mime: tipo, bytes: cuerpoBruto.byteLength }), 201);
+    return c.json(ok({ imagen: `/foto/${clave}`, mime: tipo, bytes: cuerpoBruto.byteLength }), 201);
   });
 
   /** La receta de un combo, con lo que hay de cada pieza. */

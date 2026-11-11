@@ -520,7 +520,7 @@ describe("la foto de un producto", () => {
 
     const v = await real.DB.prepare("SELECT imagen FROM variantes WHERE codigo = 'NAT-M'")
       .first<{ imagen: string }>();
-    expect(v?.imagen).toMatch(/^\/img\/catalogo\/NAT-M\//);
+    expect(v?.imagen).toMatch(/^\/foto\/catalogo\/NAT-M\//);
   });
 
   it("queda marcada NO sensible: es lo que la deja salir sin sesión", async () => {

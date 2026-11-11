@@ -17,7 +17,19 @@ import type { SistemaWebBinding } from "./catalogo";
  * nadie revisa.
  */
 
-export const PREFIJO = "/img/";
+/**
+ * `/foto/` y NO `/img/`.
+ *
+ * `/img/` ya era de las imágenes del sitio —el logo, el hero, las 26 que
+ * viven en `public/img/`— y ponerle el Worker delante dejó TODAS rotas: las
+ * buscaba en R2, donde no están. El sitio entero se quedó sin imágenes en
+ * producción.
+ *
+ * El error no fue del código sino de elegir un prefijo sin mirar quién lo
+ * usaba ya. Un prefijo nuevo no se comparte con nadie, y una prueba de abajo
+ * fija que `/img/` NO es este camino.
+ */
+export const PREFIJO = "/foto/";
 
 export async function imagen(
   peticion: Request,
