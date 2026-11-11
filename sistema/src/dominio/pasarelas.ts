@@ -180,10 +180,49 @@ export const CONECTORES: Record<Pasarela, Conector> = {
     titulo: "Tilopay · tarjetas y cuotas",
     explica:
       "Tarjeta de crédito o débito y las cuotas de BAC. Solo para el pago total: su cargo fijo se come casi todo un abono pequeño.",
-    porConfirmar:
-      "Falta confirmar con Tilopay qué credenciales pide su API y con qué nombre exacto; el documento del plan todavía no las nombra y una de ellas (el algoritmo del OrderHash) hay que pedirla a su soporte. Mientras no estén confirmadas no se puede configurar: un campo con el nombre adivinado se llena con la clave buena y el adaptador no la encuentra después.",
-    credenciales: [],
-    fuente: "docs/plan/04-pagos.md §4.2 y §9",
+    // Estaba bloqueada porque el plan no nombraba sus credenciales y bautizarlas
+    // a ojo tiene un costo concreto. Ya no hace falta adivinar: su documentación
+    // para desarrolladores las nombra, y los tres nombres de aquí son LOS DE SU
+    // API, letra por letra. Es a propósito: el adaptador los manda tal cual en
+    // el cuerpo de la petición, así que no hay capa de traducción donde
+    // equivocarse. Es el mismo criterio que con PayPal.
+    //
+    // Siguen siendo tres y no dos: `apiuser` y `password` sacan el token de
+    // `POST /api/v1/login`, y `key` es ADEMÁS un parámetro obligatorio de
+    // `processPayment` y de `consult`. Con dos de las tres no se cobra.
+    //
+    // El `OrderHash` sigue sin ser público —se pide por un caso a su soporte—
+    // pero no bloquea, y nunca bloqueó: el plan ya decidió que la verdad es la
+    // consulta al servidor (04-pagos §4.2), no el hash que vuelve en la URL.
+    porConfirmar: null,
+    credenciales: [
+      {
+        nombre: "apiuser",
+        titulo: "Usuario de API",
+        explica:
+          "Está en el panel de Tilopay, en Integraciones de plataforma (admin.tilopay.com). Con él y la contraseña el servidor pide el token que le deja cobrar. NO es el correo con el que la dueña entra al panel.",
+        obligatoria: true,
+        forma: "linea",
+      },
+      {
+        nombre: "password",
+        titulo: "Contraseña de API",
+        explica:
+          "La de la misma pantalla, al lado del usuario de API. Tampoco es la contraseña con la que la dueña entra al panel. Nunca sale del servidor: Tilopay avisa de que no debe llegar al navegador.",
+        obligatoria: true,
+        forma: "linea",
+      },
+      {
+        nombre: "key",
+        titulo: "Llave de integración",
+        explica:
+          "La tercera de esa misma pantalla. Viaja en cada cobro y en cada consulta, así que sin ella no se cobra aunque las otras dos estén puestas.",
+        obligatoria: true,
+        forma: "linea",
+      },
+    ],
+    fuente:
+      "tilopay.com/en/developers/api/autenticacion y .../hosted-payment-page/process-payment (su documentación, verificada por ellos el 2026-10-20); docs/plan/04-pagos.md §4.2",
   },
 
   paypal: {

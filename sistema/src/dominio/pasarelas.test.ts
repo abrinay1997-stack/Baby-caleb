@@ -41,6 +41,33 @@ import { PASARELAS_CON_COMISION } from "./ajustes";
 // de verdad. Ninguna credencial real entra en un archivo de este repositorio.
 const FALSA = "CLAVE-FALSA-DE-PRUEBA-NO-SIRVE-1";
 
+/**
+ * Corre `cuerpo` con Tilopay bloqueada a propósito, y la deja como estaba.
+ *
+ * Hace falta porque hoy NINGUNA pasarela está por confirmar, y el mecanismo
+ * del bloqueo —que `validarCredencial` y `puedeEncenderse` se nieguen— sigue
+ * teniendo que funcionar para la que venga. Esas funciones no reciben el
+ * conector: lo buscan en `CONECTORES`, así que la única forma de probarlas es
+ * bloquear una de verdad y devolverla.
+ *
+ * El `finally` no es adorno: sin él, una aserción que falle deja el catálogo
+ * roto y arrastra a las pruebas siguientes, que es la peor forma de depurar
+ * —un fallo que señala a quien no fue—.
+ */
+function conTilopayBloqueada(motivo: string, cuerpo: () => void): void {
+  const antes = CONECTORES.tilopay;
+  (CONECTORES as Record<string, unknown>)["tilopay"] = {
+    ...antes,
+    porConfirmar: motivo,
+    credenciales: [],
+  };
+  try {
+    cuerpo();
+  } finally {
+    (CONECTORES as Record<string, unknown>)["tilopay"] = antes;
+  }
+}
+
 const todasLasCredenciales = PASARELAS.flatMap((p) =>
   CONECTORES[p].credenciales.map((c) => ({ pasarela: p, ...c })),
 );
@@ -95,18 +122,48 @@ describe("el catálogo", () => {
   });
 
   /**
-   * Lo que el documento del plan no nombra, no se inventa.
+   * Lo que el documento no nombra, no se inventa — y al revés.
    *
-   * Tilopay está en el catálogo —para que se vea que existe y que falta algo—
-   * pero sin credenciales y con el motivo escrito. Un campo con el nombre
-   * adivinado se llena con la clave buena y el adaptador no la encuentra
-   * después.
+   * Tilopay estuvo bloqueada mientras sus credenciales no estaban confirmadas:
+   * un campo con el nombre adivinado se llena con la clave buena y el adaptador
+   * no la encuentra después. Ya no lo está, porque su documentación las nombra
+   * (`apiuser`, `password`, `key`) y el conector usa esos nombres letra por
+   * letra.
+   *
+   * Esta prueba deja de mirar a Tilopay y mira el INVARIANTE, que es lo que
+   * vale para la pasarela que venga: o una pasarela dice por qué no se puede
+   * configurar, o trae al menos una credencial obligatoria. Lo que no puede
+   * existir es una que diga que está lista y no pida nada — esa se encendería
+   * sin credenciales.
    */
-  it("deja dicho por qué Tilopay todavía no se puede configurar, y no le inventa campos", () => {
-    expect(CONECTORES.tilopay.porConfirmar).not.toBeNull();
-    expect(CONECTORES.tilopay.credenciales).toEqual([]);
-    expect(CONECTORES.yappy.porConfirmar).toBeNull();
-    expect(CONECTORES.paypal.porConfirmar).toBeNull();
+  it("o una pasarela explica por qué no se puede configurar, o pide credenciales", () => {
+    for (const c of CONECTORES_EN_ORDEN) {
+      if (c.porConfirmar === null) {
+        expect(c.credenciales.some((x) => x.obligatoria), c.pasarela).toBe(true);
+      } else {
+        expect(c.credenciales, c.pasarela).toEqual([]);
+      }
+    }
+  });
+
+  /**
+   * Los nombres de Tilopay son LOS DE SU API, letra por letra.
+   *
+   * El adaptador los manda tal cual en el cuerpo de `login` y de
+   * `processPayment`. Renombrarlos a algo más bonito metería una capa de
+   * traducción, y esa capa es exactamente lo que se quiso evitar al dejar la
+   * pasarela bloqueada un mes.
+   */
+  it("Tilopay pide los tres nombres de su API, sin traducir", () => {
+    expect(CONECTORES.tilopay.porConfirmar).toBeNull();
+    expect(CONECTORES.tilopay.credenciales.map((c) => c.nombre)).toEqual([
+      "apiuser",
+      "password",
+      "key",
+    ]);
+    // Las tres, porque con dos de las tres no se cobra: `key` no es solo del
+    // SDK, es parámetro obligatorio de processPayment y de consult.
+    expect(CONECTORES.tilopay.credenciales.every((c) => c.obligatoria)).toBe(true);
   });
 
   it("dice de dónde sale lo que declara", () => {
@@ -202,11 +259,17 @@ describe("validarCredencial", () => {
    * nada, y esto se cae porque exige el motivo de verdad en el mensaje.
    */
   it("no deja configurar una pasarela cuyas credenciales están por confirmar", () => {
-    const r = validarCredencial("tilopay", "api_key", FALSA);
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.mensaje).toContain("Tilopay");
-    expect(r.mensaje).toContain(CONECTORES.tilopay.porConfirmar ?? "nunca");
+    // Hoy NINGUNA pasarela está por confirmar, así que el mecanismo se prueba
+    // bloqueando una a propósito y devolviéndola como estaba. La alternativa
+    // era borrar esta prueba, y entonces la próxima pasarela que naciera
+    // bloqueada no tendría quien vigilara que el bloqueo funciona.
+    conTilopayBloqueada("falta hablar con su soporte", () => {
+      const r = validarCredencial("tilopay", "apiuser", FALSA);
+      expect(r.ok).toBe(false);
+      if (r.ok) return;
+      expect(r.mensaje).toContain("Tilopay");
+      expect(r.mensaje).toContain("falta hablar con su soporte");
+    });
   });
 
   it("rechaza un nombre de credencial que esa pasarela no pide, y dice cuáles pide", () => {
@@ -327,11 +390,16 @@ describe("qué falta y si se puede encender", () => {
    * Tilopay se podría encender sin una sola credencial. Se cae.
    */
   it("no deja encender una pasarela cuyas credenciales están por confirmar", () => {
-    expect(queFalta("tilopay", [])).toEqual([]);
-    const r = puedeEncenderse("tilopay", []);
-    expect(r.puede).toBe(false);
-    if (r.puede) return;
-    expect(r.motivo).toBe(CONECTORES.tilopay.porConfirmar);
+    conTilopayBloqueada("falta hablar con su soporte", () => {
+      // `queFalta` de una pasarela sin credenciales declaradas devuelve `[]`,
+      // que leído a secas diría «no falta nada». Es justo el caso que
+      // `puedeEncenderse` tiene que atrapar aparte.
+      expect(queFalta("tilopay", [])).toEqual([]);
+      const r = puedeEncenderse("tilopay", []);
+      expect(r.puede).toBe(false);
+      if (r.puede) return;
+      expect(r.motivo).toBe("falta hablar con su soporte");
+    });
   });
 });
 

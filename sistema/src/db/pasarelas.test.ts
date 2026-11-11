@@ -186,11 +186,22 @@ describe("estado", () => {
     expect(yappy.por_que_no).toContain("Clave secreta");
   });
 
-  it("enseña Tilopay con su motivo y sin campos que inventar", async () => {
+  /**
+   * Tilopay estuvo un mes sin campos, con el motivo escrito, porque nadie
+   * había confirmado cómo se llaman sus credenciales. Ya está desbloqueada con
+   * los nombres de su propia documentación, así que ahora se comporta como
+   * Yappy: pide tres cosas y dice cuáles faltan.
+   */
+  it("enseña Tilopay pidiendo sus tres credenciales, y dice cuáles faltan", async () => {
     const tilopay = await unaDe("tilopay");
-    expect(tilopay.por_confirmar).not.toBeNull();
-    expect(tilopay.modos.every((m) => m.credenciales.length === 0)).toBe(true);
-    expect(tilopay.modos.every((m) => !m.completo)).toBe(true);
+    expect(tilopay.por_confirmar).toBeNull();
+    const prueba = tilopay.modos.find((m) => m.modo === "prueba");
+    expect(prueba?.faltan).toEqual([
+      "Usuario de API",
+      "Contraseña de API",
+      "Llave de integración",
+    ]);
+    expect(prueba?.completo).toBe(false);
   });
 
   /**

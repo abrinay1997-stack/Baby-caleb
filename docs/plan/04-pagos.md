@@ -87,9 +87,34 @@ desarrolladores y ejemplos en Node.js
   respaldo.
 - **No se usa** la vía servidor a servidor: exige certificación PCI del comercio
   ([server-to-server](https://tilopay.com/en/developers/server-to-server)).
-- **Comisión publicada:** su web muestra 3.75 % + $0.35 en tarjetas; Yappy por Tilopay, 2 % total
-  ([Tilopay y Yappy](https://tilopay.com/yappy)). Se confirma en su página de tarifas y en el
-  contrato.
+- **Credenciales (confirmadas el 2026-11-11):** `apiuser`, `password` y `key`. Las tres salen del
+  panel del comercio, en Integraciones de plataforma (`admin.tilopay.com/platform-integrations`).
+  `apiuser` y `password` sacan el token de `POST /api/v1/login`, que vale 24 h y viaja como
+  `Authorization: bearer`; `key` es además parámetro **obligatorio** de `processPayment` y de
+  `consult`, así que con dos de las tres no se cobra
+  ([autenticación](https://tilopay.com/en/developers/api/autenticacion), verificada por ellos el
+  2026-10-20). El conector usa esos nombres letra por letra, sin traducir: el adaptador los manda
+  tal cual en el cuerpo, y así no hay capa de traducción donde equivocarse. Su propia
+  documentación avisa de que `apiuser` y `password` **no deben llegar al navegador**.
+- **Un solo host, también para probar:** `https://app.tilopay.com`. No hay servidor de caja de
+  arena aparte; el modo de prueba se cambia desde la cuenta del comercio
+  ([entornos](https://tilopay.com/en/developers/entornos)).
+- **La comisión la reporta Tilopay, no la calculamos.** La respuesta de `consult` trae por
+  transacción `commission`, `iva_commission`, `cost`, `cost_iva` y `net_to_liquidate`. Eso es lo
+  que debe quedar en el asiento de liquidación: la tarifa configurada sirve para estimar antes de
+  cobrar, no para cuadrar después.
+- **Comisión en PANAMÁ (de su formulario de afiliación, visto el 2026-11-11):** tarjetas
+  (Visa, Mastercard, American Express) **3.75 % + $0.50, más ITBMS**; **Yappy por Tilopay 1 % más
+  ITBMS**, sin incluir los costos por transacción de Yappy Comercial. Corrige lo que decía antes
+  este documento —"3.75 % + $0.35" y "Yappy por Tilopay, 2 % total"—, que salía de su página
+  general de tarifas y no de la de Panamá. La cifra que manda es la del contrato firmado: hasta
+  que llegue, el ajuste `comisiones` se queda en `PENDIENTE` para tilopay.
+- **Afiliación:** enviada el 2026-11-11, en revisión (validación en hasta 48 h). Requisitos que
+  pidieron para persona jurídica: cédula del representante legal, aviso de operaciones, banco y
+  número de cuenta a nombre de la empresa, y certificado de existencia del Registro Público.
+  Frecuencia de liquidación elegida: **diaria** — no cuesta más (toda su tarifa es por
+  transacción) y cada depósito corresponde a un día de ventas, que es lo que hace conciliable el
+  asiento 7.
 - **Adaptador:** `sistema/src/pagos/tilopay.ts`.
 
 ### 4.3 PayPal
@@ -175,8 +200,10 @@ bancaria y Yappy Comercial a su nombre, confirmado el 2026-10-29): los trámites
 | Pasarela | Qué pedir | Quién | Bloquea |
 |---|---|---|---|
 | Yappy Botón de Pago | Activar el producto en Yappy Comercial y generar ID de comercio y clave; registrar el dominio | La dueña (usuario administrador de Yappy Comercial) | F4.6 |
-| Tilopay | Afiliación en línea: datos del negocio, cuenta bancaria, sitio publicado con políticas | La dueña | F4.7 |
-| Tilopay | Algoritmo de `OrderHash` (soporte@tilopay.com) | Quien programa, con la cuenta de la dueña | F4.7 (no bloquea: la consulta basta) |
+| Tilopay | Afiliación en línea: datos del negocio, cuenta bancaria, sitio publicado con políticas | La dueña | ~~F4.7~~ · enviada el 2026-11-11, en revisión |
+| Tilopay | `apiuser`, `password` y `key` del panel del comercio | La dueña, cuando le activen la cuenta | F4.7 |
+| Tilopay | La comisión EXACTA de Panamá, del contrato firmado | La dueña | El ajuste `comisiones`, que sigue en `PENDIENTE` |
+| Tilopay | Algoritmo de `OrderHash` (caso en su soporte) | Quien programa, con la cuenta de la dueña | F4.7 (no bloquea: la consulta basta; confirmado el 2026-11-11, sigue sin ser público) |
 | PayPal | Cuenta PayPal Business, app REST (client id, secret) y webhook | La dueña crea la cuenta; quien programa la app | F4.8 |
 | Todas | Páginas de términos, privacidad, cambios y devoluciones, envíos | La dueña aprueba el texto | F1.7 |
 | Red de las sesiones de Claude | Permitir `tilopay.com` y `yappy.com.pa` en la configuración de red del entorno | Quien administra el entorno | F4 |
