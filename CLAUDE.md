@@ -21,6 +21,12 @@ web se queda en la raíz y el sistema (pedidos, inventario, pagos, entregas,
 contabilidad, asistente) nace en `sistema/`. Antes de programar cualquier parte
 del sistema, lee `docs/plan/README.md` y el documento de la parte que toques.
 
+**Y lee `docs/TRAMPAS.md` ANTES de escribir, no después de romper algo.** Son
+once reglas, cada una ahí porque ya mordió en este repositorio — una de ellas
+tres veces. Las lecciones ya estaban escritas, pero cada una vivía en el
+archivo que protege, así que solo se leían estando ya dentro: tarde. Ese
+archivo es el índice que faltaba.
+
 - **Un dato, un solo dueño:** precio, existencias y costo viven solo en la D1
   del sistema. Nunca escribas un precio en `content.json` ni en el código.
 - **Ninguna cifra a ojo:** montos, comisiones, impuestos y puntos salen de la
