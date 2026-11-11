@@ -60,6 +60,7 @@ jobs:
   pruebas:
     name: Pruebas
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -131,6 +132,7 @@ jobs:
     needs: pruebas
     if: github.event_name == 'workflow_dispatch' && inputs.entorno == 'staging'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -206,6 +208,7 @@ jobs:
       inputs.entorno == 'produccion' &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment: produccion
     steps:
       - uses: actions/checkout@v4
