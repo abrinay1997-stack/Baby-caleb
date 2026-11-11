@@ -139,6 +139,20 @@ Por variante y proveedor:
 
 Advertencia que la pantalla repite: si una talla estuvo agotada, su ritmo sale más bajo de lo real.
 
+## 6b. ITBMS: no se cobra
+
+Confirmado por el dueño el 2026-11-11: **Baby Caleb no cobra ITBMS porque no le
+aplica**. Las doce variantes de producción quedaron con `tasa_itbms_bp = 0`, que
+es lo que el sistema necesita para calcular un total: antes estaban en NULL, que
+significa «falta decidirlo» y hacía que el panel enseñara «Falta» en cada fila.
+
+Cero y exento NO son lo mismo para la declaración, aunque la clienta pague igual
+en los dos casos. Lo que el sistema guarda es la TASA, y la tasa es cero; cómo
+se declara eso ante la DGI lo dice la contadora. Si algún día el negocio pasa a
+ser contribuyente de ITBMS, se cambia desde el panel producto por producto y los
+pedidos viejos conservan la tasa con la que se hicieron, porque se copia al
+pedido al crearlo.
+
 ## 7. Arranque contable
 
 1. Se elige la fecha de corte: el día 1 de un mes (`fecha_arranque` en `ajustes`).

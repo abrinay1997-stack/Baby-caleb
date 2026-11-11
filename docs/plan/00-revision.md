@@ -148,7 +148,7 @@ mismo momento. → [`05-contabilidad.md` §3](05-contabilidad.md#3-asientos-auto
 |---|---|---|
 | M1 | La web no promete fechas, igual que el revisor del CRM | Ventanas de entrega definidas por la dueña en `ajustes` |
 | M2 | Promociones y cupones no estaban | Fase 7, con la validación no enumerable de Nébula (`validate_discount`) |
-| M3 | Factura electrónica: no se sabe si aplica | Pregunta a la contadora; adaptador vacío, nunca un PAC inventado |
+| M3 | Factura electrónica: **sí aplica, con la DGI** (confirmado por el dueño el 2026-11-11). Falta saber si es el facturador gratuito de la DGI (portal web, sin API) o un PAC con API: lo primero significa preparar los datos para que alguien los teclee; lo segundo, un adaptador. | Sigue sin inventarse ningún PAC |
 | M4 | Avisos al equipo de pedido nuevo y pago confirmado | Por la consola de Telegram existente, vía `bc-avisos` |
 | M5 | Analítica de la web | Cloudflare Web Analytics (sin cookies) desde F1; píxel de Meta en F7 |
 | M6 | 15 semanas sin holgura y con trámites externos | 17 semanas con margen y dependencias explícitas → [09](09-fases.md) |
