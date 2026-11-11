@@ -212,6 +212,39 @@ dice dónde mirar cuando se rinde.
 
 ---
 
+## 12. Una pieza terminada que nadie llama
+
+**Mordió TRES veces, y es la que más caro sale**, porque no se parece a un
+fallo: todo está en verde.
+
+- Los **veinte constructores de asientos**: escritos, cuadrando, con 1 224
+  líneas de pruebas propias. Nadie los llamaba. Una entrega descontaba el
+  inventario y dejaba los libros vacíos.
+- El **módulo de cobros** entero: probado desde F4.4, sin una sola ruta. Un
+  comprobante entraba en «confirmando» y se quedaba ahí para siempre.
+- **`crearPedido`**: escrito y probado, sin ruta en el panel y sin método en
+  el entrypoint de la web. Hoy no se puede crear un pedido desde ningún sitio.
+
+Las pruebas pasaban las tres veces, y pasaban con razón: **comprueban que la
+pieza funciona, no que esté enchufada**. Por eso el dueño ve un sistema muerto
+teniendo el motor construido, y por eso esto no sale en ningún informe.
+
+**La regla:** una pieza no está terminada cuando sus pruebas pasan. Está
+terminada cuando **algo la llama desde fuera** —una ruta, un entrypoint, otra
+capa— y hay una prueba que la llama **por donde la va a llamar el usuario**.
+Si escribe un módulo y no puede nombrar quién lo invoca en producción, no ha
+terminado: ha dejado una pieza en la mesa.
+
+> `src/db/pagos.ts` · `src/dominio/contabilidad.ts` · `src/db/pedidos.ts`
+
+**Vigilada por:** nadie todavía, y **se puede cerrar**: el grafo de imports es
+exacto, no hace falta adivinar. Un guion que liste lo exportado por `src/db/`
+y `src/dominio/` que no importe ningún archivo de fuera de su propio módulo
+—sin contar pruebas— habría marcado los tres casos. Es la siguiente
+herramienta a escribir, junto a `scripts/controles-que-no-vigilan.mjs`.
+
+---
+
 ## Lo que este archivo NO es
 
 No es una lista de todo lo que salió mal: la mayoría de los fallos se arreglan

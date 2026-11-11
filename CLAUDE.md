@@ -22,7 +22,7 @@ contabilidad, asistente) nace en `sistema/`. Antes de programar cualquier parte
 del sistema, lee `docs/plan/README.md` y el documento de la parte que toques.
 
 **Y lee `docs/TRAMPAS.md` ANTES de escribir, no después de romper algo.** Son
-once reglas, cada una ahí porque ya mordió en este repositorio — una de ellas
+doce reglas, cada una ahí porque ya mordió en este repositorio — dos de ellas
 tres veces. Las lecciones ya estaban escritas, pero cada una vivía en el
 archivo que protege, así que solo se leían estando ya dentro: tarde. Ese
 archivo es el índice que faltaba.
