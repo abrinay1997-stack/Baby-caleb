@@ -8,6 +8,27 @@
     <meta name="robots" content="noindex, nofollow" />
     <meta name="color-scheme" content="light" />
     <title>Panel · Baby Caleb</title>
+
+    <!-- El icono, para cuando el panel se guarda en la pantalla de inicio.
+         Sin esto el teléfono pone una captura de la página o una letra suelta,
+         y el panel parece un marcador del navegador en vez de la aplicación
+         del negocio. Los cuatro PNG salen del logo de la marca (public/img/);
+         los cuatro son OPACOS con las esquinas blancas, comprobado leyendo el
+         píxel: iOS pinta de NEGRO lo que sea transparente en el icono. -->
+    <link rel="icon" type="image/png" sizes="64x64" href="/icono-64.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icono-180.png" />
+    <link rel="manifest" href="/manifiesto.webmanifest" />
+
+    <!-- El crema de la marca, para que la barra de estado no corte la pantalla
+         con una franja de otro color al abrirlo desde el inicio. -->
+    <meta name="theme-color" content="#F9F6ED" />
+    <meta name="apple-mobile-web-app-title" content="Baby Caleb" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- `default` y no `black-translucent`: el translúcido mete el contenido
+         DEBAJO de la hora y la batería, y el panel ya tiene su propia barra
+         arriba. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
