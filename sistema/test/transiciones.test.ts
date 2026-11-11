@@ -215,6 +215,28 @@ describe("cancelar libera la reserva", () => {
     expect(await reservadas()).toBe(0);
   });
 
+  it("si lo apartado no alcanza, la cancelación FALLA en vez de dejar el stock trabado", async () => {
+    // El caso que el control de este módulo decía cazar y no cazaba.
+    //
+    // Si `existencias.reservado` queda por debajo de lo que el pedido dice
+    // tener apartado —porque alguien ajustó el inventario a mano, o por una
+    // liberación a medias— el `UPDATE … WHERE reservado >= ?` no casa con
+    // ninguna fila. Y el control comprobaba `reservado >= 0`, que la tabla YA
+    // exige con un CHECK: contaba filas que existen, no que el UPDATE hubiera
+    // hecho algo. Salía 1, el batch pasaba, y el pedido quedaba cancelado con
+    // su reserva puesta: stock trabado para siempre y nada que avisara.
+    //
+    // Lo correcto es reventar. Un pedido vivo cuya reserva no cuadra es un
+    // dato roto, y seguir adelante en silencio lo entierra.
+    const p = await unPedido();
+    await env.DB.prepare("UPDATE existencias SET reservado = 0 WHERE codigo = 'NAT-M'").run();
+
+    const r = await cancelar(ctxT(), p.id, "x");
+    expect(r.ok, "cancelar debería fallar: lo apartado no alcanza").toBe(false);
+    // Y el pedido NO queda cancelado: el batch es todo o nada.
+    expect((await estadoDe(p.id))?.estado).not.toBe("cancelado");
+  });
+
   it("un pedido en ruta NO se cancela: se devuelve", async () => {
     const p = await unPedido();
     await cobrar(p.id, p.totalCents, 500);

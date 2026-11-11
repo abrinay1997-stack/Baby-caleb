@@ -188,23 +188,29 @@ export async function cancelar(
   const enunciados = enunciadosDeTransicion(ctx, pedidoId, p.estado, "cancelado", { motivo });
 
   for (const l of lineas) {
+    // SIN guarda en el `WHERE`, y sin fila de control. A propósito, y con
+    // una historia detrás.
+    //
+    // Antes esto era `… WHERE reservado >= ?` con un control que comprobaba
+    // `reservado >= 0`. El comentario de al lado decía que ese control cazaba
+    // el caso de que el UPDATE no casara con nada. No lo cazaba: la tabla YA
+    // tiene `CHECK (reservado >= 0)`, así que ese SELECT contaba filas que
+    // existen, nunca cero. Si `reservado` quedaba por debajo de `cantidad`,
+    // el UPDATE no casaba, el control salía 1, y el pedido se cancelaba con
+    // su reserva puesta: stock trabado para siempre, en verde.
+    //
+    // Es la tercera vez en este proyecto que un control comprueba algo que ya
+    // era cierto antes del batch. La regla, otra vez: un control vale si mira
+    // lo que ESTE batch escribió.
+    //
+    // Aquí ni siquiera hace falta control. Quitando la guarda, restar de más
+    // deja `reservado` en negativo y el `CHECK` de la tabla tumba el batch
+    // entero — que es justo lo que se quiere. Una línea menos y una defensa
+    // de verdad, en vez de dos líneas que decían defender y no defendían.
     enunciados.push(
       ctx.db
-        .prepare(
-          "UPDATE existencias SET reservado = reservado - ? WHERE codigo = ? AND bodega_id = ? AND reservado >= ?",
-        )
-        .bind(l.cantidad, l.codigo, l.bodega_id, l.cantidad),
-      // Sin este control, liberar de más pasaría callando: el `WHERE
-      // reservado >= ?` haría que el UPDATE no casara con nada y el pedido
-      // quedaría cancelado con su reserva todavía puesta — stock bloqueado
-      // para siempre sin que nada fallara.
-      ctx.db
-        .prepare(
-          `INSERT INTO controles (id, regla, ok, creado_en)
-           VALUES (?, ?, (SELECT COUNT(*) FROM existencias
-                          WHERE codigo = ? AND bodega_id = ? AND reservado >= 0), ?)`,
-        )
-        .bind(ulid(ctx.ahora), `liberar:${l.codigo}`, l.codigo, l.bodega_id, ctx.ahora),
+        .prepare("UPDATE existencias SET reservado = reservado - ? WHERE codigo = ? AND bodega_id = ?")
+        .bind(l.cantidad, l.codigo, l.bodega_id),
     );
   }
 
