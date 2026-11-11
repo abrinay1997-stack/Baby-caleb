@@ -101,7 +101,7 @@ export default function FichaProducto() {
             Catálogo
           </Link>
           <span aria-hidden="true"> · </span>
-          <span>{variante.nombre}</span>
+          <span translate="no">{variante.nombre}</span>
         </nav>
 
         <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-start">
@@ -118,7 +118,12 @@ export default function FichaProducto() {
           )}
 
           <div className="flex flex-col gap-6">
-            <h1 className="text-3xl md:text-4xl text-fg leading-tight">{variante.nombre}</h1>
+            {/* Sin traducir: los nombres llevan marca y término técnico
+                —«Nateen», «Dany Baby», «pants»— y «pants» traducido a
+                «pantalones» describiría otra cosa. */}
+            <h1 translate="no" className="text-3xl md:text-4xl text-fg leading-tight">
+              {variante.nombre}
+            </h1>
 
             <dl className="flex flex-col gap-2 text-sm">
               {variante.talla !== null && (

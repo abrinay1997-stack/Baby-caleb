@@ -33,6 +33,25 @@ const TIPOS = {
 
 const ok = (datos) => JSON.stringify({ ok: true, datos });
 const dia = 86_400_000;
+const PENDIENTE = "PENDIENTE";
+
+/**
+ * Una fila de `/api/ajustes`, con la forma EXACTA de `AjusteVigente`
+ * (`src/db/ajustes.ts`). Por defecto viene del valor de arranque: así una clave
+ * nueva se escribe en una línea y no se olvida ningún campo.
+ */
+const ajuste = (clave, valor, sobre = {}) => ({
+  clave,
+  valor,
+  pendiente: valor === PENDIENTE,
+  origen: "fabrica",
+  version: null,
+  vigente_desde: null,
+  cambiado_por: null,
+  motivo: null,
+  aviso: null,
+  ...sobre,
+});
 
 /**
  * La matriz entera, EXACTAMENTE como la devuelve `permisosDe("duena")`.
@@ -167,17 +186,47 @@ const RESPUESTAS = {
     ],
   }),
 
-  // `/ajustes`: solo algunas claves puestas, para que se vea el camino de
-  // «esto viene de fábrica» y el de «esto falta decidirlo».
+  // `/ajustes`: la lista entera que devuelve `leerVigentes`, con las tres
+  // procedencias que la pantalla tiene que enseñar distinto — puesto por
+  // alguien, valor de arranque, y sin decidir — más una estructura llena para
+  // que el camino de las ventanas y el de las comisiones se vea de verdad.
   "/api/ajustes": ok({
     ahora: Date.now(),
-    vigentes: [
-      { clave: "abono_minimo_cents", version: 3, valor: 1000, vigente_desde: Date.now() - 9 * dia,
-        cambiado_por: "duena", motivo: "Subió de $5 a $10 en octubre" },
-      { clave: "itbms_tasa_bp", version: 1, valor: 700, vigente_desde: Date.now() - 40 * dia,
-        cambiado_por: "duena", motivo: null },
-      { clave: "umbral_pocas", version: 2, valor: 5, vigente_desde: Date.now() - 3 * dia,
-        cambiado_por: "duena", motivo: null },
+    ajustes: [
+      ajuste("abono_minimo_cents", 1000, {
+        origen: "guardado", version: 3, vigente_desde: Date.now() - 9 * dia,
+        cambiado_por: "duena@babycaleb.com", motivo: "Subió de $5 a $10 en octubre",
+      }),
+      ajuste("stock_bajo", 5),
+      ajuste("ferguson_pago_total", true),
+      ajuste("checkout_activo", false),
+      ajuste("pasarelas_activas", []),
+      ajuste("metodos_para_abono", ["yappy", "manual"]),
+      ajuste("reserva_minutos_pago_en_linea", 30, {
+        origen: "guardado", version: 1, vigente_desde: Date.now() - 2 * dia,
+        cambiado_por: "duena@babycaleb.com", motivo: "Media hora alcanza para pagar por Yappy",
+      }),
+      ajuste("reserva_horas_comprobante", PENDIENTE),
+      ajuste("ventanas_entrega", [
+        { id: "manana", etiqueta: "Mañana", desde: "08:00", hasta: "12:00" },
+        { id: "tarde", etiqueta: "Tarde", desde: "13:00", hasta: "18:00" },
+      ], {
+        origen: "guardado", version: 2, vigente_desde: Date.now() - 20 * dia,
+        cambiado_por: "duena@babycaleb.com", motivo: "Dos franjas, como las entregas de ahora",
+      }),
+      ajuste("comisiones", {
+        yappy: { porcentaje_bp: 350, fijo_cents: 0, lleva_itbms: true },
+        tilopay: PENDIENTE,
+        paypal: PENDIENTE,
+      }, {
+        origen: "guardado", version: 1, vigente_desde: Date.now() - dia,
+        cambiado_por: "duena@babycaleb.com", motivo: "Llegó el contrato de Yappy",
+      }),
+      ajuste("cancelacion_con_abono", PENDIENTE),
+      ajuste("modelo_asistente", "muse-spark-1.2-contributor"),
+      ajuste("modelo_respaldo", PENDIENTE),
+      ajuste("ia_entrena_con_datos", true),
+      ajuste("tope_ia_mensual_usd", PENDIENTE),
     ],
   }),
 };
@@ -204,6 +253,36 @@ const servidor = createServer(async (pet, res) => {
         { codigo: "BC-001-03", nombre: "Body manga larga pima", cantidad: 2, libres: 18 },
         { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", cantidad: 1, libres: 0 },
       ]),
+    );
+    return;
+  }
+
+  // El historial de un ajuste, que la hoja de cambiarlo pide al abrirse. Sin
+  // esto, la parte que contesta «¿quién cambió esto y cuándo?» no la mira nunca
+  // nadie. Se contesta con versiones para `abono_minimo_cents` y vacío para el
+  // resto, que son los dos estados que la hoja enseña distinto.
+  const hist = /^\/api\/ajustes\/([^/]+)\/historial$/.exec(ruta);
+  if (hist !== null) {
+    const clave = decodeURIComponent(hist[1]);
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    res.end(
+      ok({
+        clave,
+        versiones:
+          clave === "abono_minimo_cents"
+            ? [
+                { version: 3, valor: 1000, vigente_desde: Date.now() - 9 * dia,
+                  cambiado_por: "duena@babycaleb.com", motivo: "Subió de $5 a $10 en octubre",
+                  vigente: true, futura: false },
+                { version: 2, valor: 700, vigente_desde: Date.now() - 60 * dia,
+                  cambiado_por: "duena@babycaleb.com", motivo: "Prueba de un mes a $7",
+                  vigente: false, futura: false },
+                { version: 1, valor: 500, vigente_desde: Date.now() - 120 * dia,
+                  cambiado_por: "duena@babycaleb.com", motivo: "El de la KB", vigente: false,
+                  futura: false },
+              ]
+            : [],
+      }),
     );
     return;
   }

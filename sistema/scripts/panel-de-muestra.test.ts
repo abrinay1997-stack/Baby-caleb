@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PERMISOS, permisosDe } from "../src/seguridad/roles";
+import { CLAVES } from "../src/dominio/ajustes";
 
 /**
  * El panel de muestra tiene que decir la verdad.
@@ -47,5 +48,19 @@ describe("el panel de muestra", () => {
                      "/api/bodegas", "/api/zonas", "/api/ajustes", "/api/usuarios"]) {
       expect(rutas, `falta la muestra de ${r}`).toContain(r);
     }
+  });
+
+  /**
+   * La muestra de los ajustes tiene que traer LAS QUINCE claves.
+   *
+   * La pantalla de ajustes es la única donde se cambian las cifras del
+   * negocio, y la muestra es la única forma de mirarla sin una D1 con datos de
+   * clientas. Si se añade una clave a `reglas.json` y no a la muestra, la fila
+   * nueva —justo la que nadie ha revisado todavía— no la ve nadie en la
+   * auditoría.
+   */
+  it("enseña todas las reglas del negocio en la pantalla de ajustes", () => {
+    const enLaMuestra = [...fuente.matchAll(/ajuste\("(\w+)"/g)].map((m) => m[1]!).sort();
+    expect(enLaMuestra).toEqual([...CLAVES].sort());
   });
 });

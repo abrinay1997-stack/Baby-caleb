@@ -47,7 +47,11 @@ export default function S20Footer() {
         </div>
         
         <div className="pt-8 border-t border-line flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-muted">
-          <p>© {new Date().getFullYear()} {legal.company}. Todos los derechos reservados.</p>
+          <p>
+            © {new Date().getFullYear()}{' '}
+            {/* El nombre no se traduce: es un nombre propio. */}
+            <span translate="no">{legal.company}</span>. Todos los derechos reservados.
+          </p>
           {/* Aquí y no escondidas: la Ley 81 pide que la persona pueda leer el
               aviso ANTES de dar sus datos, y el chat de esta página recoge lo
               que escriba. Un aviso al que no se llega no es un aviso. */}

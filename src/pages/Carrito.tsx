@@ -161,7 +161,7 @@ export default function Carrito() {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="m-0 font-bold">
+                    <p className="m-0 font-bold" translate="no">
                       {v === undefined ? l.codigo : v.nombre}
                       {v?.talla === null || v === undefined ? '' : ` · ${v.talla}`}
                     </p>
