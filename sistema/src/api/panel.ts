@@ -73,8 +73,11 @@ import {
 } from "../db/usuarios";
 import {
   buscar as buscarClientas,
+  editar as editarClienta,
   encontrarOCrear as encontrarOCrearClienta,
+  leerFicha as leerFichaDeClienta,
 } from "../db/clientes";
+import type { CambiosEnClienta, CambiosEnDireccion } from "../db/clientes";
 import { crearPedido } from "../db/pedidos";
 import { agendar as agendarPedido, cancelar as cancelarPedido } from "../db/transiciones";
 import {
@@ -239,6 +242,17 @@ async function cuerpo(c: { req: { json: () => Promise<unknown> } }): Promise<Rec
 }
 
 const texto = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+
+/**
+ * Un campo que la pantalla puede mandar escrito, vacío, o no mandar.
+ *
+ * Los tres significan cosas distintas y por eso no se aplanan: `undefined` es
+ * «no lo toques», `null` y `""` son «déjalo en blanco». Si `null` se tradujera
+ * a «no lo toques», borrar un dato desde la pantalla sería imposible y no
+ * fallaría nada: el campo volvería a aparecer lleno al recargar.
+ */
+const nuloOTexto = (v: unknown): string | null | undefined =>
+  v === null ? null : typeof v === "string" ? v : undefined;
 
 /**
  * El código del contrato decide el HTTP, no al revés.
@@ -1162,6 +1176,85 @@ function registrarRutas(panel: Hono<Entorno>): void {
       celular: texto(b["celular"]) ?? "",
     });
     return c.json(r, r.ok ? (r.datos.nuevo ? 201 : 200) : codigoHttp(r.codigo));
+  });
+
+  /**
+   * La ficha de una clienta: sus datos, sus direcciones y sus pedidos.
+   *
+   * Va con `pedidos` y no con un permiso propio: quien toma pedidos es quien
+   * necesita saber a quién se los está tomando. El dinero de esos pedidos lo
+   * recorta la consulta según el rol, igual que en el listado — la contadora
+   * ve la ficha, la asistente ve la ficha, y el total solo lo ve quien tiene
+   * `cobros`.
+   */
+  panel.get("/clientes/:id", exige("pedidos"), async (c) => {
+    const r = await leerFichaDeClienta(c.env.DB, quienMira(c), c.req.param("id"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Corregir la ficha de una clienta.
+   *
+   * Lo que entra aquí es lo que hace falta para COBRAR CON TARJETA y para
+   * FACTURAR: el apellido separado del nombre, la cédula o el RUC con su tipo,
+   * y los datos de facturación de una de sus direcciones. Nada de eso llega
+   * solo — la pasarela no devuelve la cédula y el chat no la pregunta.
+   *
+   * Un campo que no viene NO SE TOCA; uno que viene vacío o en `null` se
+   * guarda en blanco. Son dos cosas distintas y la pantalla depende de que lo
+   * sigan siendo: sin eso, borrar un dato mal escrito no se podría.
+   */
+  panel.patch("/clientes/:id", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const cambios: { -readonly [K in keyof CambiosEnClienta]: CambiosEnClienta[K] } = {};
+    const nombre = texto(b["nombre"]);
+    if (nombre !== undefined) cambios.nombre = nombre;
+    const celular = texto(b["celular"]);
+    if (celular !== undefined) cambios.celular = celular;
+    const apellido = nuloOTexto(b["apellido"]);
+    if (apellido !== undefined) cambios.apellido = apellido;
+    const correo = nuloOTexto(b["correo"]);
+    if (correo !== undefined) cambios.correo = correo;
+    const identificacion = nuloOTexto(b["identificacion"]);
+    if (identificacion !== undefined) cambios.identificacion = identificacion;
+    const tipo = nuloOTexto(b["identificacionTipo"]);
+    if (tipo !== undefined) cambios.identificacionTipo = tipo;
+    const notas = nuloOTexto(b["notas"]);
+    if (notas !== undefined) cambios.notas = notas;
+
+    const cruda = b["direccion"];
+    if (typeof cruda === "object" && cruda !== null && !Array.isArray(cruda)) {
+      const d = cruda as Record<string, unknown>;
+      const idDireccion = (texto(d["id"]) ?? "").trim();
+      // Sin id no hay a qué dirección aplicarlo, y adivinar «la activa» sería
+      // escribir en una fila que quien guarda no eligió.
+      if (idDireccion === "") {
+        return c.json(fallo("entrada_invalida", "falta decir en qué dirección"), 400);
+      }
+      const direccion: { -readonly [K in keyof CambiosEnDireccion]: CambiosEnDireccion[K] } = {
+        id: idDireccion,
+      };
+      const ciudad = nuloOTexto(d["ciudad"]);
+      if (ciudad !== undefined) direccion.ciudad = ciudad;
+      const provincia = nuloOTexto(d["provinciaIso"]);
+      if (provincia !== undefined) direccion.provinciaIso = provincia;
+      const postal = nuloOTexto(d["codigoPostal"]);
+      if (postal !== undefined) direccion.codigoPostal = postal;
+      const pais = nuloOTexto(d["pais"]);
+      if (pais !== undefined) direccion.pais = pais;
+      cambios.direccion = direccion;
+    }
+
+    const r = await editarClienta(contextoCatalogo(c), c.req.param("id"), cambios);
+    if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+
+    // Se devuelve la ficha RECIÉN LEÍDA y no un «listo»: la pantalla la usa
+    // para repintar «qué falta» sin pedirla otra vez, y así lo que se ve
+    // después de guardar es lo que de verdad quedó en la base.
+    const ficha = await leerFichaDeClienta(c.env.DB, quienMira(c), c.req.param("id"));
+    return c.json(ficha, ficha.ok ? 200 : codigoHttp(ficha.codigo));
   });
 
   /**

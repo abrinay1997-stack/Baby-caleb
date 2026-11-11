@@ -82,15 +82,23 @@ prueba de unidad: solo se mide leyendo el estilo ya calculado en un navegador.
 
 > `sistema/scripts/auditar-panel.mjs` · `sistema/docs/design-system.md` §7
 
-**Vigilada por:** ✅ el auditor, en CI. Ya mide **las doce pantallas** —`/pedidos`,
-`/entregas` y `/pasarelas` entraron cuando el panel de muestra tuvo datos que
-enseñarles— y además las hojas, que son las que tienen los campos: editar una
-variante, mover existencias, tomar un pedido, las acciones de un pedido, la
-bodega, el traslado, la zona y las dos de usuarios.
+**Vigilada por:** ✅ el auditor, en CI. Mide todas las pantallas del panel, el
+cajón abierto, las hojas —donde viven los campos— y la frontera de errores, en
+teléfono y en computadora. Aquí NO va el número de pantallas que mide: ese
+número ha quedado desactualizado tres veces y dos agentes distintos chocaron
+corrigiéndolo. El número lo dice el propio auditor al correr.
 
-**Lo que sigue sin vigilar nadie:** que una hoja NUEVA entre en esa lista. Si se
-añade una y se olvida, la auditoría sigue diciendo «sin fallas» sobre las que ya
-estaban. Una pantalla que no se mide no dice «está bien»: no dice nada.
+**Lo que hay que hacer con cada pantalla u hoja NUEVA, y son dos cosas:**
+añadirla a `scripts/auditar-panel.mjs` Y poner sus datos en
+`scripts/panel-de-muestra.mjs`. Sin las dos, el auditor la ve como un 404 y
+sigue diciendo «sin fallas» sobre las que ya estaban. Una pantalla que no se
+mide no dice «está bien»: no dice nada.
+
+**Y mide dónde SALE la hoja, no solo que salga.** La hoja estuvo desde el
+primer día pegada a la esquina de arriba a la izquierda en computadora —en cada
+pedido, cada ajuste y cada movimiento de inventario— porque el bloque de hojas
+se escribió para el cajón del teléfono y nadie las abría en escritorio. Una
+captura enseña que algo aparece; no enseña que aparezca donde debe.
 
 ---
 
