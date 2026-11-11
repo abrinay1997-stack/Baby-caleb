@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   MAX_TOKENS_MINIMO,
+  type Mensaje,
   type Peticion,
   type Proveedor,
+  aMensajesDeLaApi,
   conRespaldo,
   guionFijo,
   leerRespuesta,
@@ -194,5 +196,107 @@ describe("el respaldo", () => {
     const r = conRespaldo(cae(), null);
     await expect(r.responder(peticion)).rejects.toThrow("502");
     await expect(r.responder(peticion)).rejects.toThrow("502");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El historial, en la forma que la API acepta
+// ---------------------------------------------------------------------------
+//
+// Estas pruebas existen porque el proveedor solo se había probado contra el
+// guion fijo, que no valida la forma del historial. Contra la API de verdad,
+// encadenar una herramienta fallaba siempre: el turno del asistente volvía
+// como texto pelado, sin su `tool_use`, y el `tool_result` de detrás apuntaba
+// a un id inexistente.
+
+describe("aMensajesDeLaApi", () => {
+  it("devuelve el tool_use del asistente, no solo su texto", () => {
+    const historial: Mensaje[] = [
+      { rol: "user", contenido: "¿cuánto hay?" },
+      {
+        rol: "assistant",
+        contenido: "Voy a mirar.",
+        llamadas: [{ id: "t1", nombre: "ver_stock", argumentos: { codigo: "BC-001-03" } }],
+      },
+      { rol: "tool", contenido: '{"quedan":12}', llamadaId: "t1" },
+    ];
+
+    const salida = aMensajesDeLaApi(historial);
+
+    const asistente = salida[1] as { role: string; content: Record<string, unknown>[] };
+    expect(asistente.role).toBe("assistant");
+    expect(asistente.content.map((b) => b["type"])).toEqual(["text", "tool_use"]);
+
+    const uso = asistente.content[1] as Record<string, unknown>;
+    expect(uso["id"]).toBe("t1");
+    expect(uso["name"]).toBe("ver_stock");
+    expect(uso["input"]).toEqual({ codigo: "BC-001-03" });
+  });
+
+  it("el id del resultado es el mismo que el de la llamada", () => {
+    // Es LA condición que hace válida la petición. Si estos dos ids se
+    // separan, la API rechaza la conversación entera y el asistente queda
+    // mudo en cuanto usa una herramienta.
+    const salida = aMensajesDeLaApi([
+      {
+        rol: "assistant",
+        contenido: "",
+        llamadas: [{ id: "abc", nombre: "ver_stock", argumentos: {} }],
+      },
+      { rol: "tool", contenido: "{}", llamadaId: "abc" },
+    ]);
+
+    const pidio = (salida[0] as { content: Record<string, unknown>[] }).content[0];
+    const respondio = (salida[1] as { content: Record<string, unknown>[] }).content[0];
+    expect(pidio?.["id"]).toBe(respondio?.["tool_use_id"]);
+  });
+
+  it("junta en UN mensaje los resultados de un mismo turno", () => {
+    // Dos herramientas pedidas a la vez son dos resultados. Uno por mensaje
+    // deja dos mensajes de usuario seguidos y un tool_use sin respuesta al
+    // lado.
+    const salida = aMensajesDeLaApi([
+      {
+        rol: "assistant",
+        contenido: "",
+        llamadas: [
+          { id: "t1", nombre: "ver_stock", argumentos: {} },
+          { id: "t2", nombre: "buscar_articulo", argumentos: {} },
+        ],
+      },
+      { rol: "tool", contenido: "{}", llamadaId: "t1" },
+      { rol: "tool", contenido: "{}", llamadaId: "t2" },
+    ]);
+
+    expect(salida).toHaveLength(2);
+    const resultados = salida[1] as { role: string; content: unknown[] };
+    expect(resultados.role).toBe("user");
+    expect(resultados.content).toHaveLength(2);
+  });
+
+  it("no manda un bloque de texto vacío", () => {
+    // La API los rechaza, y un turno en el que el modelo solo pidió
+    // herramientas no tiene texto que mandar.
+    const salida = aMensajesDeLaApi([
+      {
+        rol: "assistant",
+        contenido: "   ",
+        llamadas: [{ id: "t1", nombre: "ver_stock", argumentos: {} }],
+      },
+    ]);
+
+    const bloques = (salida[0] as { content: Record<string, unknown>[] }).content;
+    expect(bloques.map((b) => b["type"])).toEqual(["tool_use"]);
+  });
+
+  it("deja igual una conversación sin herramientas", () => {
+    const salida = aMensajesDeLaApi([
+      { rol: "user", contenido: "hola" },
+      { rol: "assistant", contenido: "¿En qué le ayudo?" },
+    ]);
+    expect(salida).toEqual([
+      { role: "user", content: "hola" },
+      { role: "assistant", content: "¿En qué le ayudo?" },
+    ]);
   });
 });
