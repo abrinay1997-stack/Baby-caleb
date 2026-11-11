@@ -61,11 +61,18 @@ describe("migración 0001 desde cero", () => {
       expect(tablas, `falta ${deF4}, que trae la 0006`).toContain(deF4);
     }
 
+    // Y las entregas en F4.5 (migración 0009). `rutas` no está en 02-datos §5:
+    // allí el orden de las paradas vivía suelto en `envios.orden_ruta`, y un
+    // orden sin dueño no se puede despachar ni cerrar.
+    for (const deF45 of ["rutas", "envios", "envio_eventos"]) {
+      expect(tablas, `falta ${deF45}, que trae la 0009`).toContain(deF45);
+    }
+
     // Lo que todavía NO existe. Esta lista no es decorativa: es lo que impide
     // que alguien cree media tabla de una fase futura «para ir adelantando» y
     // la deje a medias, con llaves foráneas apuntando a columnas que nadie
     // terminó de pensar. Cuando una de estas nazca de verdad, se mueve arriba.
-    for (const futura of ["reservas", "envios", "asientos", "cuentas", "compras", "gastos"]) {
+    for (const futura of ["reservas", "asientos", "cuentas", "compras", "gastos"]) {
       expect(tablas, `${futura} no es de ninguna migración todavía`).not.toContain(futura);
     }
   });
