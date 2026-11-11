@@ -408,6 +408,69 @@ describe("/ajustes", () => {
   });
 });
 
+describe("/pedidos", () => {
+  let k = 0;
+  async function unPedido(): Promise<{ id: string; numero: string }> {
+    // Identificadores propios: este archivo ya no limpia pedidos (los libros
+    // de entregas que cuelgan de ellos no se pueden borrar).
+    const suf = `${Date.now()}-${k++}`;
+    const id = `pr-${suf}`;
+    const numero = `BC-R${suf}`;
+    await real.DB.batch([
+      real.DB.prepare(
+        "INSERT INTO clientes (id,nombre,creado_en,actualizado_en) VALUES (?,'Ana',?,?)",
+      ).bind(`cr-${suf}`, T, T),
+      real.DB.prepare(
+        `INSERT INTO pedidos
+           (id,numero,token,cliente_id,origen,estado,estado_pago,
+            subtotal_cents,envio_cents,descuento_cents,itbms_cents,total_cents,
+            pagado_cents,abono_minimo_cents,requiere_pago_total,creado_en,actualizado_en)
+         VALUES (?,?,?,?,'web','agendado','abonado',10000,0,0,0,10000,2500,500,0,?,?)`,
+      ).bind(id, numero, `tk-${suf}`, `cr-${suf}`, T, T),
+    ]);
+    return { id, numero };
+  }
+
+  it("la asistente ve el pedido pero NO el dinero", async () => {
+    // Su rol tiene `pedidos: editar` y `cobros: no`. El recorte lo hace el
+    // SERVIDOR: si llegara el total y lo escondiera la pantalla, ahí seguiría,
+    // a la vista de quien abra las herramientas del navegador.
+    const { numero } = await unPedido();
+    const r = await pedir(entrandoComo("asistente"), `/pedidos?busca=${numero}`);
+    expect(r.estado).toBe(200);
+    const d = r.cuerpo.datos as { pedidos: { numero: string; total_cents: number | null }[] };
+    const p = d.pedidos.find((x) => x.numero === numero);
+    expect(p, "la asistente tiene que poder VER el pedido").toBeDefined();
+    expect(p?.total_cents, "y no su dinero").toBeNull();
+  });
+
+  it("la dueña sí lo ve", async () => {
+    const { numero } = await unPedido();
+    const r = await pedir(entrandoComo("duena"), `/pedidos?busca=${numero}`);
+    const d = r.cuerpo.datos as { pedidos: { numero: string; saldo_cents: number | null }[] };
+    expect(d.pedidos.find((x) => x.numero === numero)?.saldo_cents).toBe(7500);
+  });
+
+  it("el costo es más estrecho aún: ni la dueña lo edita, solo lo ve", async () => {
+    // `costo_y_margen` está en «ver» para la dueña y en «no» para la
+    // asistente. El detalle de un pedido lo respeta línea a línea.
+    const { id } = await unPedido();
+    const r = await pedir(entrandoComo("asistente"), `/pedidos/${id}`);
+    const d = r.cuerpo.datos as { items: { costo_unit_cents: number | null }[] };
+    expect(d.items.every((l) => l.costo_unit_cents === null)).toBe(true);
+  });
+
+  it("un estado inventado se rechaza con 400", async () => {
+    const r = await pedir(entrandoComo("duena"), "/pedidos?estado=inventado");
+    expect(r.estado).toBe(400);
+  });
+
+  it("un pedido que no existe es 404", async () => {
+    const r = await pedir(entrandoComo("duena"), "/pedidos/no-existe");
+    expect(r.estado).toBe(404);
+  });
+});
+
 describe("/usuarios", () => {
   it("lista a quien puede entrar", async () => {
     await real.DB.prepare(

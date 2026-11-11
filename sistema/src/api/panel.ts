@@ -24,6 +24,7 @@ import {
   explicar,
 } from "../db/catalogo-admin";
 import { guardar as guardarAjuste, historial, leerVigentes } from "../db/ajustes";
+import { leerPedido, listarPedidos } from "../db/pedidos-lectura";
 import {
   armarRuta,
   cancelarRuta,
@@ -606,6 +607,42 @@ function registrarRutas(panel: Hono<Entorno>): void {
     return c.json(ok({ zonas }));
   });
 
+
+
+  // ---------------------------------------------------------------------------
+  // Pedidos (F4.2)
+  //
+  // El centro del negocio, y hasta ahora el único sitio al que nadie podía
+  // mirar: el sistema sabía CREAR un pedido y no tenía ni una consulta para
+  // enseñarlo.
+  //
+  // Quién ve el dinero y quién ve el costo lo decide la matriz de roles, y se
+  // recorta EN LA CONSULTA. Esconderlo en la pantalla dejaría el dato viajando
+  // hasta el navegador, donde lo ve cualquiera que abra las herramientas.
+  // ---------------------------------------------------------------------------
+
+  /** Quién mira, para `pedidos-lectura`. */
+  const quienMira = (c: Context<Entorno>) => {
+    const rol = c.get("usuario").rol;
+    return { veDinero: puedeVer(rol, "cobros"), veCosto: puedeVer(rol, "costo_y_margen") };
+  };
+
+  panel.get("/pedidos", exige("pedidos"), async (c) => {
+    const estado = texto(c.req.query("estado"));
+    const busca = texto(c.req.query("busca"));
+    const limite = entero(c.req.query("limite"));
+    const r = await listarPedidos(c.env.DB, quienMira(c), {
+      ...(estado === undefined || estado === "" ? {} : { estado }),
+      ...(busca === undefined ? {} : { busca }),
+      ...(limite === undefined ? {} : { limite }),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  panel.get("/pedidos/:id", exige("pedidos"), async (c) => {
+    const r = await leerPedido(c.env.DB, quienMira(c), c.req.param("id"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
 
   // ---------------------------------------------------------------------------
   // Entregas (F4.5)

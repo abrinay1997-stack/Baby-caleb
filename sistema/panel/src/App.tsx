@@ -8,6 +8,7 @@ import { Bodegas } from "./pantallas/Bodegas";
 import { Catalogo } from "./pantallas/Catalogo";
 import { Entregas } from "./pantallas/Entregas";
 import { Existencias } from "./pantallas/Existencias";
+import { Pedidos } from "./pantallas/Pedidos";
 import { Resumen } from "./pantallas/Resumen";
 import { Usuarios } from "./pantallas/Usuarios";
 import { Zonas } from "./pantallas/Zonas";
@@ -59,6 +60,7 @@ export function App() {
         <Routes>
           <Route element={<Armazon yo={yo.datos} />}>
             <Route index element={<Resumen />} />
+            <Route path="pedidos" element={<Pedidos />} />
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="existencias" element={<Existencias />} />
             <Route path="entregas" element={<Entregas />} />
