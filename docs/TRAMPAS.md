@@ -82,8 +82,15 @@ prueba de unidad: solo se mide leyendo el estilo ya calculado en un navegador.
 
 > `sistema/scripts/auditar-panel.mjs` · `sistema/docs/design-system.md` §7
 
-**Vigilada por:** ✅ el auditor, en CI. **Pero solo mide 9 de las 12 pantallas**:
-faltan `/pedidos`, `/entregas` y `/pasarelas`, que son tres de las grandes.
+**Vigilada por:** ✅ el auditor, en CI. Ya mide **las doce pantallas** —`/pedidos`,
+`/entregas` y `/pasarelas` entraron cuando el panel de muestra tuvo datos que
+enseñarles— y además las hojas, que son las que tienen los campos: editar una
+variante, mover existencias, tomar un pedido, las acciones de un pedido, la
+bodega, el traslado, la zona y las dos de usuarios.
+
+**Lo que sigue sin vigilar nadie:** que una hoja NUEVA entre en esa lista. Si se
+añade una y se olvida, la auditoría sigue diciendo «sin fallas» sobre las que ya
+estaban. Una pantalla que no se mide no dice «está bien»: no dice nada.
 
 ---
 

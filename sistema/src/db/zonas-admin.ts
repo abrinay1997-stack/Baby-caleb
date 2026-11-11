@@ -144,9 +144,12 @@ async function otraSeLlamaIgual(
 /**
  * Una zona nueva.
  *
- * Nace activa: una zona que se crea es una zona a la que se empieza a
- * entregar, y dejarla apagada obligaría a dos pasos para la operación normal.
- * Pausarla es un acto aparte y explícito.
+ * Nace ACTIVA si no se dice otra cosa: una zona que se crea es, casi siempre,
+ * una zona a la que se empieza a entregar, y dejarla apagada obligaría a dos
+ * pasos para lo normal. Pero `activa: false` se respeta, porque la hoja del
+ * panel ofrece elegirlo al crearla — y una pantalla que pregunta algo y luego
+ * guarda lo contrario es peor que una que no pregunta: la dueña creería que la
+ * zona está pausada mientras el checkout la sigue ofreciendo.
  *
  * Sin fila de control detrás: es un solo `INSERT`, que o entra o revienta el
  * batch. Un control ahí comprobaría algo que no puede ser falso y haría creer
@@ -154,7 +157,7 @@ async function otraSeLlamaIgual(
  */
 export async function crear(
   ctx: ContextoZona,
-  datos: Partial<ZonaNueva>,
+  datos: Partial<ZonaNueva> & { readonly activa?: boolean },
 ): Promise<Resultado<{ id: string; nombre: string }>> {
   const nombre = revisarNombre(datos.nombre);
   if (!nombre.ok) return nombre;
@@ -183,7 +186,7 @@ export async function crear(
         `INSERT INTO zonas_envio
            (id, nombre, alias_json, region, metodo, tarifa_cents,
             requiere_pago_total, bodega_preferida_id, activa, actualizado_en)
-         VALUES (?,?,?,?,?,?,?,?,1,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         id,
@@ -194,6 +197,9 @@ export async function crear(
         tarifa.datos,
         datos.requierePagoTotal === true ? 1 : 0,
         bodega.datos,
+        // `!== false` y no `=== true`: quien no dice nada quiere una zona a la
+        // que se entrega. Solo un «no» explícito la deja pausada.
+        datos.activa !== false ? 1 : 0,
         ctx.ahora,
       )
       .run();

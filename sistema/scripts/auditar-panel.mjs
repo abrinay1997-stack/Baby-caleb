@@ -341,7 +341,17 @@ for (const [nombreVista, tamano] of VISTAS) {
       for (const hoja of HOJAS) {
         await pagina.goto(`${BASE}${hoja.ruta}`, { waitUntil: "networkidle" });
         const disparador = pagina.getByRole("button", { name: hoja.abrir }).first();
-        if ((await disparador.count()) === 0) {
+        // Se ESPERA a que aparezca, no se cuenta y ya. `count()` contesta al
+        // instante, y el panel pinta después de contestar `/api/yo` y la
+        // consulta de la pantalla: en una máquina ocupada, contar sin esperar
+        // da cero sobre una pantalla que está perfecta. Pasó aquí —cinco
+        // hojas «sin forma de abrirlas» justo después de correr la suite— y
+        // el fallo era del guion, no del panel.
+        const aparecio = await disparador
+          .waitFor({ state: "visible", timeout: 10_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!aparecio) {
           // Una hoja que no se puede abrir NO se da por buena en silencio: una
           // pantalla que la auditoría no mide no dice «está bien», no dice
           // nada. Se cuenta como falla para que se vea.

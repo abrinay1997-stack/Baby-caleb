@@ -133,6 +133,17 @@ describe("POST /zonas", () => {
     expect(aMano?.tarifa_cents).toBeNull();
   });
 
+  /**
+   * La hoja de «zona nueva» deja elegir si se está entregando ahí. Si el
+   * servidor ignorara esa elección, la dueña vería «Pausada» en la pantalla
+   * con el checkout ofreciéndola igual — una pantalla que pregunta algo y
+   * guarda lo contrario es peor que una que no pregunta.
+   */
+  it("respeta que una zona nueva nazca pausada, y sin decir nada nace entregando", async () => {
+    expect((await zonaEn(await unaZona({ activa: false })))?.activa).toBe(0);
+    expect((await zonaEn(await unaZona()))?.activa).toBe(1);
+  });
+
   it("una tarifa negativa no es una tarifa", async () => {
     const r = await post(duena, "/zonas", {
       nombre: nombreNuevo(),
