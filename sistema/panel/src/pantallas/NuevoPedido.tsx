@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { buscarProductos } from "./buscar-productos";
 import { dinero, pedir, useCarga } from "../api";
 import { Hoja } from "../armazon/Hoja";
 
@@ -85,6 +86,7 @@ export function NuevoPedido({
   const [yaLaTenia, setYaLaTenia] = useState(false);
 
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
+  const [busqueda, setBusqueda] = useState("");
   const [zona, setZona] = useState("");
   const [notas, setNotas] = useState("");
 
@@ -190,6 +192,9 @@ export function NuevoPedido({
   }
 
   const disponibles = variantes.filter((v) => v.activo === 1);
+
+  const elegidas = disponibles.filter((v) => (cantidades[v.codigo] ?? 0) > 0);
+  const { resultados, hayMas } = buscarProductos(disponibles, busqueda);
 
   return (
     <Hoja
@@ -297,43 +302,129 @@ export function NuevoPedido({
 
           <section className="grid gap-2">
             <h3 className="m-0 text-[15px] font-bold">¿Qué lleva?</h3>
-            <div className="grid gap-2">
-              {disponibles.map((v) => (
-                <div
-                  key={v.codigo}
-                  className="flex items-center justify-between gap-3 rounded-[12px] border border-line p-3"
-                >
-                  <span className="block min-w-0">
-                    <span className="block font-bold">{v.nombre}</span>
-                    {/* La talla y el código, SIEMPRE. Dos presentaciones del
-                        mismo producto comparten nombre —«Pañal Nateen de
-                        cierre» son seis tallas— y sin esto la lista enseña
-                        filas idénticas: quien atiende no sabe cuál está
-                        tocando y el pedido sale con la talla equivocada. Se
-                        vio en la captura de la auditoría, no razonándolo. */}
-                    <span className="block text-[13px] text-muted">
-                      {v.talla === null ? v.codigo : `Talla ${v.talla} · ${v.codigo}`}
+
+            {/* Lo elegido va ARRIBA y siempre se ve. Antes esta sección era el
+                catálogo entero con una casilla por fila: con doce productos ya
+                obligaba a bajar y subir, y con sesenta no se puede atender a
+                nadie por teléfono así. Quien toma un pedido ya sabe qué quiere
+                la clienta — no está mirando a ver qué hay. */}
+            {elegidas.length === 0 ? (
+              <p className="m-0 rounded-[10px] bg-surface p-3 text-[14px] text-muted">
+                Todavía no ha añadido nada. Búsquelo aquí abajo.
+              </p>
+            ) : (
+              <div className="grid gap-2">
+                {elegidas.map((v) => (
+                  <div
+                    key={v.codigo}
+                    className="flex items-center justify-between gap-3 rounded-[12px] border border-line p-3"
+                  >
+                    <span className="block min-w-0">
+                      <span className="block font-bold">{v.nombre}</span>
+                      {/* La talla y el código, SIEMPRE. Dos presentaciones del
+                          mismo producto comparten nombre —«Pañal Nateen de
+                          cierre» son seis tallas— y sin esto se ven filas
+                          idénticas: quien atiende no sabe cuál está tocando y
+                          el pedido sale con la talla equivocada. */}
+                      <span className="block text-[13px] text-muted">
+                        {v.talla === null ? v.codigo : `Talla ${v.talla} · ${v.codigo}`}
+                      </span>
+                      <span className="block text-[13px] text-muted">
+                        {dinero(v.precio_cents)}
+                        {v.publicado === 1 ? "" : " · solo interno"}
+                      </span>
                     </span>
-                    <span className="block text-[13px] text-muted">
-                      {dinero(v.precio_cents)}
-                      {v.publicado === 1 ? "" : " · solo interno"}
+                    <span className="flex shrink-0 items-center gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        aria-label={`Cantidad de ${v.nombre}`}
+                        value={cantidades[v.codigo] ?? ""}
+                        onChange={(e) => {
+                          const n = Number(e.target.value.replace(/[^0-9]/g, ""));
+                          setCantidades((c) => ({ ...c, [v.codigo]: Number.isFinite(n) ? n : 0 }));
+                          setError(null);
+                        }}
+                        className="tactil w-[72px] rounded-[10px] border border-line bg-bg px-2 py-2 text-center text-[16px] text-fg focus-visible:outline-accent-edge focus-visible:outline-2"
+                      />
+                      <button
+                        type="button"
+                        aria-label={`Quitar ${v.nombre}`}
+                        onClick={() => {
+                          setCantidades((c) => ({ ...c, [v.codigo]: 0 }));
+                          setError(null);
+                        }}
+                        className="tactil rounded-[10px] border border-line px-3 text-[14px] text-muted"
+                      >
+                        Quitar
+                      </button>
                     </span>
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    aria-label={`Cantidad de ${v.nombre}`}
-                    value={cantidades[v.codigo] ?? ""}
-                    onChange={(e) => {
-                      const n = Number(e.target.value.replace(/[^0-9]/g, ""));
-                      setCantidades((c) => ({ ...c, [v.codigo]: Number.isFinite(n) ? n : 0 }));
-                      setError(null);
-                    }}
-                    className="tactil w-[72px] shrink-0 rounded-[10px] border border-line bg-bg px-2 py-2 text-center text-[16px] text-fg focus-visible:outline-accent-edge focus-visible:outline-2"
-                  />
-                </div>
-              ))}
-            </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <label className="grid gap-1">
+              <span className="text-[13px] text-muted">Añadir un producto</span>
+              <input
+                /* `type="text"` y no `"search"` a propósito: en un campo de
+                   búsqueda, Escape BORRA el texto en vez de llegar a la hoja,
+                   así que el primer Escape no cerraría el cajón y quien lo
+                   intenta cree que no responde. Se descubrió en el auditor, que
+                   se quedó esperando con la hoja abierta. */
+                type="text"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Nombre, talla o código"
+                className="tactil rounded-[10px] border border-line bg-bg px-3 py-2 text-[16px] text-fg focus-visible:outline-accent-edge focus-visible:outline-2"
+              />
+            </label>
+
+            {/* La lista solo aparece al escribir. Sin consulta no se enseña
+                nada: el catálogo completo es justo lo que sobraba. */}
+            {busqueda.trim() === "" ? null : resultados.length === 0 ? (
+              <p className="m-0 text-[13px] text-muted">
+                No encontré nada con «{busqueda.trim()}».
+              </p>
+            ) : (
+              <div className="grid gap-2">
+                {resultados.map((v) => {
+                  const puesta = (cantidades[v.codigo] ?? 0) > 0;
+                  return (
+                    <button
+                      key={v.codigo}
+                      type="button"
+                      disabled={puesta}
+                      onClick={() => {
+                        setCantidades((c) => ({ ...c, [v.codigo]: 1 }));
+                        setError(null);
+                      }}
+                      className="tactil flex items-center justify-between gap-3 rounded-[12px] border border-line p-3 text-left disabled:opacity-60"
+                    >
+                      <span className="block min-w-0">
+                        <span className="block font-bold">{v.nombre}</span>
+                        <span className="block text-[13px] text-muted">
+                          {v.talla === null ? v.codigo : `Talla ${v.talla} · ${v.codigo}`}
+                        </span>
+                        <span className="block text-[13px] text-muted">
+                          {dinero(v.precio_cents)}
+                          {v.publicado === 1 ? "" : " · solo interno"}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[14px] font-bold text-muted">
+                        {puesta ? "Ya está" : "Añadir"}
+                      </span>
+                    </button>
+                  );
+                })}
+                {hayMas ? (
+                  <p className="m-0 text-[13px] text-muted">
+                    Hay más. Escriba un poco más para afinar.
+                  </p>
+                ) : null}
+              </div>
+            )}
+
             {calculo > 0 ? (
               <p className="m-0 text-[13px] text-muted">
                 Los productos suman <strong className="text-fg">{dinero(calculo)}</strong>. Es un
