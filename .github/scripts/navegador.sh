@@ -82,6 +82,27 @@ for i in $(seq 1 "$intentos"); do
   fi
 done
 
+# ÚLTIMO CARTUCHO: el navegador SIN las dependencias del sistema.
+#
+# `--with-deps` hace dos cosas con redes distintas: baja Chromium del CDN de
+# Playwright y baja librerías con `apt` de los espejos de Ubuntu. Cuando lo
+# que está caído son los espejos —como el 11 de noviembre, y se ve en el log
+# porque `packages.microsoft.com` y npm sí contestaban—, el navegador sí se
+# puede bajar. La imagen de GitHub ya trae casi todas esas librerías.
+#
+# Así que se intenta. Si Chromium luego no arranca por una librería que
+# falta, la auditoría falla en su paso y se ve: eso es correcto. Lo que no
+# sería correcto es rendirse sin haberlo intentado.
+if [ "${1:-}" != "--solo-dependencias" ]; then
+  echo "Los espejos de Ubuntu no contestan. Probando el navegador SIN las"
+  echo "dependencias del sistema, que se bajan de otro sitio…"
+  if timeout "$POR_INTENTO" npx playwright install chromium; then
+    echo "✓ navegador instalado sin las dependencias del sistema."
+    echo "::warning::El navegador se instaló sin las dependencias de apt (los espejos de Ubuntu no respondían). Si la auditoría falla al arrancar Chromium, es por eso y no por el panel."
+    exit 0
+  fi
+fi
+
 # Se dice qué mirar, para que el siguiente no busque en el sitio equivocado.
 echo "::error::no se pudo instalar $que tras $intentos intentos (tope ${POR_INTENTO}s cada uno)."
 echo "Si el log de arriba dice «Temporary failure resolving», el problema es"

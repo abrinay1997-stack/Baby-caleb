@@ -90,14 +90,25 @@ jobs:
       # resolving 'archive.ubuntu.com'». Ver el guion para por qué reintentar
       # aquí es correcto y por qué no debe envolver una prueba.
       - name: Instalar el navegador
+        id: navegador
         run: |
           if [ "${{ steps.cache-navegador.outputs.cache-hit }}" = "true" ]; then
-            .github/scripts/navegador.sh --solo-dependencias
+            guion=(.github/scripts/navegador.sh --solo-dependencias)
           else
-            .github/scripts/navegador.sh
+            guion=(.github/scripts/navegador.sh)
+          fi
+          if "${guion[@]}"; then
+            echo "listo=si" >> "$GITHUB_OUTPUT"
+          else
+            echo "listo=no" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Comprobaciones de navegador NO ejecutadas::No se pudo instalar el navegador (la red de esta máquina no resuelve los espejos de Ubuntu). El contraste y las capturas NO se midieron en esta corrida."
           fi
 
+      # Igual que en `sistema.yml`: un hallazgo de contraste SÍ bloquea; un
+      # espejo de Ubuntu caído, no. Son cosas distintas y hasta hoy se
+      # trataban igual.
       - name: Contraste (WCAG AA)
+        if: steps.navegador.outputs.listo == 'si'
         run: npm run contraste
 
       # Presupuesto de tamaño. Lo que se vigila no es el peso en sí, sino que
