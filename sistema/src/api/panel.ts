@@ -1,5 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { fallo, ok } from "../contrato/resultado";
+import type { Resultado } from "../contrato/resultado";
 import { atrasados } from "../eventos";
 import {
   type Permiso,
@@ -57,6 +58,8 @@ import {
   quitarCredencial,
 } from "../db/pasarelas";
 import { registrar as registrarMovimientos } from "../db/inventario";
+import { crearPedido } from "../db/pedidos";
+import { agendar as agendarPedido, cancelar as cancelarPedido } from "../db/transiciones";
 import {
   armarRuta,
   cancelarRuta,
@@ -959,6 +962,142 @@ function registrarRutas(panel: Hono<Entorno>): void {
       ...(busca === undefined ? {} : { busca }),
       ...(limite === undefined ? {} : { limite }),
     });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Las reglas que `crearPedido` exige RESUELTAS.
+   *
+   * Esa función se niega a inventar ninguna —«aquí no se inventa ninguno»,
+   * dice su contrato— así que quien la llama tiene que leer los ajustes y
+   * traérselas. Esto es ese paso, en un solo sitio para que la ruta del panel
+   * y la de la web no acaben resolviéndolas distinto.
+   *
+   * `abono_minimo_cents` NO admite PENDIENTE por diseño (su esquema lo dice),
+   * así que siempre hay un número: el de la dueña, o el de fábrica.
+   *
+   * El plazo sale de `reserva_horas_comprobante` y no de
+   * `reserva_minutos_pago_en_linea`, porque un pedido tomado DESDE EL PANEL lo
+   * toma una persona hablando con la clienta, y se paga con comprobante o en
+   * efectivo, no por un enlace de pago. Con la clave sin decidir el plazo es
+   * `null` —«no vence»—, que es un valor que el contrato de `crearPedido`
+   * contempla, no un hueco: un pedido que tomó una persona no se cancela solo
+   * a espaldas de quien lo tomó.
+   */
+  async function reglasDelPedido(
+    c: Context<Entorno>,
+  ): Promise<Resultado<{ abonoMinimoCents: number; minutosParaAbonar: number | null }>> {
+    const r = await leerVigentes({ db: c.env.DB, ahora: Date.now() });
+    if (!r.ok) return r;
+    const de = (clave: string) => r.datos.ajustes.find((a) => a.clave === clave);
+
+    const abono = de("abono_minimo_cents");
+    if (abono === undefined || abono.pendiente || typeof abono.valor !== "number") {
+      return fallo(
+        "entrada_invalida",
+        "falta decidir el abono mínimo. Está en Configuración › Ajustes.",
+      );
+    }
+
+    const horas = de("reserva_horas_comprobante");
+    const minutosParaAbonar =
+      horas === undefined || horas.pendiente || typeof horas.valor !== "number"
+        ? null
+        : horas.valor * 60;
+
+    return ok({ abonoMinimoCents: abono.valor, minutosParaAbonar });
+  }
+
+  /**
+   * Tomar un pedido desde el panel.
+   *
+   * Hasta hoy `crearPedido` estaba escrita y probada, y no la llamaba nadie:
+   * ni el panel ni la web. El sistema sabía crear pedidos y no tenía ninguna
+   * puerta por donde entrara uno.
+   *
+   * El `origen` se fija aquí en «panel» y NO se lee del cuerpo. Es lo que hace
+   * que las métricas por canal signifiquen algo: si quien llama pudiera
+   * declararse «web», un pedido tecleado a mano contaría como una venta que la
+   * tienda nunca hizo.
+   *
+   * Ningún precio entra por aquí: `crearPedido` recibe códigos y cantidades y
+   * los precios los pone el servidor desde el catálogo. Es la regla de un dato
+   * con un solo dueño, y aquí se nota en que el cuerpo ni siquiera tiene dónde
+   * escribir un precio.
+   */
+  panel.post("/pedidos", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const lineas = b["lineas"];
+    if (!Array.isArray(lineas) || lineas.length === 0) {
+      return c.json(fallo("entrada_invalida", "un pedido sin líneas no es un pedido"), 400);
+    }
+
+    // La llave de idempotencia la pone la PANTALLA, una por formulario abierto.
+    // Sin ella, un doble toque con mala señal crea dos pedidos y aparta el
+    // stock dos veces, y eso solo se descubre contando cajas.
+    const idempotencia = texto(b["idempotencia"]);
+    if (idempotencia === undefined || idempotencia.trim() === "") {
+      return c.json(fallo("entrada_invalida", "falta la llave de idempotencia"), 400);
+    }
+
+    const reglas = await reglasDelPedido(c);
+    if (!reglas.ok) return c.json(reglas, codigoHttp(reglas.codigo));
+
+    const r = await crearPedido(
+      {
+        db: c.env.DB,
+        ahora: Date.now(),
+        actor: c.get("usuario").correo,
+        abonoMinimoCents: reglas.datos.abonoMinimoCents,
+        minutosParaAbonar: reglas.datos.minutosParaAbonar,
+      },
+      {
+        idempotencia: idempotencia.trim(),
+        clienteId: texto(b["clienteId"]) ?? "",
+        origen: "panel",
+        lineas: lineas as never,
+        ...(texto(b["zona"]) === undefined ? {} : { zona: texto(b["zona"]) as string }),
+        ...(texto(b["direccionId"]) === undefined
+          ? {}
+          : { direccionId: texto(b["direccionId"]) as string }),
+        ...(texto(b["notasCliente"]) === undefined
+          ? {}
+          : { notasCliente: texto(b["notasCliente"]) as string }),
+      },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Agendar: el pedido entra en la lista de entregas.
+   *
+   * No recibe ninguna condición. Si alcanza o no el abono lo decide el
+   * servidor con la regla COPIADA EN EL PEDIDO el día que se creó, no con el
+   * ajuste de hoy: subir mañana el abono mínimo no puede cambiar las reglas de
+   * un pedido de ayer.
+   */
+  panel.post("/pedidos/:id/agendar", exigeEditar("pedidos"), async (c) => {
+    const r = await agendarPedido(contextoCatalogo(c), c.req.param("id"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Cancelar: libera lo que estaba apartado.
+   *
+   * Pide motivo y no es burocracia: cancelar devuelve mercancía al inventario
+   * y, si hubo abono, deja dinero de una clienta esperando una decisión. Un
+   * movimiento así sin explicación es exactamente lo que nadie puede auditar
+   * después.
+   */
+  panel.post("/pedidos/:id/cancelar", exigeEditar("pedidos"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const motivo = (texto(b["motivo"]) ?? "").trim();
+    if (motivo === "") {
+      return c.json(fallo("entrada_invalida", "diga por qué se cancela: queda en la bitácora"), 400);
+    }
+    const r = await cancelarPedido(contextoCatalogo(c), c.req.param("id"), motivo);
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
