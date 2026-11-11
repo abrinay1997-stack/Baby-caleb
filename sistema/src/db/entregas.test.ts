@@ -14,6 +14,7 @@ import {
   crearEnvio,
   despacharRuta,
   devolverParada,
+  devolverPedidoEntregado,
   entregasDelDia,
   fechaDePanama,
   guardarPrueba,
@@ -130,9 +131,11 @@ async function pedidoAgendado(
     cantidad?: number;
     fisico?: number;
     punto?: { lat: number; lng: number } | null;
-    pagar?: "abono" | "todo";
+    pagar?: "abono" | "todo" | "nada";
     /** Para que dos pedidos compartan variante y bodega. */
     codigo?: string;
+    /** Con cero, un pedido se agenda sin abonar: sirve para el caso sin dinero. */
+    abonoMinimoCents?: number;
   } = {},
 ): Promise<Escenario> {
   const cantidad = opts.cantidad ?? 2;
@@ -156,7 +159,13 @@ async function pedidoAgendado(
   }
 
   const r = await crearPedido(
-    { db: env.DB, ahora: ahora(), actor: "prueba", abonoMinimoCents: 500, minutosParaAbonar: null },
+    {
+      db: env.DB,
+      ahora: ahora(),
+      actor: "prueba",
+      abonoMinimoCents: opts.abonoMinimoCents ?? 500,
+      minutosParaAbonar: null,
+    },
     {
       idempotencia: id("idem"),
       clienteId,
@@ -168,10 +177,12 @@ async function pedidoAgendado(
   );
   if (!r.ok) throw new Error(`no se pudo crear el pedido: ${r.mensaje}`);
 
-  const pagado = opts.pagar === "todo" ? r.datos.totalCents : 500;
-  await env.DB.prepare("UPDATE pedidos SET pagado_cents = ?, estado_pago = ? WHERE id = ?")
-    .bind(pagado, opts.pagar === "todo" ? "pagado" : "abonado", r.datos.id)
-    .run();
+  const pagado = opts.pagar === "todo" ? r.datos.totalCents : opts.pagar === "nada" ? 0 : 500;
+  if (pagado > 0) {
+    await env.DB.prepare("UPDATE pedidos SET pagado_cents = ?, estado_pago = ? WHERE id = ?")
+      .bind(pagado, opts.pagar === "todo" ? "pagado" : "abonado", r.datos.id)
+      .run();
+  }
 
   const a = await agendar({ db: env.DB, ahora: ahora(), actor: "prueba" }, r.datos.id);
   if (!a.ok) throw new Error(`no se pudo agendar: ${a.mensaje}`);
@@ -1435,7 +1446,24 @@ describe("marcarFallida", () => {
 });
 
 describe("devolverParada", () => {
+  /**
+   * Lo que la dueña decide una vez, en Configuración → Ajustes.
+   *
+   * Las pruebas de aquí abajo lo deciden antes de devolver porque un pedido
+   * con abono YA NO SE DEVUELVE mientras siga sin decidirse: el sistema no
+   * mueve el dinero de una clienta adivinando. La prueba de que falla cuando
+   * está sin decidir está más abajo, y es la que vigila esa puerta.
+   */
+  const decidirElAbono = async (valor: "reembolso" | "credito") => {
+    const g = await guardarAjuste(
+      { db: env.DB, ahora: ahora(), actor: "duena@babycaleb.com" },
+      { clave: "cancelacion_con_abono", valor, motivo: "lo decidió la dueña" },
+    );
+    expect(g.ok, "no se pudo guardar la decisión del abono").toBe(true);
+  };
+
   it("libera exactamente lo apartado y cancela el pedido", async () => {
+    await decidirElAbono("credito");
     const e = await enLaCalle({ cantidad: 4, fisico: 10 });
     expect(
       (await marcarFallida(ctx(), { idempotencia: id("idem"), envioId: e.envioId, motivo: "se mudó" })).ok,
@@ -1446,6 +1474,12 @@ describe("devolverParada", () => {
     if (!r.ok) return;
     expect(r.datos.liberadas).toBe(1);
 
+    // Y deja dicho qué pasa con el abono: no lo mueve —sigue en 2101— pero la
+    // decisión vigente ese día queda escrita, que es lo que después ejecuta un
+    // reembolso o el asiento 16.
+    expect(r.datos.abonoCents).toBe(500);
+    expect(r.datos.destinoDelAbono).toBe("credito");
+
     expect((await leerEnvio(e.envioId))?.estado).toBe("devuelto");
     expect((await leerPedido(e.pedidoId))?.estado).toBe("cancelado");
     // Lo apartado vuelve a estar a la venta, y el físico no se movió: la caja
@@ -1454,6 +1488,7 @@ describe("devolverParada", () => {
   });
 
   it("devuelve LO QUE SE APARTÓ aunque la receta del combo haya cambiado", async () => {
+    await decidirElAbono("reembolso");
     // Es el caso que `pedido_linea_componentes` existe para resolver.
     const pieza = await variante(100);
     const comboCodigo = codigoNuevo();
@@ -1530,6 +1565,72 @@ describe("devolverParada", () => {
     const r = await devolverParada(ctx(), e.envioId, "");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.codigo).toBe("entrada_invalida");
+  });
+
+  it("con el destino del abono sin decidir, la devolución falla y NO escribe nada", async () => {
+    // Esta es la puerta. Un pedido con abono que se cancela deja dinero de una
+    // clienta esperando: o se le devuelve, o le queda como crédito. El
+    // documento no elige y la dueña todavía no lo ha dicho, así que el sistema
+    // se para. Adivinar aquí es mover el dinero de otra persona a ojo.
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    expect(
+      (await marcarFallida(ctx(), { idempotencia: id("idem"), envioId: e.envioId, motivo: "se mudó" }))
+        .ok,
+    ).toBe(true);
+
+    const r = await devolverParada(ctx(), e.envioId, "la clienta ya no la quiere");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("entrada_invalida");
+    // El mensaje tiene que decir QUÉ falta y DÓNDE se decide. Un «no se puede»
+    // a secas manda a quien lo lea a preguntarle a Juan.
+    expect(r.mensaje).toMatch(/crédito/i);
+    expect(r.mensaje).toMatch(/Configuración → Ajustes/);
+
+    // Y no escribió nada: el pedido se puede devolver en cuanto ella decida.
+    expect((await leerEnvio(e.envioId))?.estado).toBe("fallido");
+    expect((await leerPedido(e.pedidoId))?.estado).toBe("agendado");
+    expect(await existencias(e.codigo)).toEqual({ fisico: 10, reservado: 2 });
+  });
+
+  it("sin abono no hay nada que decidir, y la devolución entra igual", async () => {
+    // La puerta es por el DINERO, no por la devolución: un pedido que nadie
+    // abonó no tiene nada esperando destino, así que no hace falta que la
+    // dueña decida nada para devolverlo.
+    const e = await enLaCalle({ cantidad: 2, fisico: 10, pagar: "nada", abonoMinimoCents: 0 });
+    expect(
+      (await marcarFallida(ctx(), { idempotencia: id("idem"), envioId: e.envioId, motivo: "se mudó" }))
+        .ok,
+    ).toBe(true);
+
+    const r = await devolverParada(ctx(), e.envioId, "ya no la quiere");
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.abonoCents).toBe(0);
+    expect(r.datos.destinoDelAbono).toBeNull();
+    expect(await existencias(e.codigo)).toEqual({ fisico: 10, reservado: 0 });
+  });
+
+  it("una parada devuelta NO escribe asiento: no hubo venta que deshacer", async () => {
+    // El asiento 13 deshace una venta. Aquí no hubo ninguna: la mercancía
+    // nunca salió del inventario (solo estaba apartada) y el ingreso nunca se
+    // reconoció. Escribirlo cargaría a «Devoluciones» un subtotal que nunca
+    // entró en «Ventas» y metería en Inventario un costo que nunca salió — y
+    // cuadraría, que es lo peor que puede pasar.
+    await decidirElAbono("credito");
+    const e = await enLaCalle({ cantidad: 2, fisico: 10 });
+    expect(
+      (await marcarFallida(ctx(), { idempotencia: id("idem"), envioId: e.envioId, motivo: "se mudó" }))
+        .ok,
+    ).toBe(true);
+    expect((await devolverParada(ctx(), e.envioId, "ya no la quiere")).ok).toBe(true);
+
+    const { results } = await env.DB.prepare(
+      "SELECT hecho FROM asientos WHERE referencia_tipo = 'pedido' AND referencia_id = ?",
+    )
+      .bind(e.pedidoId)
+      .all<{ hecho: string }>();
+    expect(results).toEqual([]);
   });
 });
 
@@ -2074,6 +2175,340 @@ describe("los asientos que deja una entrega", () => {
     // «falta» bloquea el cierre. Es el punto de la casilla: no saber dónde
     // está el dinero no se cierra, se resuelve.
     const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, "2025-04");
+    expect(r.ok && r.datos.sePuedeCerrar).toBe(false);
+  });
+});
+
+/**
+ * La devolución de un pedido YA ENTREGADO (asiento 13, enganchado).
+ *
+ * Es la otra mitad del ciclo que `marcarEntregada` abre: la mercancía sale, la
+ * venta se reconoce, y cuando vuelve hay que deshacer las dos cosas. El
+ * constructor `devolucionAlInventario` llevaba escrito y probado desde F5.1 sin
+ * que NADIE lo llamara —la trampa nº 12— así que estas pruebas miran la TABLA
+ * `asientos` y las existencias, no lo que devuelve la función.
+ *
+ * Cada prueba se validó rompiendo lo que vigila: quitando el asiento del batch,
+ * quitando la entrada de inventario, y neutralizando el control del costo.
+ */
+describe("devolverPedidoEntregado", () => {
+  const asientosDePedido = async (pedidoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT a.id, a.hecho, a.origen, a.fecha, a.descripcion, cc.diferencia
+         FROM asientos a LEFT JOIN control_cuadre cc ON cc.asiento_id = a.id
+        WHERE a.referencia_tipo = 'pedido' AND a.referencia_id = ?
+        ORDER BY a.hecho`,
+    )
+      .bind(pedidoId)
+      .all<{
+        id: string;
+        hecho: string;
+        origen: string;
+        fecha: string;
+        descripcion: string;
+        diferencia: number | null;
+      }>();
+    return results;
+  };
+
+  const lineas = async (asientoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT c.codigo, l.debe_cents AS debe, l.haber_cents AS haber
+         FROM asiento_lineas l JOIN cuentas c ON c.id = l.cuenta_id
+        WHERE l.asiento_id = ? ORDER BY c.codigo`,
+    )
+      .bind(asientoId)
+      .all<{ codigo: string; debe: number; haber: number }>();
+    return results;
+  };
+
+  const valorDe = (codigo: string) =>
+    env.DB.prepare("SELECT unidades, valor_cents FROM valor_inventario WHERE codigo = ?")
+      .bind(codigo)
+      .first<{ unidades: number; valor_cents: number }>();
+
+  const movimientosDe = async (pedidoId: string) => {
+    const { results } = await env.DB.prepare(
+      `SELECT tipo, delta, costo_unit_cents, revierte_id FROM movimientos_inventario
+        WHERE referencia_id = ? AND referencia_tipo = 'pedido' ORDER BY id`,
+    )
+      .bind(pedidoId)
+      .all<{
+        tipo: string;
+        delta: number;
+        costo_unit_cents: number | null;
+        revierte_id: string | null;
+      }>();
+    return results;
+  };
+
+  const conCosto = (codigo: string, unidades: number, valorCents: number) =>
+    env.DB.prepare("INSERT INTO valor_inventario (codigo,unidades,valor_cents) VALUES (?,?,?)")
+      .bind(codigo, unidades, valorCents)
+      .run();
+
+  /** Un pedido entregado, pagado entero, con su costo conocido. */
+  async function entregadoYPagado(opts: { cantidad: number; fisico: number; valorCents: number }) {
+    const codigo = await variante(opts.fisico);
+    await conCosto(codigo, opts.fisico, opts.valorCents);
+    const e = await enLaCalle({ cantidad: opts.cantidad, codigo, pagar: "todo" });
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+    });
+    if (!r.ok) throw new Error(`no se pudo entregar: ${r.mensaje}`);
+    return e;
+  }
+
+  it("la mercancía vuelve con el costo con el que salió, y el asiento 13 lo dice", async () => {
+    // 10 unidades a $20.00 → $2.00 cada una. Salen 3 → $6.00 de costo.
+    const e = await entregadoYPagado({ cantidad: 3, fisico: 10, valorCents: 2000 });
+
+    // Después de entregar: 7 en bodega, nada apartado, el promedio con 7.
+    expect(await existencias(e.codigo)).toEqual({ fisico: 7, reservado: 0 });
+    expect(await valorDe(e.codigo)).toEqual({ unidades: 7, valor_cents: 1400 });
+
+    const r = await devolverPedidoEntregado(ctx(), e.pedidoId, "le quedó chica");
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.piezasDevueltas).toBe(1);
+    expect(r.datos.costoDesconocido).toBe(false);
+
+    // La mercancía y su valor vuelven a estar exactamente como antes de salir.
+    expect(await existencias(e.codigo)).toEqual({ fisico: 10, reservado: 0 });
+    expect(await valorDe(e.codigo)).toEqual({ unidades: 10, valor_cents: 2000 });
+    expect((await leerPedido(e.pedidoId))?.estado).toBe("devuelto");
+
+    // El movimiento de vuelta dice a qué salida deshace: sin `revierte_id` no
+    // hay forma de saber si una caja ya volvió, y se devolvería dos veces.
+    const movimientos = await movimientosDe(e.pedidoId);
+    expect(movimientos).toHaveLength(1);
+    expect(movimientos[0]?.tipo).toBe("devolucion");
+    expect(movimientos[0]?.delta).toBe(3);
+    expect(movimientos[0]?.costo_unit_cents).toBe(200);
+    expect(movimientos[0]?.revierte_id, "la vuelta no dice qué salida deshace").not.toBeNull();
+
+    const asiento = (await asientosDePedido(e.pedidoId)).find((a) => a.hecho === "13");
+    expect(asiento, "falta el asiento 13").toBeDefined();
+    expect(asiento?.origen).toBe("devolucion");
+    expect(asiento?.diferencia, "el asiento 13 no cuadró").toBe(0);
+    expect(asiento?.descripcion).toContain(e.numero);
+
+    // Subtotal: 3 × $50.00 = $150.00. Ya había pagado todo, así que lo que se
+    // le devuelve pasa a ser dinero suyo que está aquí (2101) y de ahí saldrá
+    // el día que se le reembolse. El costo deshace el camino del 3b.
+    expect(await lineas(asiento!.id)).toEqual([
+      { codigo: "1301", debe: 600, haber: 0 },
+      { codigo: "2101", debe: 0, haber: 15000 },
+      { codigo: "4901", debe: 15000, haber: 0 },
+      { codigo: "5101", debe: 0, haber: 600 },
+    ]);
+  });
+
+  it("si todavía debía, lo que se le devuelve se le quita de lo que debe (1201)", async () => {
+    // Se entrega SIN cobrar el saldo: la clienta queda debiendo. Entonces
+    // devolver no le pone dinero a favor — le baja la deuda.
+    const codigo = await variante(10);
+    await conCosto(codigo, 10, 2000);
+    const e = await enLaCalle({ cantidad: 2, codigo });
+    expect(
+      (await marcarEntregada(ctx(), {
+        idempotencia: id("idem"),
+        envioId: e.envioId,
+        motorizadoId: e.motorizado.id,
+      })).ok,
+    ).toBe(true);
+
+    const r = await devolverPedidoEntregado(ctx(), e.pedidoId, "no era lo que pidió");
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.cuentaReintegro).toBe("1201");
+
+    const asiento = (await asientosDePedido(e.pedidoId)).find((a) => a.hecho === "13");
+    const porCobrar = (await lineas(asiento!.id)).find((l) => l.codigo === "1201");
+    expect(porCobrar, "lo devuelto tiene que salir de lo que debe").toEqual({
+      codigo: "1201",
+      debe: 0,
+      haber: 10000,
+    });
+  });
+
+  it("a medio pagar no se devuelve sola: lo dice y no toca nada", async () => {
+    const codigo = await variante(10);
+    await conCosto(codigo, 10, 2000);
+    const e = await enLaCalle({ cantidad: 2, codigo });
+    expect(
+      (await marcarEntregada(ctx(), {
+        idempotencia: id("idem"),
+        envioId: e.envioId,
+        motorizadoId: e.motorizado.id,
+      })).ok,
+    ).toBe(true);
+
+    // Queda debiendo MENOS de lo que habría que devolverle: parte sale de lo
+    // que debe y parte es dinero suyo. El asiento 13 va contra una sola
+    // cuenta, así que el reparto lo tiene que decir la contadora.
+    await env.DB.prepare("UPDATE pedidos SET pagado_cents = 1000 WHERE id = ?")
+      .bind(e.pedidoId)
+      .run();
+
+    const antes = await existencias(e.codigo);
+    const r = await devolverPedidoEntregado(ctx(), e.pedidoId, "devolución parcial");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("entrada_invalida");
+    expect(r.mensaje).toMatch(/contadora/i);
+
+    // Y no escribió nada: ni la mercancía volvió ni el pedido se movió.
+    expect(await existencias(e.codigo)).toEqual(antes);
+    expect((await leerPedido(e.pedidoId))?.estado).toBe("entregado");
+    expect((await asientosDePedido(e.pedidoId)).map((a) => a.hecho)).not.toContain("13");
+  });
+
+  it("con descuento o ITBMS tampoco, y dice quién lo decide", async () => {
+    const e = await entregadoYPagado({ cantidad: 2, fisico: 10, valorCents: 2000 });
+    // El CHECK del pedido exige que el total cuadre con sus partes, así que el
+    // descuento se mete bajando el total — como lo haría un descuento de
+    // verdad. `pagado_cents` baja con él para no pasarse del total.
+    await env.DB.prepare(
+      "UPDATE pedidos SET descuento_cents = 100, total_cents = total_cents - 100, pagado_cents = pagado_cents - 100 WHERE id = ?",
+    )
+      .bind(e.pedidoId)
+      .run();
+
+    const r = await devolverPedidoEntregado(ctx(), e.pedidoId, "le quedó chica");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("entrada_invalida");
+    expect(r.mensaje).toMatch(/contadora/i);
+    expect((await leerPedido(e.pedidoId))?.estado).toBe("entregado");
+  });
+
+  it("la devolución y su asiento son todo o nada: si el mes está cerrado, la mercancía no se mueve", async () => {
+    // Es la prueba de que las dos cosas van en el MISMO batch. El mes cerrado
+    // es la forma más limpia de hacer que el asiento no se pueda escribir: lo
+    // rechaza un trigger de la base, no este código.
+    const codigo = await variante(10);
+    await conCosto(codigo, 10, 2000);
+    const e = await enLaCalle({ cantidad: 2, codigo, pagar: "todo" });
+    const entrega = Date.UTC(2024, 5, 10, 15, 0, 0); // junio de 2024, abierto
+    const devolucion = Date.UTC(2024, 6, 10, 15, 0, 0); // julio de 2024, cerrado
+
+    expect(
+      (await marcarEntregada(
+        { db: env.DB, ahora: entrega, actor: "yarielis@babycaleb.com" },
+        { idempotencia: id("idem"), envioId: e.envioId, motorizadoId: e.motorizado.id },
+      )).ok,
+    ).toBe(true);
+
+    await env.DB.prepare(
+      "INSERT INTO periodos (mes,estado,cerrado_por,cerrado_en) VALUES ('2024-07','cerrado',?,?)",
+    )
+      .bind("duena@babycaleb.com", ahora())
+      .run();
+
+    const antes = await existencias(e.codigo);
+    const valorAntes = await valorDe(e.codigo);
+
+    const r = await devolverPedidoEntregado(
+      { db: env.DB, ahora: devolucion, actor: "duena@babycaleb.com" },
+      e.pedidoId,
+      "la clienta la devolvió",
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("periodo_cerrado");
+
+    // Lo que importa: la mercancía NO volvió. Si la entrada de inventario y el
+    // asiento fueran dos escrituras, aquí habría stock que ningún libro
+    // explica, y eso no se descubre hasta el cierre del mes siguiente.
+    expect(await existencias(e.codigo)).toEqual(antes);
+    expect(await valorDe(e.codigo)).toEqual(valorAntes);
+    expect((await leerPedido(e.pedidoId))?.estado).toBe("entregado");
+    expect(await movimientosDe(e.pedidoId)).toHaveLength(0);
+  });
+
+  it("si el promedio del artículo desapareció por debajo, el control tumba la devolución", async () => {
+    // El costo que vuelve tiene que caber en algún sitio. Sin la fila del
+    // promedio, el UPDATE no casa con nada y NO FALLA: el costo se perdería en
+    // silencio y 1301 diría una cosa y el inventario otra. Lo caza el control,
+    // que cuenta la fila con los valores que esta devolución esperaba dejar.
+    const e = await entregadoYPagado({ cantidad: 2, fisico: 10, valorCents: 2000 });
+    await env.DB.prepare("DELETE FROM valor_inventario WHERE codigo = ?").bind(e.codigo).run();
+
+    const antes = await existencias(e.codigo);
+    const r = await devolverPedidoEntregado(ctx(), e.pedidoId, "le quedó chica");
+    expect(r.ok, "una devolución que pierde el costo no se puede dar por buena").toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("conflicto_version");
+
+    expect(await existencias(e.codigo)).toEqual(antes);
+    expect((await leerPedido(e.pedidoId))?.estado).toBe("entregado");
+  });
+
+  it("no se devuelve dos veces", async () => {
+    const e = await entregadoYPagado({ cantidad: 2, fisico: 10, valorCents: 2000 });
+    expect((await devolverPedidoEntregado(ctx(), e.pedidoId, "le quedó chica")).ok).toBe(true);
+    const despues = await existencias(e.codigo);
+
+    const otra = await devolverPedidoEntregado(ctx(), e.pedidoId, "otra vez");
+    expect(otra.ok).toBe(false);
+    if (!otra.ok) expect(otra.codigo).toBe("transicion_invalida");
+    expect(await existencias(e.codigo)).toEqual(despues);
+    expect(
+      (await asientosDePedido(e.pedidoId)).filter((a) => a.hecho === "13"),
+      "dos asientos 13 cuadran cada uno por su lado: nada los delataría",
+    ).toHaveLength(1);
+  });
+
+  it("sin motivo no se devuelve: mañana nadie sabría por qué volvió", async () => {
+    const e = await entregadoYPagado({ cantidad: 1, fisico: 10, valorCents: 2000 });
+    const r = await devolverPedidoEntregado(ctx(), e.pedidoId, "   ");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.codigo).toBe("entrada_invalida");
+  });
+
+  it("un pedido que no se entregó no se devuelve por aquí", async () => {
+    const e = await enLaCalle({ cantidad: 1, fisico: 10 });
+    const r = await devolverPedidoEntregado(ctx(), e.pedidoId, "no la quiso");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.codigo).toBe("transicion_invalida");
+      // Y manda al sitio correcto en vez de dejar a quien lo lea buscando.
+      expect(r.mensaje).toMatch(/ruta del día/i);
+    }
+  });
+
+  it("una devolución sin asiento bloquea el cierre del mes", async () => {
+    // La casilla defiende lo que `devolverPedidoEntregado` ya no puede
+    // provocar: un pedido movido a mano, o una devolución de antes de que el
+    // sistema llevara libros. Por eso el escenario se arma con UPDATE, que es
+    // la única forma en que ese estado puede existir hoy.
+    const casillaDe = async (mes: string) => {
+      const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, mes);
+      if (!r.ok) throw new Error(`no se pudo revisar ${mes}: ${r.mensaje}`);
+      const c = r.datos.casillas.find((x) => x.clave === "devolucion_sin_asiento");
+      if (c === undefined) throw new Error("no existe la casilla devolucion_sin_asiento");
+      return c;
+    };
+
+    const T = Date.UTC(2025, 7, 18, 15, 0, 0); // agosto de 2025, mes propio
+    expect((await casillaDe("2025-08")).estado).toBe("ok");
+
+    const e = await entregadoYPagado({ cantidad: 1, fisico: 10, valorCents: 2000 });
+    await env.DB.batch([
+      env.DB.prepare("UPDATE pedidos SET estado = 'devuelto' WHERE id = ?").bind(e.pedidoId),
+      env.DB.prepare(
+        `INSERT INTO pedido_eventos (id,pedido_id,tipo,de,a,actor,creado_en)
+         VALUES (?,?,'transicion','entregado','devuelto','a mano',?)`,
+      ).bind(ulid(T), e.pedidoId, T),
+    ]);
+
+    const c = await casillaDe("2025-08");
+    expect(c.estado).toBe("falta");
+    expect(c.detalle).toContain("1 pedidos");
+    const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, "2025-08");
     expect(r.ok && r.datos.sePuedeCerrar).toBe(false);
   });
 });

@@ -2,7 +2,15 @@ import { ulid } from "../ids";
 import { fallo, ok, type Resultado } from "../contrato/resultado";
 import { enunciadosDeCobro, enunciadosDeTransicion } from "./transiciones";
 import { puedeAgendar } from "../dominio/abonos";
-import { abonoAntesDeEntregar, cobroDelSaldo, fechaContable } from "../dominio/contabilidad";
+import {
+  abonoAntesDeEntregar,
+  cobroDelSaldo,
+  contracargo,
+  fechaContable,
+  reembolso,
+} from "../dominio/contabilidad";
+import { type EstadoPago, puedeCambiarPago } from "../dominio/estado-pedido";
+import { formatear } from "../dominio/dinero";
 import { enunciadosDeAsiento } from "./contabilidad";
 
 /**
@@ -81,6 +89,8 @@ interface FilaPedido {
   /** Para el detalle del asiento: un apunte que no nombra el pedido no sirve. */
   numero: string;
   estado: string;
+  /** El de ahora: desde `sin_pago` no se puede pasar a `reembolsado`. */
+  estado_pago: string;
   total_cents: number;
   pagado_cents: number;
   abono_minimo_cents: number;
@@ -91,7 +101,7 @@ interface FilaPedido {
 const leerPedido = (db: D1Database, id: string) =>
   db
     .prepare(
-      `SELECT id, numero, estado, total_cents, pagado_cents, abono_minimo_cents,
+      `SELECT id, numero, estado, estado_pago, total_cents, pagado_cents, abono_minimo_cents,
               requiere_pago_total, version
          FROM pedidos WHERE id = ?`,
     )
@@ -430,6 +440,442 @@ export async function rechazarPago(
   }
 
   return ok({ rechazado: true });
+}
+
+// ---------------------------------------------------------------------------
+// El dinero que vuelve: reembolsos y contracargos (04-pagos §7)
+// ---------------------------------------------------------------------------
+
+/**
+ * De qué cuenta del plan sale el dinero de un pago que vuelve.
+ *
+ * El dinero se devuelve por donde entró, y por eso la cuenta se deriva del
+ * pago y no se recibe como parámetro: dejar elegir la cuenta desde fuera es
+ * dejar que un reembolso de una tarjeta salga de la caja de efectivo, y
+ * entonces las dos cuentas mienten a la vez.
+ *
+ * Las de pasarela son las de «por liquidar» (1105 y 1106) porque ahí es donde
+ * está ese dinero mientras la pasarela no lo deposita; Yappy acredita directo
+ * en la cuenta de Banco General, que es 1101.
+ */
+const CUENTA_DEL_PROVEEDOR: Record<string, string> = {
+  yappy: "1101",
+  tilopay: "1105",
+  paypal: "1106",
+};
+
+const cuentaDelPago = (pago: { proveedor: string; metodo: string }): string | null =>
+  pago.proveedor === "manual"
+    ? esMetodoManual(pago.metodo)
+      ? CUENTA_DEL_METODO[pago.metodo]
+      : null
+    : (CUENTA_DEL_PROVEEDOR[pago.proveedor] ?? null);
+
+interface FilaPago {
+  id: string;
+  pedido_id: string;
+  proveedor: string;
+  metodo: string;
+  estado: string;
+  monto_cents: number;
+}
+
+const leerPago = (db: D1Database, pagoId: string) =>
+  db
+    .prepare("SELECT id, pedido_id, proveedor, metodo, estado, monto_cents FROM pagos WHERE id = ?")
+    .bind(pagoId)
+    .first<FilaPago>();
+
+/**
+ * Lo que ya volvió de un pago.
+ *
+ * Sale de `reembolsos`, que es el libro de lo que ha salido de un pago — un
+ * contracargo también deja su fila ahí, aunque no sea un reembolso, porque el
+ * tope «no puede volver más de lo que entró» necesita UNA fuente. Con dos, la
+ * segunda acaba discrepando de la primera y el tope deja de ser un tope.
+ * Cuál es cuál se sabe por su asiento (hecho 14 o 15) y por su evento.
+ */
+async function yaVolvioDe(db: D1Database, pagoId: string): Promise<number> {
+  const r = await db
+    .prepare(
+      "SELECT COALESCE(SUM(monto_cents),0) AS n FROM reembolsos WHERE pago_id = ? AND estado = 'hecho'",
+    )
+    .bind(pagoId)
+    .first<{ n: number }>();
+  return r?.n ?? 0;
+}
+
+/** Todo lo que hace falta saber para sacar dinero de un pago, ya comprobado. */
+export interface DineroQueSale {
+  readonly pagoId: string;
+  readonly pedidoId: string;
+  readonly montoCents: number;
+  readonly motivo: string;
+  readonly via: "pasarela" | "manual";
+  /** La referencia de la pasarela o del comprobante, si la hay. */
+  readonly proveedorRef: string | null;
+  /** El estado que tenía el pago al leerlo: el WHERE del UPDATE lo exige. */
+  readonly estadoDelPagoLeido: string;
+  readonly estadoDelPagoNuevo: "reembolsado" | "reembolso_parcial";
+  /**
+   * La `version` del pedido que se leyó para calcular `pagadoDespuesCents`.
+   * Es lo que cierra la actualización perdida, igual que en `enunciadosDeCobro`:
+   * si otro cobro o otro reembolso escribió en medio, el control no cuadra y
+   * el batch entero se cae en vez de pisarlo.
+   */
+  readonly versionLeida: number;
+  readonly pagadoDespuesCents: number;
+  readonly estadoDePagoDelPedido: "reembolsado" | "reembolso_parcial";
+  /** Qué fue: lo que se lee en la bitácora del pedido. */
+  readonly evento: "reembolso" | "contracargo";
+}
+
+/**
+ * Los enunciados de un reembolso o de un contracargo, sin el asiento.
+ *
+ * Se devuelven en vez de ejecutarse para que el asiento entre en el MISMO
+ * batch, y para poder probar lo único que estos enunciados protegen: que dos
+ * salidas de dinero a la vez no se pisen.
+ *
+ * Los dos controles miran lo que ESTE batch escribió:
+ *
+ *  · el del pago, su estado nuevo Y la hora exacta — «¿está reembolsado?» es
+ *    verdad tanto si lo hizo este batch como si lo hizo el de al lado;
+ *  · el del pedido, la versión siguiente, el monto exacto y el estado de pago.
+ */
+export function enunciadosDeDineroQueSale(
+  ctx: ContextoPago,
+  e: DineroQueSale,
+): D1PreparedStatement[] {
+  return [
+    ctx.db
+      .prepare(
+        `INSERT INTO reembolsos (id,pago_id,monto_cents,motivo,via,proveedor_ref,estado,actor,creado_en)
+         VALUES (?,?,?,?,?,?,'hecho',?,?)`,
+      )
+      .bind(
+        ulid(ctx.ahora),
+        e.pagoId,
+        e.montoCents,
+        e.motivo.trim(),
+        e.via,
+        e.proveedorRef,
+        ctx.actor,
+        ctx.ahora,
+      ),
+    ctx.db
+      .prepare(
+        "UPDATE pagos SET estado = ?, actualizado_en = ? WHERE id = ? AND estado = ?",
+      )
+      .bind(e.estadoDelPagoNuevo, ctx.ahora, e.pagoId, e.estadoDelPagoLeido),
+    ctx.db
+      .prepare(
+        `INSERT INTO controles (id, regla, ok, creado_en)
+         VALUES (?, ?, (SELECT COUNT(*) FROM pagos
+                        WHERE id = ? AND estado = ? AND actualizado_en = ?), ?)`,
+      )
+      .bind(
+        ulid(ctx.ahora),
+        `vuelve:${e.evento}`,
+        e.pagoId,
+        e.estadoDelPagoNuevo,
+        ctx.ahora,
+        ctx.ahora,
+      ),
+    ctx.db
+      .prepare(
+        `UPDATE pedidos SET pagado_cents = ?, estado_pago = ?, actualizado_en = ?, version = version + 1
+          WHERE id = ? AND version = ?`,
+      )
+      .bind(
+        e.pagadoDespuesCents,
+        e.estadoDePagoDelPedido,
+        ctx.ahora,
+        e.pedidoId,
+        e.versionLeida,
+      ),
+    ctx.db
+      .prepare(
+        `INSERT INTO controles (id, regla, ok, creado_en)
+         VALUES (?, ?, (SELECT COUNT(*) FROM pedidos
+                        WHERE id = ? AND version = ? AND pagado_cents = ? AND estado_pago = ?), ?)`,
+      )
+      .bind(
+        ulid(ctx.ahora),
+        `vuelve:pedido:${e.evento}`,
+        e.pedidoId,
+        e.versionLeida + 1,
+        e.pagadoDespuesCents,
+        e.estadoDePagoDelPedido,
+        ctx.ahora,
+      ),
+    ctx.db
+      .prepare(
+        `INSERT INTO pedido_eventos (id,pedido_id,tipo,actor,datos_json,creado_en)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .bind(
+        ulid(ctx.ahora),
+        e.pedidoId,
+        e.evento,
+        ctx.actor,
+        JSON.stringify({
+          pagoId: e.pagoId,
+          montoCents: e.montoCents,
+          motivo: e.motivo.trim(),
+          via: e.via,
+        }),
+        ctx.ahora,
+      ),
+  ];
+}
+
+/** Lo leído y comprobado antes de sacar dinero de un pago. */
+interface Preparada {
+  readonly pago: FilaPago;
+  readonly pedido: FilaPedido;
+  readonly cuenta: string;
+  readonly salida: DineroQueSale;
+}
+
+/**
+ * Las comprobaciones que un reembolso y un contracargo tienen iguales.
+ *
+ * Son las mismas porque el hecho es el mismo —dinero de un pago que vuelve— y
+ * lo único que cambia es quién lo decidió: la dueña o la pasarela. Lo que
+ * cambia de verdad es el asiento, y eso lo pone cada quien.
+ */
+async function prepararLaSalida(
+  ctx: ContextoPago,
+  e: DineroQueVuelve,
+  evento: "reembolso" | "contracargo",
+): Promise<Resultado<Preparada>> {
+  if (!Number.isSafeInteger(e.montoCents) || e.montoCents <= 0) {
+    return fallo("entrada_invalida", "el monto tiene que ser un entero positivo en centavos");
+  }
+  if (e.motivo.trim() === "") {
+    return fallo(
+      "entrada_invalida",
+      `un ${evento} sin motivo no se puede revisar después: diga por qué volvió el dinero`,
+    );
+  }
+
+  const pago = await leerPago(ctx.db, e.pagoId);
+  if (pago === null) return fallo("no_encontrado", "no existe ese pago");
+  if (pago.estado !== "aprobado" && pago.estado !== "reembolso_parcial") {
+    return fallo(
+      "transicion_invalida",
+      `ese pago está ${pago.estado}: solo vuelve el dinero de un pago aprobado`,
+    );
+  }
+
+  const volvio = await yaVolvioDe(ctx.db, e.pagoId);
+  if (volvio + e.montoCents > pago.monto_cents) {
+    return fallo(
+      "monto_no_coincide",
+      `de ese pago de ${formatear(pago.monto_cents)} ya volvieron ${formatear(volvio)}: no pueden volver ${formatear(e.montoCents)} más`,
+    );
+  }
+
+  const p = await leerPedido(ctx.db, pago.pedido_id);
+  if (p === null) return fallo("no_encontrado", "no existe el pedido de ese pago");
+  if (p.pagado_cents < e.montoCents) {
+    // El CHECK `pagado_cents >= 0` también lo pararía, pero diciendo
+    // «constraint». Esto nombra su causa: el pedido no tiene ese dinero.
+    return fallo(
+      "monto_no_coincide",
+      `el pedido ${p.numero} solo tiene ${formatear(p.pagado_cents)} cobrados: no pueden volver ${formatear(e.montoCents)}`,
+    );
+  }
+
+  const cuenta = cuentaDelPago(pago);
+  if (cuenta === null) {
+    // Sin cuenta no hay asiento, y un reembolso sin asiento es dinero que sale
+    // y los libros no explican. Se para y se dice: el método se arregla y se
+    // vuelve a intentar, que es mejor que registrar la salida a medias.
+    return fallo(
+      "entrada_invalida",
+      `no se sabe de qué cuenta salió ese dinero: el método «${pago.metodo}» no tiene cuenta en el plan`,
+    );
+  }
+
+  const pagadoDespues = p.pagado_cents - e.montoCents;
+  const estadoDePagoDelPedido = pagadoDespues === 0 ? "reembolsado" : "reembolso_parcial";
+  if (!puedeCambiarPago(p.estado_pago as EstadoPago, estadoDePagoDelPedido)) {
+    return fallo(
+      "transicion_invalida",
+      `el pedido ${p.numero} está «${p.estado_pago}» y desde ahí no se puede pasar a «${estadoDePagoDelPedido}»`,
+    );
+  }
+
+  return ok({
+    pago,
+    pedido: p,
+    cuenta,
+    salida: {
+      pagoId: pago.id,
+      pedidoId: p.id,
+      montoCents: e.montoCents,
+      motivo: e.motivo,
+      // El dinero vuelve por donde vino: eso es lo que hace que la cuenta de
+      // arriba sea la correcta, así que la vía sale del mismo sitio.
+      via: pago.proveedor === "manual" ? "manual" : "pasarela",
+      proveedorRef: e.proveedorRef ?? null,
+      estadoDelPagoLeido: pago.estado,
+      estadoDelPagoNuevo:
+        volvio + e.montoCents === pago.monto_cents ? "reembolsado" : "reembolso_parcial",
+      versionLeida: p.version,
+      pagadoDespuesCents: pagadoDespues,
+      estadoDePagoDelPedido,
+      evento,
+    },
+  });
+}
+
+/** Lo que se traduce de un batch que se cayó sacando dinero. */
+function comoSeLeeLaSalida(err: unknown, que: string): Resultado<never> {
+  const texto = err instanceof Error ? err.message : String(err);
+  if (/periodo_cerrado/.test(texto)) {
+    return fallo(
+      "periodo_cerrado",
+      `el mes de ese ${que} ya está cerrado: para registrarlo hay que reabrir ese mes, y reabrir pide motivo`,
+    );
+  }
+  return /CHECK|controles|UNIQUE|constraint|ABORT|abort/i.test(texto)
+    ? fallo("conflicto_version", `algo cambió mientras se registraba el ${que}; vuelva a intentarlo`)
+    : fallo("interno", texto);
+}
+
+export interface DineroQueVuelve {
+  readonly pagoId: string;
+  readonly montoCents: number;
+  readonly motivo: string;
+  /** La referencia de la pasarela, o la del comprobante del Yappy de vuelta. */
+  readonly proveedorRef?: string;
+}
+
+export interface Devuelto {
+  readonly pagoId: string;
+  readonly montoCents: number;
+  /** Lo que le queda cobrado al pedido después de esto. */
+  readonly pagadoCents: number;
+  readonly estadoDelPago: "reembolsado" | "reembolso_parcial";
+}
+
+/**
+ * Asiento 14 · «Reembolso». Se le devuelve dinero a una clienta.
+ *
+ * Registra un reembolso **que ya se hizo**: la transferencia de vuelta por
+ * Yappy, el efectivo entregado, o la devolución hecha desde el portal de la
+ * pasarela. El sistema no mueve dinero solo —no tiene con qué— y por eso esto
+ * no «ordena» un reembolso: anota el que ocurrió, con su asiento, en un batch.
+ *
+ * **Contra qué cuenta se carga, y por qué no es siempre la misma:**
+ *
+ *  · el pedido todavía NO se entregó (o se canceló, o se devolvió): lo que se
+ *    le devuelve es dinero suyo que estaba aquí, así que sale de 2101
+ *    Anticipos. En el caso de un pedido ya devuelto es justo lo que dejó el
+ *    asiento 13: 2101 quedó con lo que se le debe, y esto lo descarga;
+ *  · el pedido está ENTREGADO y se le devuelve dinero igual (un detalle, una
+ *    queja): ahí la venta sí se reconoció, así que hay que deshacerla, y eso
+ *    va contra 4901 Devoluciones y descuentos, que resta de las ventas.
+ *
+ * Cargarlo siempre a 4901 restaría de las ventas un dinero que nunca fue
+ * venta; cargarlo siempre a 2101 dejaría la venta entera en pie después de
+ * devolverla.
+ */
+export async function registrarReembolso(
+  ctx: ContextoPago,
+  e: DineroQueVuelve,
+): Promise<Resultado<Devuelto>> {
+  const preparada = await prepararLaSalida(ctx, e, "reembolso");
+  if (!preparada.ok) return preparada;
+  const { pago, pedido, cuenta, salida } = preparada.datos;
+
+  const asiento = reembolso({
+    fecha: fechaContable(ctx.ahora),
+    // Al PAGO y no al pedido: un pedido tiene varios pagos y cada uno lleva lo
+    // suyo, así que una referencia al pedido no permite preguntar si ESTE pago
+    // ya está devuelto en los libros.
+    referencia: { tipo: "pago", id: pago.id },
+    cuentaContra: pedido.estado === "entregado" ? "4901" : "2101",
+    cuentaOrigen: cuenta,
+    montoCents: e.montoCents,
+    detalle: `Pedido ${pedido.numero}`,
+  });
+  if (!asiento.ok) return asiento;
+
+  try {
+    await ctx.db.batch([
+      ...enunciadosDeDineroQueSale(ctx, salida),
+      ...enunciadosDeAsiento(ctx, asiento.datos).enunciados,
+    ]);
+  } catch (err) {
+    return comoSeLeeLaSalida(err, "reembolso");
+  }
+
+  return ok({
+    pagoId: pago.id,
+    montoCents: e.montoCents,
+    pagadoCents: salida.pagadoDespuesCents,
+    estadoDelPago: salida.estadoDelPagoNuevo,
+  });
+}
+
+/**
+ * Asiento 15 · «Contracargo». La pasarela revierte un cobro.
+ *
+ * No lo decide nadie de aquí: lo decide el banco de la clienta o la pasarela, y
+ * cuando llega, el dinero YA no está. Por eso se registra aunque la disputa
+ * siga abierta: esperar al final de la disputa deja el saldo de la cuenta sin
+ * cuadrar mientras tanto, y eso se descubre en la conciliación con un mes de
+ * retraso.
+ *
+ * Va contra 4901 —la venta se deshace— y no contra 2101: un contracargo se lo
+ * llevan de un cobro que ya entró, no de un anticipo que teníamos guardado.
+ * Eso lo decide el asiento 15 del plan, no este código.
+ *
+ * El pago queda marcado como el dinero que volvió (04-pagos §7). La columna
+ * `pagos.estado` no tiene un valor «contracargo» y no se le inventa uno: lo
+ * que esa columna dice es cuánto dinero de ese pago sigue aquí, y eso es lo
+ * mismo en los dos casos. Qué fue lo dicen el asiento (hecho 15, origen
+ * `contracargo`) y la bitácora del pedido.
+ */
+export async function registrarContracargo(
+  ctx: ContextoPago,
+  e: DineroQueVuelve,
+): Promise<Resultado<Devuelto>> {
+  const preparada = await prepararLaSalida(ctx, e, "contracargo");
+  if (!preparada.ok) return preparada;
+  const { pago, pedido, cuenta, salida } = preparada.datos;
+
+  // El constructor es la puerta: solo acepta las cuentas por las que una
+  // pasarela o el banco pueden llevarse dinero de vuelta. Un contracargo de un
+  // pago en efectivo no existe, y ahí es donde se dice.
+  const asiento = contracargo({
+    fecha: fechaContable(ctx.ahora),
+    referencia: { tipo: "pago", id: pago.id },
+    cuentaOrigen: cuenta,
+    montoCents: e.montoCents,
+    detalle: `Pedido ${pedido.numero}`,
+  });
+  if (!asiento.ok) return asiento;
+
+  try {
+    await ctx.db.batch([
+      ...enunciadosDeDineroQueSale(ctx, salida),
+      ...enunciadosDeAsiento(ctx, asiento.datos).enunciados,
+    ]);
+  } catch (err) {
+    return comoSeLeeLaSalida(err, "contracargo");
+  }
+
+  return ok({
+    pagoId: pago.id,
+    montoCents: e.montoCents,
+    pagadoCents: salida.pagadoDespuesCents,
+    estadoDelPago: salida.estadoDelPagoNuevo,
+  });
 }
 
 // ---------------------------------------------------------------------------
