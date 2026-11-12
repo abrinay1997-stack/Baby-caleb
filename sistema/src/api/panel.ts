@@ -182,11 +182,37 @@ export function crearPanel(
 ) {
   const panel = new Hono<Entorno>();
 
+  /**
+   * Cada respuesta dice cuánto tardó, y en qué.
+   *
+   * Nace de una queja medida: el panel tardó 30 segundos en abrir —8.8 en
+   * saber quién entraba y 22.6 en el Resumen— y un rato después las mismas
+   * consultas iban por debajo del segundo. Sin esto, «va lento» es todo lo que
+   * se puede decir, y la respuesta honesta a «¿por qué?» era «no lo sé».
+   *
+   * `Server-Timing` lo contesta en la pestaña de red del navegador, sin
+   * herramientas ni permisos: `puerta` es lo que costó comprobar quién entra
+   * (el JWT de Access, y la primera vez también bajar sus llaves) y `ruta` lo
+   * que costó la consulta en sí. Si un día son 20 segundos, el siguiente que
+   * lo mire va a ver cuál de los dos, en vez de adivinar como adiviné yo.
+   *
+   * No lleva ningún dato del negocio: dos números en milisegundos.
+   */
   panel.use("*", async (c, next) => {
+    const arranque = Date.now();
     const quien = await resolver(c.req.raw, c.env);
-    if (!quien.ok) return c.json(fallo("no_autorizado", quien.motivo), 403);
+    const puerta = Date.now() - arranque;
+    if (!quien.ok) {
+      c.header("Server-Timing", `puerta;dur=${puerta}`);
+      return c.json(fallo("no_autorizado", quien.motivo), 403);
+    }
     c.set("usuario", quien.usuario);
+    const antesDeLaRuta = Date.now();
     await next();
+    c.header(
+      "Server-Timing",
+      `puerta;dur=${puerta}, ruta;dur=${Date.now() - antesDeLaRuta}`,
+    );
     return;
   });
 
