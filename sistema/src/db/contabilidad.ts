@@ -1319,8 +1319,32 @@ export async function cerrarMes(
   try {
     await ctx.db
       .prepare(
+        // `ON CONFLICT` y no un INSERT pelado, porque un mes REABIERTO ya tiene
+        // su fila: `reabrirMes` hace UPDATE y deja `mes` ocupado, y `mes` es la
+        // llave primaria. Sin esto, el segundo cierre choca con la llave, el
+        // `catch` de abajo lo traduce a «ya estaba cerrado» —que es falso, está
+        // abierto— y el mes se queda abierto PARA SIEMPRE, sin el trigger
+        // `asientos_periodo_cerrado` protegiéndolo y sin forma de volver a
+        // cerrarlo por ninguna puerta.
+        //
+        // Es trampa §10 además de un callejón: el mensaje nombra una causa que
+        // no es la de verdad, así que quien lo lea va a buscar el fallo donde
+        // no está.
+        //
+        // El `reabierto_motivo = NULL` no es cosmético: el CHECK de la tabla
+        // exige la equivalencia «abierto ⟺ tiene motivo», así que cerrar sin
+        // limpiarlo lo rechazaría la base. Y la condición del WHERE deja que la
+        // llave siga defendiendo lo que defendía: dos personas cerrando el
+        // mismo mes a la vez, donde la segunda no cambia nada y sale por el
+        // camino de «repetido» de abajo.
         `INSERT INTO periodos (mes, estado, cerrado_por, cerrado_en, reabierto_motivo)
-         VALUES (?,'cerrado',?,?,NULL)`,
+         VALUES (?,'cerrado',?,?,NULL)
+         ON CONFLICT(mes) DO UPDATE SET
+           estado = 'cerrado',
+           cerrado_por = excluded.cerrado_por,
+           cerrado_en = excluded.cerrado_en,
+           reabierto_motivo = NULL
+         WHERE periodos.estado = 'abierto'`,
       )
       .bind(mes, ctx.actor, ctx.ahora)
       .run();

@@ -1221,6 +1221,48 @@ describe("cierre de mes", () => {
     if (!otra.ok) expect(otra.codigo).toBe("repetido");
   });
 
+  it("un mes reabierto se puede VOLVER a cerrar", async () => {
+    // El callejón sin salida que esto fija: `cerrarMes` era un INSERT pelado y
+    // `mes` es la llave primaria, pero `reabrirMes` hace UPDATE y deja la fila
+    // puesta. Así que el segundo cierre chocaba con la llave y el `catch` lo
+    // traducía a «ya estaba cerrado» — mentira, estaba ABIERTO. El mes se
+    // quedaba abierto para siempre, sin el trigger que lo protege, y la
+    // contadora no podía cerrarlo por ninguna puerta.
+    //
+    // Nadie lo había visto porque la prueba de reabrir reabre y nunca vuelve a
+    // cerrar: el camino roto era el paso siguiente al último que se probaba.
+    const v = ventanaPasada();
+    debeSerOk(await registrarAsiento(ctx(), debeSerOk(unAsiento(v.fecha, 1000))));
+    debeSerOk(await cerrarMes(ctx(), v.mes));
+    debeSerOk(await reabrirMes(ctx(), v.mes, "faltaba una factura del proveedor"));
+
+    // Y aquí es donde se quedaba trabado.
+    debeSerOk(await cerrarMes(ctx(), v.mes));
+
+    const fila = await env.DB.prepare(
+      "SELECT estado, reabierto_motivo FROM periodos WHERE mes = ?",
+    )
+      .bind(v.mes)
+      .first<{ estado: string; reabierto_motivo: string | null }>();
+    expect(fila?.estado).toBe("cerrado");
+    // El motivo de la reapertura se limpia al cerrar: el CHECK de la tabla
+    // exige la equivalencia «abierto ⟺ tiene motivo», y un motivo viejo en un
+    // mes cerrado haría creer que sigue reabierto.
+    expect(fila?.reabierto_motivo).toBeNull();
+
+    // Y el trigger vuelve a defender el mes: un asiento de ese periodo ya no
+    // entra. Sin esta comprobación, el cierre podría quedar en la fila y no en
+    // el comportamiento, que es lo único que importa.
+    const tardio = await registrarAsiento(ctx(), debeSerOk(unAsiento(v.fecha, 500)));
+    expect(tardio.ok).toBe(false);
+
+    // Cerrar un mes que YA está cerrado sigue contestando «repetido»: eso no
+    // se perdió al arreglar lo otro.
+    const otraVez = await cerrarMes(ctx(), v.mes);
+    expect(otraVez.ok).toBe(false);
+    if (!otraVez.ok) expect(otraVez.codigo).toBe("repetido");
+  });
+
   it("reabrir pide motivo y queda registrado", async () => {
     const v = ventanaPasada();
     debeSerOk(await registrarAsiento(ctx(), debeSerOk(unAsiento(v.fecha, 1000))));
