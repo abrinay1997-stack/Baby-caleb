@@ -53,14 +53,82 @@ export function Cargando({ que }: { que: string }) {
   );
 }
 
-/** Cuando algo falló. El mensaje ya viene en español desde `api.ts`. */
-export function Fallo({ mensaje }: { mensaje: string }) {
+/**
+ * Lo que de verdad pasó cuando el servidor contesta «no encontrado».
+ *
+ * `api.ts` traduce ese código a «Eso ya no está aquí. Quizá se borró desde
+ * otra pantalla», que es cierto cuando se abre una ficha que alguien acaba de
+ * borrar — y es mentira en el caso que más se da: una pantalla que pide una
+ * ruta que no existe. Entonces no se borró nada, no hay nadie a quien culpar,
+ * y mandar a la dueña a buscar quién borró su producto es mandarla al sitio
+ * equivocado (docs/TRAMPAS.md §10: un error mal etiquetado manda a buscar
+ * donde no es).
+ *
+ * El texto bueno es el de `Frontera.tsx`: dice que no es culpa suya y da por
+ * dónde salir. `api.ts` no se toca desde aquí —lo usan las trece pantallas—,
+ * así que la corrección vive donde se pinta.
+ */
+export function explicacionDeFallo(codigo: string | undefined): {
+  titulo: string;
+  detalle: string;
+} {
+  if (codigo === "no_encontrado") {
+    return {
+      titulo: "Esto no se pudo cargar",
+      detalle:
+        "No es nada que usted hiciera mal. O le falta una pieza al sistema, o eso ya no está. Vuelva a intentarlo; si sigue igual, avísele a Juan con el detalle de abajo.",
+    };
+  }
+  return { titulo: "No se pudo cargar", detalle: "" };
+}
+
+/**
+ * Cuando algo falló. El mensaje ya viene en español desde `api.ts`.
+ *
+ * Lleva las tres cosas que ya tenía la frontera de errores y aquí faltaban:
+ * decir que no es culpa de quien lo ve, un botón para volver a intentarlo
+ * —sin esto, lo único que quedaba era recargar la página a mano, y en un
+ * teléfono eso no es obvio— y el detalle del servidor al final, que es lo que
+ * le sirve a quien repara. `api.ts` lo trae en `detalle` desde siempre y esta
+ * tarjeta lo tiraba.
+ */
+export function Fallo({
+  mensaje,
+  codigo,
+  detalle,
+}: {
+  mensaje: string;
+  codigo?: string;
+  detalle?: string;
+}) {
+  const explicacion = explicacionDeFallo(codigo);
   return (
     <Tarjeta className="border-accent-edge">
       <p role="alert" className="m-0 font-bold">
-        No se pudo cargar
+        {explicacion.titulo}
       </p>
-      <p className="m-0 mt-1 text-muted">{mensaje}</p>
+      <p className="m-0 mt-1 text-muted">
+        {explicacion.detalle === "" ? mensaje : explicacion.detalle}
+      </p>
+      <p className="m-0 mt-3">
+        {/* Recarga la página entera a propósito: `useCarga` pide al montarse,
+            así que volver a montar la pantalla es lo que repite la consulta —y
+            de paso vuelve a traer todo lo demás que se hubiera quedado a
+            medias. Es lo mismo que haría la dueña, pero encontrable. */}
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="tactil rounded-lg bg-accent px-4 font-bold text-accent-fg"
+        >
+          Volver a intentar
+        </button>
+      </p>
+      {codigo === undefined && detalle === undefined ? null : (
+        <p className="m-0 mt-4 text-[12px] text-muted">
+          Detalle para soporte: {codigo ?? "sin código"}
+          {detalle === undefined ? "" : ` — ${detalle}`}
+        </p>
+      )}
     </Tarjeta>
   );
 }
@@ -91,7 +159,17 @@ export function Carga<T>({
   children: (datos: T) => ReactNode;
 }) {
   if (estado.fase === "cargando") return <Cargando que={que} />;
-  if (estado.fase === "error") return <Fallo mensaje={estado.mensaje} />;
+  // El código y el detalle del servidor viajan hasta la tarjeta: `api.ts` los
+  // trae y antes se quedaban aquí, así que quien reparaba tenía el mensaje
+  // bonito y nada más.
+  if (estado.fase === "error")
+    return (
+      <Fallo
+        mensaje={estado.mensaje}
+        {...(estado.codigo === undefined ? {} : { codigo: estado.codigo })}
+        {...(estado.detalle === undefined ? {} : { detalle: estado.detalle })}
+      />
+    );
   return <>{children(estado.datos)}</>;
 }
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { dinero, fecha as comoFecha, useCarga } from "../api";
 import { Carga, Cifra, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
 import {
@@ -285,6 +286,41 @@ export function pendientesDe(a: Atencion, avisosSinPublicar: number): Pendiente[
 export function conteo(cuantos: number, que: string): string {
   const [singular, plural] = que.split("|");
   return `${cuantos} ${cuantos === 1 ? singular : (plural ?? singular)}`;
+}
+
+/**
+ * A dónde lleva cada fila de «hay que atender», y con qué filtro puesto.
+ *
+ * La pantalla decía «3 comprobantes esperándola» y ahí se acababa: ochocientas
+ * líneas sin un solo enlace. La dueña leía el número, se iba al menú, buscaba
+ * la pestaña y volvía a filtrar a mano lo que esta tarjeta ya sabía. El
+ * destino es el sitio donde se HACE lo que la fila pide, con la lista ya
+ * acotada: `/pedidos` lee `?estado=` de la barra de direcciones.
+ *
+ * Dos filas no tienen destino, y eso también es una decisión:
+ *
+ *  - `avisos`: no hay pantalla de avisos. Lo que dice la fila es «espere, y si
+ *    no baja, avísele a Juan» — no hay nada que tocar.
+ *  - `esperandoClienta`: el pago lo empezó la clienta y no lo terminó. No está
+ *    en la bandeja de cobros (ahí solo entra lo que tiene comprobante) y no
+ *    hay filtro que los liste.
+ *
+ * Inventarles un enlace sería peor que no tenerlo: un enlace que lleva a una
+ * lista donde no está lo que se buscaba se lee como que el sistema perdió algo.
+ */
+export const DESTINOS: Record<string, { a: string; verbo: string }> = {
+  atrasadas: { a: "/entregas", verbo: "Ver las entregas del día" },
+  fallidas: { a: "/entregas", verbo: "Ver las entregas del día" },
+  cobros: { a: "/cobros", verbo: "Ver los comprobantes" },
+  porAbonar: { a: "/pedidos?estado=por_abonar", verbo: "Ver los pedidos por abonar" },
+  sinDespachar: { a: "/entregas", verbo: "Ver qué falta preparar" },
+  sinAsignar: { a: "/entregas", verbo: "Ver las paradas de hoy" },
+  rutas: { a: "/entregas", verbo: "Ver las rutas de hoy" },
+};
+
+/** El destino de una fila, o nada si no lo tiene. */
+export function destinoDe(clave: string): { a: string; verbo: string } | undefined {
+  return DESTINOS[clave];
 }
 
 // ---------------------------------------------------------------------------
@@ -577,20 +613,62 @@ function Atender({
 
   return (
     <div className="grid gap-2">
-      {filas.map((f) => (
-        <Tarjeta key={f.clave} className={f.urgente ? "border-accent-edge" : ""}>
-          <div className="flex items-baseline gap-2">
-            <p className="m-0 text-[17px] font-bold">{conteo(f.cuantos, f.que)}</p>
-            {f.urgente ? <Pastilla tono="aviso">Atender hoy</Pastilla> : null}
-          </div>
-          <p className="m-0 mt-1 text-muted">{f.haga}</p>
-          {f.clave === "avisos" && avisos.masViejo !== null ? (
-            <p className="m-0 mt-1 text-[12px] text-muted">
-              El más viejo lleva esperando desde {sinPuntoFinal(comoFecha(avisos.masViejo))}.
-            </p>
-          ) : null}
-        </Tarjeta>
-      ))}
+      {filas.map((f) => {
+        const destino = destinoDe(f.clave);
+        const cuerpo = (
+          <>
+            <div className="flex items-baseline gap-2">
+              <p className="m-0 text-[17px] font-bold">{conteo(f.cuantos, f.que)}</p>
+              {/* La pastilla naranja SOLO donde la tarjeta lleva a algún
+                  sitio. Con el mismo naranja de todos los botones del panel y
+                  sin nada detrás, «Atender hoy» era un botón que no era un
+                  botón: se toca, no pasa nada, y la siguiente vez ya no se
+                  toca nada. Sin destino se dice con letra, no con pastilla. */}
+              {f.urgente ? (
+                destino === undefined ? (
+                  <span className="text-[12px] font-bold uppercase tracking-wide text-accent-strong">
+                    Atender hoy
+                  </span>
+                ) : (
+                  <Pastilla tono="aviso">Atender hoy</Pastilla>
+                )
+              ) : null}
+            </div>
+            <p className="m-0 mt-1 text-muted">{f.haga}</p>
+            {f.clave === "avisos" && avisos.masViejo !== null ? (
+              <p className="m-0 mt-1 text-[12px] text-muted">
+                El más viejo lleva esperando desde {sinPuntoFinal(comoFecha(avisos.masViejo))}.
+              </p>
+            ) : null}
+            {destino === undefined ? null : (
+              <p className="m-0 mt-2 text-[15px] font-bold text-accent-strong">
+                {destino.verbo} →
+              </p>
+            )}
+          </>
+        );
+
+        if (destino === undefined) {
+          return (
+            <Tarjeta key={f.clave} className={f.urgente ? "border-accent-edge" : ""}>
+              {cuerpo}
+            </Tarjeta>
+          );
+        }
+
+        // La tarjeta ENTERA es el enlace, no una palabra subrayada al final:
+        // se toca con el pulgar, de pie, y un blanco de 44 px en la esquina de
+        // una tarjeta de cien es un blanco que se falla.
+        return (
+          <Link
+            key={f.clave}
+            to={destino.a}
+            className="block rounded-[14px] no-underline focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            <Tarjeta className={f.urgente ? "border-accent-edge" : ""}>{cuerpo}</Tarjeta>
+          </Link>
+        );
+      })}
     </div>
   );
 }

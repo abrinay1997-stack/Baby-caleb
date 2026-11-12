@@ -101,6 +101,23 @@ const PALABRAS: Record<
   },
 };
 
+/**
+ * Qué le falta a la hoja para poder mandarse, dicho para quien la está
+ * llenando. `null` cuando no falta nada.
+ *
+ * Son las MISMAS dos condiciones que apagan el botón, escritas una sola vez:
+ * si se escriben dos veces, un día el botón se enciende y el aviso sigue
+ * diciendo que falta algo, y entonces la dueña ya no cree ninguno de los dos.
+ */
+export function loQueFalta(hayClienta: boolean, cuantasLineas: number): string | null {
+  if (!hayClienta && cuantasLineas === 0) {
+    return "Falta la clienta y falta añadir productos.";
+  }
+  if (!hayClienta) return "Falta la clienta: búsquela por su celular aquí arriba.";
+  if (cuantasLineas === 0) return "Falta añadir al menos un producto.";
+  return null;
+}
+
 export function NuevoPedido({
   abierta,
   alCerrar,
@@ -196,6 +213,7 @@ export function NuevoPedido({
   }
 
   const lineas = Object.entries(cantidades).filter(([, n]) => n > 0);
+  const falta = loQueFalta(clienta !== null, lineas.length);
 
   /** Lo que se le puede decir a la clienta por teléfono. NO es el total. */
   const calculo = lineas.reduce((suma, [codigo, n]) => {
@@ -263,14 +281,23 @@ export function NuevoPedido({
             Cerrar
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={crear}
-            disabled={guardando || clienta === null || lineas.length === 0}
-            className="tactil w-full rounded-[14px] bg-accent px-4 py-3 font-bold text-accent-fg disabled:opacity-60 focus-visible:outline-accent-edge focus-visible:outline-2"
-          >
-            {guardando ? palabras.trabajando : palabras.boton}
-          </button>
+          // El botón sale apagado desde que se abre la hoja —no hay clienta ni
+          // productos todavía— y antes no decía por qué. Un botón apagado y
+          // mudo se lee como «esto no sirve»: ahora encima de él está lo que
+          // falta, y va cambiando conforme se llena.
+          <div className="grid w-full gap-1">
+            {falta === null ? null : (
+              <p className="m-0 text-[13px] text-muted">{falta}</p>
+            )}
+            <button
+              type="button"
+              onClick={crear}
+              disabled={guardando || falta !== null}
+              className="tactil w-full rounded-[14px] bg-accent px-4 py-3 font-bold text-accent-fg disabled:opacity-60 focus-visible:outline-accent-edge focus-visible:outline-2"
+            >
+              {guardando ? palabras.trabajando : palabras.boton}
+            </button>
+          </div>
         )
       }
     >

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { barras, conteo, escalaDeLaSerie, pendientesDe, textoDeComparacion } from "./Resumen";
+import {
+  barras,
+  conteo,
+  destinoDe,
+  escalaDeLaSerie,
+  pendientesDe,
+  textoDeComparacion,
+} from "./Resumen";
 import { comparar, fraccion } from "../../../src/dominio/metricas";
+import { estadoDeLaUrl } from "./Pedidos";
 
 /**
  * Lo que la pantalla de resumen convierte en palabras y en píxeles.
@@ -213,5 +221,69 @@ describe("la lista de lo que hay que atender", () => {
     expect(filas[0]!.clave).toBe("esperandoClienta");
     expect(filas[0]!.urgente).toBe(false);
     expect(filas[0]!.haga).toContain("NO dependen de usted");
+  });
+});
+
+/**
+ * A dónde lleva cada fila.
+ *
+ * El Resumen tenía ochocientas líneas y cero enlaces: decía «4 comprobantes
+ * esperándola» y ahí se acababa, con una pastilla del mismo naranja que todos
+ * los botones del panel que no era un botón. Lo que se comprueba aquí es que
+ * cada destino existe de verdad y que el filtro que lleva puesto es uno que
+ * `Pedidos` sabe leer — un enlace a una lista donde no está lo que se buscaba
+ * es peor que no tener enlace.
+ *
+ * Validada por mutación: cambiar un destino por una ruta que no está en el
+ * panel pone roja la primera; poner destino a `avisos` pone roja la tercera.
+ */
+describe("a dónde lleva cada fila de «hay que atender»", () => {
+  // Las rutas que monta `App.tsx`. Escritas aquí a mano a propósito: si
+  // alguien borra o renombra una pantalla, esta lista deja de cuadrar y hay
+  // que venir a mirar, que es justo lo que se quiere.
+  const PANTALLAS = ["/", "/pedidos", "/cobros", "/clientas", "/catalogo", "/existencias",
+    "/entregas", "/motorizados", "/bodegas", "/zonas", "/ajustes", "/pasarelas",
+    "/contabilidad", "/usuarios", "/llaves"];
+
+  const todas = pendientesDe(
+    {
+      pedidosEnTotal: 9, porAbonar: 1, porAbonarVencidos: 1, agendadosSinDespachar: 1,
+      pagosPorRevisar: 1, pagosEsperandoClienta: 1, entregasAtrasadas: 1,
+      entregasFallidas: 1, paradasDeHoySinAsignar: 1, rutasDeHoySinSalir: 1,
+    },
+    1,
+  );
+
+  it("lleva a una pantalla que existe, con un filtro que la pantalla sabe leer", () => {
+    for (const f of todas) {
+      const destino = destinoDe(f.clave);
+      if (destino === undefined) continue;
+      const [ruta, cola] = destino.a.split("?");
+      expect(PANTALLAS, `${f.clave} lleva a ${destino.a}`).toContain(ruta);
+      if (cola !== undefined) {
+        const estado = new URLSearchParams(cola).get("estado");
+        expect(ruta, `${f.clave} filtra pero no es /pedidos`).toBe("/pedidos");
+        expect(estadoDeLaUrl(estado), `${f.clave} filtra por «${estado}»`).toBe(estado);
+      }
+    }
+  });
+
+  it("y dice con palabras qué va a encontrar al otro lado", () => {
+    for (const f of todas) {
+      const destino = destinoDe(f.clave);
+      if (destino === undefined) continue;
+      expect(destino.verbo.trim().split(/\s+/).length, f.clave).toBeGreaterThan(1);
+    }
+  });
+
+  it("las dos filas sin nada que tocar no inventan destino", () => {
+    // `avisos` no tiene pantalla —lo único que dice es «espere y avise»— y el
+    // pago que empezó la clienta no está en ninguna lista filtrable.
+    expect(destinoDe("avisos")).toBeUndefined();
+    expect(destinoDe("esperandoClienta")).toBeUndefined();
+    // Y las demás sí la tienen: una fila que pide algo y no lleva a ningún
+    // sitio es la pantalla que había antes.
+    const sinDestino = todas.filter((f) => destinoDe(f.clave) === undefined).map((f) => f.clave);
+    expect(sinDestino).toEqual(["avisos", "esperandoClienta"]);
   });
 });

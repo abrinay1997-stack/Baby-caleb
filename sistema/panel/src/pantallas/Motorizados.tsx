@@ -8,6 +8,7 @@ import {
   type EdicionDeMotorizado,
   type MotorizadoEditable,
 } from "./EditarMotorizado";
+import { celularLegible } from "./FichaClienta";
 
 /**
  * Quién reparte.
@@ -113,8 +114,24 @@ export function Motorizados() {
                   {/* En su propia celda y no debajo del nombre: la celda sin
                       etiqueta es el TÍTULO de la fila, y su regla de estilo
                       gana contra `text-muted`, así que el número salía igual
-                      de grande y de oscuro que el nombre. */}
-                  <Celda etiqueta="Celular">{m.celular_e164}</Celda>
+                      de grande y de oscuro que el nombre.
+
+                      Y es un enlace de llamar, no un número escrito. Esta
+                      columna existe para UNA cosa —«llame al motorizado», que
+                      es lo que dice el Resumen cuando una entrega lleva un día
+                      abierta—, y salía en crudo: «50760000001», once dígitos
+                      pegados que hay que leer, transcribir y marcar con una
+                      mano. `celularLegible` ya estaba escrito en la ficha de
+                      la clienta. */}
+                  <Celda etiqueta="Celular">
+                    <a
+                      href={`tel:+${m.celular_e164}`}
+                      className="tactil inline-flex items-center text-fg underline decoration-line underline-offset-4"
+                    >
+                      {celularLegible(m.celular_e164)}
+                      <span className="sr-only"> — tocar para llamar a {m.nombre}</span>
+                    </a>
+                  </Celda>
                   <Celda etiqueta="En qué anda">
                     {m.vehiculo === null ? (
                       <span className="text-muted">Sin decir</span>

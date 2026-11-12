@@ -42,6 +42,23 @@
 
   --tactil: 44px;
   --radio: 14px;
+
+  /* ---------------------------------------------------------------------
+     Lo que flota sobre el contenido en el teléfono, escrito UNA vez.
+
+     Son dos cosas fijas (`position: fixed`), así que ninguna empuja nada: si
+     el contenido no les reserva su alto, la última fila se queda DEBAJO
+     (§7f). La barra ya estaba reservada; la burbuja de Caleb no, y tapaba
+     «Confirmar: el dinero entró» en Cobros, dos filas de Existencias, una
+     zona, una de Pedidos y una de Catálogo.
+
+     El alto de la burbuja se declara aquí y la burbuja se obliga a medirlo
+     (`.burbuja-caleb`), así que el hueco y la burbuja no pueden separarse:
+     medía 47 px con el relleno y el hueco se calculaba con 44.
+     --------------------------------------------------------------------- */
+  --barra-telefono: calc(var(--tactil) + 28px);
+  --burbuja: var(--tactil);
+  --aire-burbuja: 8px;
 }
 
 @theme inline {
@@ -101,6 +118,33 @@ select {
   outline: 2px solid var(--accent-edge);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   La burbuja de Caleb.
+
+   Flota en todas las pantallas, así que lo que tape lo tapa doce veces. Se
+   coloca DESDE las variables —el alto de la barra más el aire— y se obliga a
+   medir `--burbuja`, que es el mismo valor con el que `.contenido` reserva el
+   hueco. Puesta a mano (`bottom-20` y un alto que salía del relleno), las dos
+   medidas se separaron y la burbuja se sentó encima de los botones del dinero.
+   --------------------------------------------------------------------------- */
+.burbuja-caleb {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--barra-telefono) + var(--aire-burbuja) + env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  height: var(--burbuja);
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  /* En computadora no hay barra inferior, así que la burbuja baja; el hueco
+     del contenido lo pone el bloque de escritorio de más abajo. */
+  .burbuja-caleb {
+    bottom: 24px;
+  }
 }
 
 /* El enlace de saltar al contenido es el primer foco de la página (§7i). */
@@ -227,8 +271,38 @@ select {
     order: 4;
   }
 
+  /* ---------------------------------------------------------------------
+     La primera línea es SOLO el título y la cifra clave. Las dos cosas que
+     lo garantizan están aquí, y ninguna de las dos es de adorno:
+
+     1. El título reparte con base CERO (`flex: 1 1 0`). El flex decide qué
+        cabe en una línea con el tamaño NATURAL de cada celda, no con lo que
+        se pueden encoger después, así que con base `auto` un nombre de
+        producto largo —o una clave de dos renglones, «412 unidades», «por
+        debajo del mínimo (6)»— no dejaba sitio y la cifra se caía a la
+        segunda línea. Con base cero la cifra siempre cabe, y el título se
+        queda con TODO lo que la cifra no use (`flex-grow: 1`).
+
+     2. El `::after` de la fila cierra la línea. Sin él, la primera meta que
+        cupiera al lado se colaba en la línea 1 y empujaba la cifra hacia
+        dentro: «Principal … 412 · Productos 96». Es un trozo de 100 % de
+        ancho y cero de alto, con `order: 2` para que caiga justo DESPUÉS
+        de la clave (entre dos elementos del mismo `order` manda el orden
+        del documento, y un pseudo `::after` va el último).
+
+     Entre las dos: 37 de 53 filas tenían la cifra fuera de su sitio con el
+     auditor en verde. Es el contrato que esta hoja ya declaraba en prosa y
+     no cumplía.
+     --------------------------------------------------------------------- */
+  .filas::after {
+    content: "";
+    order: 2;
+    flex-basis: 100%;
+    height: 0;
+  }
+
   .celda[data-papel="titulo"] {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     font-weight: 700;
     font-size: var(--t-titulo);
     /* Un nombre largo parte de línea en vez de empujar el precio fuera. */
@@ -237,6 +311,12 @@ select {
   }
 
   .celda[data-papel="clave"] {
+    /* Hasta el 40 % de la fila: más que eso deja al título sin sitio, y el
+       título es lo que dice de QUÉ es la cifra. */
+    flex: 0 1 auto;
+    max-width: 40%;
+    /* Pegada al borde derecho aunque se parta en dos renglones. */
+    text-align: right;
     margin-left: auto;
     font-weight: 700;
     /* Antes aquí había `white-space: nowrap`, puesto para que un precio no se
@@ -324,8 +404,13 @@ select {
   /* <main> baja a 14 px: 26 px es el 13 % de una pantalla de 390 (§7h). */
   .contenido {
     padding: 14px;
-    /* Hueco para la barra inferior y para la zona segura del teléfono. */
-    padding-bottom: calc(var(--tactil) + 28px + env(safe-area-inset-bottom, 0px));
+    /* Hueco para la barra inferior, para la burbuja de Caleb que flota encima
+       de ella y para la zona segura del teléfono. Las tres medidas salen de
+       las variables de arriba: nadie las estima aquí. */
+    padding-bottom: calc(
+      var(--barra-telefono) + var(--aire-burbuja) + var(--burbuja) + 12px +
+        env(safe-area-inset-bottom, 0px)
+    );
   }
   .solo-escritorio {
     display: none !important;
@@ -335,6 +420,12 @@ select {
 @media (min-width: 768px) {
   .solo-telefono {
     display: none !important;
+  }
+
+  /* También en computadora la burbuja flota sobre el contenido: sin barra
+     inferior, pero sobre la última fila. Mismo hueco, mismas variables. */
+  .contenido {
+    padding-bottom: calc(24px + var(--aire-burbuja) + var(--burbuja) + 12px);
   }
 }
 

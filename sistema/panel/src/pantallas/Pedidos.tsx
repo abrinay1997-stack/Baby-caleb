@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import { type Yo, dinero, fecha, useCarga } from "../api";
 import { Carga, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
 import { AccionesPedido, type PedidoParaActuar } from "./AccionesPedido";
@@ -110,8 +110,29 @@ function loQueFalta(venceEn: number | null): string | null {
   return horas < 24 ? `vence en ${horas} h` : `vence en ${Math.round(horas / 24)} d`;
 }
 
+/** Un estado que esta pantalla sepa filtrar, o nada. */
+export function estadoDeLaUrl(crudo: string | null): string {
+  if (crudo === null) return "";
+  return ESTADOS.some((e) => e.clave === crudo && e.clave !== "") ? crudo : "";
+}
+
 export function Pedidos() {
-  const [estado, setEstado] = useState("");
+  // El filtro vive en la barra de direcciones y no en un `useState` suelto:
+  // así el Resumen puede mandar aquí con el filtro ya puesto
+  // (`/pedidos?estado=por_abonar`) en vez de dejar a la dueña buscándolo a
+  // mano, y el enlace se puede guardar o compartir. Un `estado` que esta
+  // pantalla no conoce se ignora: enviárselo al servidor devolvería una lista
+  // vacía que parecería que no hay pedidos.
+  const [parametros, setParametros] = useSearchParams();
+  const estado = estadoDeLaUrl(parametros.get("estado"));
+  const cambiarEstado = (clave: string): void => {
+    const siguiente = new URLSearchParams(parametros);
+    if (clave === "") siguiente.delete("estado");
+    else siguiente.set("estado", clave);
+    // `replace` y no una entrada nueva: tocar cinco filtros seguidos no tiene
+    // por qué dejar cinco pasos de «atrás» antes de salir de la pantalla.
+    setParametros(siguiente, { replace: true });
+  };
   const [busca, setBusca] = useState("");
 
   const consulta = new URLSearchParams();
@@ -190,7 +211,7 @@ export function Pedidos() {
             <button
               key={e.clave}
               type="button"
-              onClick={() => setEstado(e.clave)}
+              onClick={() => cambiarEstado(e.clave)}
               aria-pressed={estado === e.clave}
               className={`tactil shrink-0 rounded-full border px-3 py-1.5 text-[13px] font-bold transition-colors focus-visible:outline-accent-edge focus-visible:outline-2 ${
                 estado === e.clave

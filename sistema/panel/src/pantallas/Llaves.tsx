@@ -23,6 +23,17 @@ interface Llave {
   revocado_en: number | null;
 }
 
+/**
+ * «1 llave revocada» / «3 llaves revocadas».
+ *
+ * Decía «1 revocada(s)»: sin el sustantivo —revocada ¿qué?— y con el paréntesis
+ * de plural, que es la forma de no decidir. Las dos formas se escriben enteras,
+ * igual que en Ajustes («1 regla sin decidir»).
+ */
+export function textoDeRevocadas(cuantas: number): string {
+  return cuantas === 1 ? "1 llave revocada" : `${cuantas} llaves revocadas`;
+}
+
 export function Llaves() {
   // Una sola consulta, que se repite al cambiar `recarga`. Tenía dos y era un
   // viaje de más por nada.
@@ -35,6 +46,11 @@ export function Llaves() {
   const [recien, setRecien] = useState<{ nombre: string; token: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  // Qué llave está esperando el segundo toque. Revocar no se deshace: la llave
+  // revocada no vuelve, hay que crear otra y volver a pegarla en el programa
+  // de fuera. El patrón es el de «No cuadra» en Cobros — un toque abre la
+  // pregunta, el segundo la contesta, y «Mejor no» sale sin hacer nada.
+  const [confirmando, setConfirmando] = useState<string | null>(null);
 
   const crear = async (): Promise<void> => {
     if (nombre.trim() === "" || ocupado) return;
@@ -63,6 +79,7 @@ export function Llaves() {
     setError(null);
     try {
       await pedir(`/api/mcp/llaves/${encodeURIComponent(id)}/revocar`, { method: "POST" });
+      setConfirmando(null);
       setRecarga((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo revocar.");
@@ -137,29 +154,61 @@ export function Llaves() {
       ) : (
         <div className="grid gap-2">
           {vivas.map((l) => (
-            <div
-              key={l.id}
-              className="flex items-center justify-between gap-3 rounded-[12px] border border-line p-3"
-            >
-              <span className="block min-w-0">
-                <span className="block font-bold">{l.nombre}</span>
-                <span className="block text-[13px] text-muted">
-                  Creada el {fecha(l.creado_en)}
+            <div key={l.id} className="rounded-[12px] border border-line p-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="block min-w-0">
+                  <span className="block font-bold">{l.nombre}</span>
+                  <span className="block text-[13px] text-muted">
+                    Creada el {fecha(l.creado_en)}
+                  </span>
+                  <span className="block text-[13px] text-muted">
+                    {l.ultimo_uso_en === null
+                      ? "Nunca se ha usado"
+                      : `Usada por última vez el ${fecha(l.ultimo_uso_en)}`}
+                  </span>
                 </span>
-                <span className="block text-[13px] text-muted">
-                  {l.ultimo_uso_en === null
-                    ? "Nunca se ha usado"
-                    : `Usada por última vez el ${fecha(l.ultimo_uso_en)}`}
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => void revocar(l.id)}
-                disabled={ocupado}
-                className="tactil shrink-0 rounded-[10px] border border-line px-3 py-2 text-[14px]"
-              >
-                Revocar
-              </button>
+                {confirmando === l.id ? null : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmando(l.id)}
+                    disabled={ocupado}
+                    className="tactil shrink-0 rounded-[10px] border border-line px-3 py-2 text-[14px]"
+                  >
+                    Revocar
+                    {/* En la lista hay tres botones que dicen «Revocar». */}
+                    <span className="sr-only"> {l.nombre}</span>
+                  </button>
+                )}
+              </div>
+
+              {confirmando === l.id ? (
+                <div className="mt-3 grid gap-2 border-t border-line pt-3">
+                  <p className="m-0 text-[14px]">
+                    Lo que entre con <strong>{l.nombre}</strong> deja de entrar en cuanto toque
+                    abajo. La llave no vuelve: si la sigue necesitando, hay que crear otra y
+                    volver a pegarla donde estaba.
+                  </p>
+                  {/* El navy de lo que no se deshace: el mismo de «Quitar el
+                      acceso» en Usuarios y del «Ocultarlo» de la hoja del
+                      catálogo. */}
+                  <button
+                    type="button"
+                    onClick={() => void revocar(l.id)}
+                    disabled={ocupado}
+                    className="tactil w-full rounded-[10px] bg-fg px-4 py-3 font-bold text-bg disabled:opacity-60 focus-visible:outline-accent-edge focus-visible:outline-2"
+                  >
+                    {ocupado ? "Revocando…" : `Sí, revocar ${l.nombre}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmando(null)}
+                    disabled={ocupado}
+                    className="tactil w-full rounded-[10px] border border-line px-4 py-3 font-bold disabled:opacity-60"
+                  >
+                    Mejor no
+                  </button>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -170,7 +219,7 @@ export function Llaves() {
           {/* `tactil` y no solo texto: un <summary> es un botón, y el §7 pide
               44 px de alto. Sin esto medía 21 y el auditor lo cazó. */}
           <summary className="tactil flex cursor-pointer items-center text-[14px] text-muted">
-            {muertas.length} revocada(s)
+            {textoDeRevocadas(muertas.length)}
           </summary>
           {/* Revocar no borra la fila: la bitácora apunta a quién hizo qué y
               hay que poder reconstruir por dónde entró cada cosa. */}
