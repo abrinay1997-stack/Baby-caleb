@@ -73,7 +73,31 @@ el id de la acción).
 |---|---|---|
 | Chat del panel | Access (JWT validado) | Botón flotante en todas las pantallas; sabe en qué pantalla está; pasos a la vista por SSE |
 | Telegram | El vínculo de la consola del CRM (`OWNER_TELEGRAM_CHAT_ID` o enlace del panel) cruzado con `usuarios.telegram_chat_id` | Voz y fotos ya las entiende la consola |
-| MCP | `/mcp` fuera de Access, con OAuth (`@cloudflare/workers-oauth-provider`) usando el inicio de sesión de Access, o un token personal por usuario | Se decide en F6.4; empieza solo con herramientas de lectura |
+| MCP | **Construido.** `/mcp` fuera de Access, con una llave personal por persona y por sitio (`mcp_llaves`, migración 0013). Se decidió la llave y no OAuth: un cliente de MCP no tiene navegador, y OAuth añadía un ida y vuelta que aquí no compra nada | No empieza solo con lectura: expone todas las del rol, pero una **sensible no se ejecuta** — vuelve como `isError: true` diciendo que no se hizo y dónde se permite. Ver `docs/CONECTAR-MCP.md` |
+
+**Cómo quedó Telegram al construirlo (2026-11-12).** Lo de arriba dice que en Telegram el bucle
+corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y conviene saber por qué:
+
+- **El bucle corre en el sistema**, no en el CRM: el webhook es `POST /telegram/webhook` de
+  `babycaleb-sistema` (`src/api/telegram-rutas.ts`) y llama a `conversar(...)` con
+  `canal: "telegram"`, igual que el chat del panel. La política, la bitácora y el gasto ya eran
+  del sistema; pasar por el CRM habría añadido un salto de RPC para quedarse en el mismo sitio.
+  La memoria de conversación —lo que el CRM sí tiene— es lo que se perdió: **cada mensaje es un
+  turno suelto**, y `asistente_conversaciones` / `asistente_mensajes` siguen sin que nadie las
+  escriba.
+- **El vínculo lo hace el panel**, no el CRM: `POST /api/usuarios/:id/telegram` entrega un código
+  de un solo uso que la dueña pega en el chat del bot, y el chat que lo canjea queda escrito en
+  `usuarios.telegram_chat_id` (migración 0013, `src/db/telegram.ts`). No hay
+  `OWNER_TELEGRAM_CHAT_ID`: un chat suelto en una variable no dice de quién es.
+- **Voz y fotos no se entienden**: un mensaje que no es texto se contesta diciéndolo. Lo de «ya
+  las entiende la consola» era de la consola del CRM, que no es esta puerta.
+- **El host del webhook está PENDIENTE y no se decide desde el repositorio.** Telegram no tiene
+  sesión de Access, así que el webhook no puede vivir en un host cubierto por Access — y
+  `panel.babycaleb.com` lo está entero, a propósito (`docs/PUERTA-DE-ACCESS.md` deja el *Path*
+  vacío). Hace falta un host sin Access —un subdominio nuevo apuntando al mismo Worker— o una
+  excepción en Zero Trust. Mientras eso no exista, el código está puesto y el bot no recibe nada.
+- Los secretos son `TELEGRAM_BOT_TOKEN` (para hablar) y `TELEGRAM_WEBHOOK_SECRET` (para
+  escuchar), los dos con `wrangler secret put` y ninguno en `wrangler.jsonc`.
 
 ## 5. Herramientas iniciales
 
@@ -82,27 +106,136 @@ el id de la acción).
 | `resumen_del_dia` | lectura | todos |
 | `ventas_del_periodo(desde?, hasta?, por?)` | lectura | dueña, contadora |
 | `quien_me_debe` | lectura | dueña, contadora |
-| `pedidos_de_hoy` · `buscar_pedido(numero o clienta)` | lectura | todos |
-| `buscar_cliente` · `historial_de_cliente` | lectura | dueña, asistente |
+| `buscar_pedido(estado?, busca?, clienta?)` · `ver_pedido(numero o id)` | lectura | dueña, asistente, contadora |
+| `buscar_cliente` · `historial_de_cliente` | lectura | dueña, asistente, contadora |
 | `ver_stock(codigo?)` · `movimientos(codigo?)` | lectura | todos |
 | `que_reponer(proveedor?, meses?, reserva?)` | lectura | dueña |
 | `dinero_en_cuentas` · `estado_de_resultados` · `gastos_del_periodo` | lectura | dueña, contadora |
 | `margen_por_producto` · `ventas_por_canal` · `costo_por_clienta_nueva` | lectura | dueña |
-| `entregas_del_dia` · `pagos_por_confirmar` | lectura | dueña, asistente |
+| `entregas_del_dia` | lectura | dueña, asistente |
+| `pagos_por_confirmar` | lectura | dueña |
 | `clientas_para_recompra` | lectura | dueña |
+| `agendar_pedido` | construcción | dueña, asistente |
+| `dar_de_alta_clienta(nombre, celular)` → devuelve la referencia | construcción | dueña, asistente |
 | `crear_pedido` (queda por_abonar) | construcción | dueña, asistente |
+| `crear_cotizacion` (no aparta nada) · `confirmar_cotizacion` (aquí sí aparta) | construcción | dueña, asistente |
+| `ver_checkout` (si la web puede cobrar y qué falta) | lectura | dueña, asistente |
 | `anotar_en_pedido` · `anotar_en_cliente` | construcción | dueña, asistente |
 | `registrar_gasto` (con foto del recibo) | construcción | dueña, asistente |
 | `registrar_compra` (borrador) · `poner_tiempo_de_llegada` | construcción | dueña |
 | `asignar_motorizado` · `programar_entrega` | construcción | dueña, asistente |
-| `confirmar_abono` · `registrar_cobro` | sensible | dueña |
-| `cambiar_precio` · `ajustar_stock` · `registrar_merma` · `trasladar_stock` | sensible | dueña |
+| `crear_pedido` (queda por_abonar; aparta mercancía) | sensible | dueña |
+| `confirmar_abono` · `registrar_cobro` · `rechazar_cobro` | sensible | dueña |
+| `cambiar_precio` · `ajustar_stock(…, costo_unitario_cents?)` · `registrar_merma` · `trasladar_stock` | sensible | dueña |
+| `cambiar_boton_whatsapp(codigo, mostrar)` — el botón «Pedir por WhatsApp» de UN artículo | sensible | dueña |
 | `recibir_compra` | sensible | dueña |
 | `anular_pedido` · `reembolsar` | sensible | dueña |
 | `cerrar_mes` (guiado con la lista de chequeo) | sensible | dueña |
 | `cambiar_ajuste` (abono mínimo, pasarela activa…) | sensible | dueña |
+| `ver_ajustes(clave?)` — cuánto vale cada regla, de dónde sale y cuáles faltan | lectura | dueña |
+| `ver_retiro_variante(codigo)` | lectura | dueña |
+| `crear_producto` (el grupo; sin precio ni existencias) | construcción | dueña |
+| `crear_variante` (nace sin publicar) | construcción | dueña |
+| `dar_de_alta_producto` (producto + primera presentación, de una vez) | construcción | dueña |
+| `editar_variante` (nombre, talla, unidades, ITBMS, publicar) | sensible | dueña |
+| `retirar_variante` (se borra si no tiene historia; si la tiene, se oculta) | sensible | dueña |
+| `ver_pasarelas` (encendida, modo y qué le falta; **ninguna credencial**) | lectura | dueña |
+| `encender_pasarela` · `apagar_pasarela` | sensible | dueña |
+| `cambiar_modo_de_pasarela` (prueba ↔ real; no con la pasarela encendida) | sensible | dueña |
+| `registrar_reembolso` (es el `reembolsar` de arriba: anota el que YA se hizo, asiento 14) | sensible | dueña |
+| `registrar_contracargo` (lo decide el banco; asiento 15) | sensible | dueña |
+| `devolver_parada(pedido, motivo)` — la parada volvió sin entregarse | sensible | dueña |
+| `cancelar_ruta(motorizado, fecha?, motivo)` — deshace una ruta que no salió | sensible | dueña |
+| `cerrar_ruta(motorizado, fecha?)` — cierra el día y cuenta lo cobrado | sensible | dueña |
+| `devolver_pedido(pedido, motivo)` — la clienta devuelve lo ya entregado (asiento 13) | sensible | dueña |
+| `ver_historial_de_ajuste(ajuste?)` — quién cambió una cifra, cuándo y por qué | lectura | dueña |
+| `crear_bodega` · `renombrar_bodega` | construcción | dueña |
+| `cambiar_uso_de_bodega` (dejar de surtir desde ahí; una bodega no se borra) | sensible | dueña |
+| `crear_zona` · `cambiar_zona` (la tarifa es dinero; `null` = se cotiza a mano) | sensible | dueña |
+| `corregir_ficha_de_clienta` (por su referencia; no devuelve ningún dato de ella) | construcción | dueña, asistente |
+
+| `poner_receta_de_combo(codigo, receta)` — de qué está hecho un combo | sensible | dueña |
 
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
+
+**La única excepción de fondo a «todo lleva MCP» son los usuarios.** `GET /usuarios`,
+`POST /usuarios` y `PATCH /usuarios/:id` se quedan solo en el panel, y no es deuda: es la
+§3 de este mismo documento. Una llave de MCP que puede dar de alta a un usuario con
+permisos —o cambiarle el rol a uno que ya existe— es una llave que se amplía a sí misma,
+y a partir de ahí revocarla no revoca nada. Es el mismo motivo por el que las llaves de
+MCP no se crean ni se listan por MCP. Leer la lista va con ellas a propósito: enseñar
+quién tiene qué permiso es el mapa de por dónde entrar.
+
+Y está vigilado, no solo escrito: `node scripts/sin-mcp.mjs` falla si algún archivo de
+`src/asistente/herramientas/` escribe en la tabla `usuarios` o importa `db/usuarios`.
+Comprobado al revés, metiendo un `UPDATE usuarios` en una herramienta: sale en rojo.
+
+`ver_ajustes` y `cambiar_ajuste` son la otra puerta de la pantalla de Ajustes, y entraron
+con los dos ajustes de WhatsApp (`whatsapp_pedidos_activo`, `whatsapp_numero`) porque la
+regla del `CLAUDE.md` es que un ajuste nuevo no está terminado hasta que se puede usar
+también por MCP, en el mismo cambio (`docs/TRAMPAS.md` §13). `cambiar_ajuste` vale para
+las diecisiete claves: la forma de cada valor la decide `validar` de
+`src/dominio/ajustes.ts`, que es la MISMA copia que usa la ruta del panel.
+
+Una cosa que `ver_ajustes` no hace: devolver entero el celular de `whatsapp_numero`. Sale
+con las cuatro últimas cifras (`•••• 5065`). No es un dato de ninguna clienta —es el del
+negocio y está publicado en la web— pero la guarda de D-20 señala cualquier cosa con forma
+de celular en lo que una herramienta devuelve, y abrirle una excepción a «este teléfono es
+nuestro» sería el primer agujero de una guarda que ya ha cazado fugas de verdad. El número
+entero se ve en el panel, donde lo lee una persona.
+
+**Tres filas se corrigieron al implementarlas (F-pedidos y F-dinero), y conviene saber por
+qué** — la tabla se escribió antes de que existieran `src/seguridad/roles.ts` y la política:
+
+- **Los roles salen de la matriz, no de esta tabla.** `buscar_cliente`,
+  `historial_de_cliente` y leer pedidos van con el permiso `pedidos`, que la contadora
+  tiene en «ver»: es lo que ya puede hacer desde el panel, así que la herramienta no
+  ensancha nada. Al revés, `pagos_por_confirmar` va con `cobros`, que hoy **solo** tiene
+  la dueña: la asistente lleva pedidos y gastos y no ve lo que entró.
+- **`crear_pedido` es sensible, no construcción.** Crear un pedido sube `reservado` y esas
+  unidades dejan de poderse vender: eso es tocar existencias, y lo que toca existencias se
+  propone y lo permite una persona. Como consecuencia es solo de la dueña —lo sensible lo
+  confirma ella, y hay una prueba en `registro.test.ts` que se cae si se le da a alguien
+  más—, aunque la asistente sí pueda tomar pedidos desde el panel.
+- **`agendar_pedido` sí es construcción**: la mercancía ya estaba apartada desde que se
+  creó el pedido, y agendar no mueve ni dinero ni existencias.
+
+Las cinco de pasarelas llaman a la MISMA función de `src/db/` que la ruta del panel
+(`estado`, `encender`, `apagar` y `cambiarModo` de `src/db/pasarelas.ts`;
+`registrarReembolso` y `registrarContracargo` de `src/db/pagos.ts`), así que
+una regla como «no se cambia el modo con la pasarela encendida» se decide en un
+solo sitio para las tres puertas. Viven en `herramientas/pasarelas.ts` y no en
+`dinero.ts` porque tocan la CONFIGURACIÓN del cobro, no el cobro.
+`ver_pasarelas` **recorta** lo que devuelve `GET /pasarelas`: no sale la ficha
+de cada credencial (ni su valor, ni `llave_id`, ni quién la puso), ni el libro
+de la pasarela, ni el historial de encendidas, ni si la llave maestra del
+Worker está puesta — el contexto del asistente no la tiene, y «no la tengo» no
+es «no está». Poner una credencial sigue siendo `solo_panel`: un secreto se
+teclea donde se ve.
+
+Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
+
+Las cuatro últimas deshacen o cierran algo que YA PASÓ y llaman a la misma
+función de `src/db/entregas.ts` que la ruta del panel —`devolverParada`,
+`cancelarRuta`, `cerrarRuta`, `devolverPedidoEntregado`—, así que ninguna
+decisión suya está escrita dos veces. Una entrega se nombra por el número del
+pedido y una ruta por el motorizado y el día: son los handles que una persona
+dice en voz alta, y ni la dirección ni el nombre de la clienta —ni el del
+motorizado— vuelven hacia el modelo (D-20).
+
+**Dos huecos conocidos de estas cuatro**, los dos por la regla «lo sensible es
+solo de la dueña» que vigila `asistente/registro.test.ts`:
+
+1. Tres de sus rutas del panel piden editar `pedidos`, que la asistente tiene,
+   así que ella puede devolver una parada o cerrar una ruta en el panel y no
+   por MCP. Cerrarlo bien es que una herramienta declare el `Permiso` que
+   necesita y que sus roles salgan de `seguridad/roles.ts`, en vez de
+   escribirlos a mano una por una: es un cambio del contrato de `registro.ts`
+   y afecta a todas.
+2. `cerrar_ruta` es la única herramienta que escribe y no pide motivo, y es la
+   excepción nombrada en esa misma prueba: cerrar no corrige nada —cuenta lo
+   que ya pasó—, `cerrarRuta` no tiene dónde guardar un motivo, y un parámetro
+   que se ignora en silencio es la trampa §9.
 
 ## 6. Modelo, costo y caché
 

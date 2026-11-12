@@ -37,8 +37,29 @@ const META = {
  * Eso no es un carrito a medias, es lo que de verdad sirve hoy. Lo que hace la
  * clienta ahora mismo es escribir a mano «quiero dos de los de talla M» y
  * esperar a que alguien adivine cuál era; esto manda códigos exactos y
- * cantidades exactas. El día que la dueña active `checkout_activo` desde el
- * panel, el final de esta misma pantalla pasa a crear el pedido en el sistema.
+ * cantidades exactas.
+ *
+ * ## `checkout_activo` NO hace nada aquí, y conviene decirlo
+ *
+ * Este comentario decía antes que «el día que la dueña active `checkout_activo`
+ * desde el panel, el final de esta misma pantalla pasa a crear el pedido en el
+ * sistema». No es verdad, y durante meses nadie lo notó: esta pantalla no
+ * consulta ese ajuste por ningún lado, así que encenderlo no cambia una línea
+ * de lo que pasa aquí. En producción vale `true` desde hace tiempo y el
+ * carrito sigue terminando en WhatsApp.
+ *
+ * Lo que sí hace falta, en este orden, está escrito en el panel: una pasarela
+ * con sus credenciales y encendida (hoy hay **tres pasarelas y cero
+ * credenciales**), y después programar aquí el paso de crear el pedido y
+ * mandar a pagar. Mientras ese paso no exista, el ajuste no puede encenderlo
+ * — y la pantalla de Ajustes del panel lo dice con esas palabras en vez de
+ * enseñar un «Encendido» que no significa nada.
+ *
+ * Quien programe ese paso: la constante `LA_WEB_TIENE_CHECKOUT` de
+ * `sistema/src/dominio/checkout.ts` declara que este archivo todavía no cobra,
+ * y `sistema/test/node/checkout-de-la-web.test.ts` lee ESTE archivo y se pone
+ * rojo si las dos cosas dejan de coincidir. O sea: al añadir aquí la llamada,
+ * la prueba avisa de que hay que cambiar la constante.
  *
  * LOS PRECIOS DE ESTA PANTALLA SON PARA ORIENTARSE
  *

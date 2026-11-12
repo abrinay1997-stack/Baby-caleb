@@ -140,7 +140,7 @@ export default {
       : [];
 
     return conCabeceras(
-      reescribirHead(estatico, url, siteUrl, env.CF_ANALYTICS_TOKEN, variantes),
+      reescribirHead(estatico, url, siteUrl, env.CF_ANALYTICS_TOKEN, env.META_PIXEL_ID, variantes),
       indexable,
     );
   },

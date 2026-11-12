@@ -129,10 +129,28 @@
   // El estado sale en /api/salud y el chequeo del despliegue lo dice en voz
   // alta cada vez: un sitio lanzado y olvidado en «oculto» no da ningún
   // síntoma, simplemente no llega nadie.
+  // META_PIXEL_ID: el píxel de Meta (id 1339346164908302, ya creado en Meta).
+  // APAGADO a propósito, igual que INDEXABLE. Vacío = el Worker no escribe la
+  // etiqueta, el navegador no tiene ningún identificador y el píxel no existe
+  // para la web — con consentimiento o sin él. Así se puede desplegar todo el
+  // aparato del consentimiento sin encender el rastreo.
+  //
+  // El Worker NUNCA inyecta el script de Meta: solo el número, en una `<meta>`.
+  // El script lo cuelga el navegador y solo después de que la persona diga sí
+  // (src/consentimiento/pixel.ts). Desde el servidor no se puede saber qué
+  // decidió: la decisión vive en SU navegador y no viaja, a propósito.
+  //
+  // Condiciones para encenderlo:
+  //   1. la dueña (o un abogado) aprueba el texto del banner y el apartado de
+  //      cookies de la política de privacidad — hoy los dos son borrador y lo
+  //      dicen en la propia página;
+  //   2. se comprueba en el navegador, con la página en vivo, que sin aceptar
+  //      NO sale ninguna petición a connect.facebook.net.
   "vars": {
     "VERSION": "dev",
     "SITE_URL": "https://babycaleb.com",
     "CF_ANALYTICS_TOKEN": "",
+    "META_PIXEL_ID": "",
     "INDEXABLE": ""
   }
 

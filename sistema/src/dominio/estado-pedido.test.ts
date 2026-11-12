@@ -5,8 +5,10 @@ import {
   ETIQUETAS_PAGO,
   ETIQUETAS_PEDIDO,
   type EstadoPedido,
+  apartaInventario,
   cuentaComoVenta,
   esAnticipo,
+  esCotizacion,
   esEstadoPago,
   esEstadoPedido,
   esTerminalPedido,
@@ -110,7 +112,9 @@ describe("cuándo hay una venta", () => {
     // docs/plan/05-contabilidad.md: un abono de un pedido que no salió es un
     // pasivo en «2101 Anticipos de clientas», no un ingreso.
     expect(cuentaComoVenta("entregado")).toBe(true);
-    for (const estado of ["por_abonar", "agendado", "en_ruta", "cancelado", "devuelto"] as const) {
+    for (const estado of [
+      "cotizacion", "por_abonar", "agendado", "en_ruta", "cancelado", "devuelto",
+    ] as const) {
       expect(cuentaComoVenta(estado), estado).toBe(false);
     }
   });
@@ -171,7 +175,7 @@ describe("validarTransicion", () => {
 describe("coherencia con el esquema", () => {
   it("son los estados de los CHECK de pedidos", () => {
     expect([...ESTADOS_PEDIDO]).toEqual([
-      "por_abonar", "agendado", "en_ruta", "entregado", "cancelado", "devuelto",
+      "cotizacion", "por_abonar", "agendado", "en_ruta", "entregado", "cancelado", "devuelto",
     ]);
     expect([...ESTADOS_PAGO]).toEqual([
       "sin_pago", "abonado", "pagado", "reembolso_parcial", "reembolsado",
@@ -194,5 +198,78 @@ describe("coherencia con el esquema", () => {
     for (const texto of Object.values(ETIQUETAS_PEDIDO)) {
       expect(texto).not.toMatch(/\b(tu|tus|tuyo|tienes|puedes)\b/i);
     }
+  });
+});
+
+/**
+ * Una cotización: el mismo documento ANTES de apartar nada.
+ *
+ * Lo que estas pruebas vigilan no es el nombre del estado: es que no haya
+ * ningún camino desde `cotizacion` que se salte la transición a `por_abonar`,
+ * porque esa transición es la única que aparta inventario. Un atajo a
+ * `agendado` dejaría un pedido en la lista de entregas sin una sola caja
+ * reservada, y eso se descubre el día de la entrega, contando cajas.
+ */
+describe("la cotización, al modelo de Odoo", () => {
+  it("confirmar es pasar a por_abonar, que es donde se aparta el stock", () => {
+    expect(puedeCambiarPedido("cotizacion", "por_abonar")).toBe(true);
+  });
+
+  it("se puede cancelar o dejar caducar: no hubo venta que deshacer", () => {
+    expect(puedeCambiarPedido("cotizacion", "cancelado")).toBe(true);
+  });
+
+  it("NO hay atajo a la lista de entregas ni a nada más", () => {
+    // Si alguna de estas se pusiera en `true`, habría una forma de agendar o
+    // de entregar un documento que no reservó nada.
+    for (const destino of ["agendado", "en_ruta", "entregado", "devuelto"] as const) {
+      expect(puedeCambiarPedido("cotizacion", destino), destino).toBe(false);
+    }
+  });
+
+  it("y no se vuelve a cotización desde ningún sitio", () => {
+    // Volver atrás dejaría una cotización con inventario apartado, que es
+    // exactamente lo que una cotización no tiene que poder tener.
+    for (const origen of ESTADOS_PEDIDO) {
+      if (origen === "cotizacion") continue;
+      expect(puedeCambiarPedido(origen, "cotizacion"), origen).toBe(false);
+    }
+  });
+
+  it("no es un estado terminal: tiene a dónde ir", () => {
+    expect(esTerminalPedido("cotizacion")).toBe(false);
+  });
+
+  it("esCotizacion solo es verdad para ella", () => {
+    expect(esCotizacion("cotizacion")).toBe(true);
+    for (const e of ESTADOS_PEDIDO) {
+      if (e !== "cotizacion") expect(esCotizacion(e), e).toBe(false);
+    }
+  });
+
+  it("y es justo el estado vivo que NO aparta inventario", () => {
+    expect(apartaInventario("cotizacion")).toBe(false);
+    for (const e of ["por_abonar", "agendado", "en_ruta"] as const) {
+      expect(apartaInventario(e), e).toBe(true);
+    }
+    // Los terminales tampoco: al entregar se consume, al cancelar se libera.
+    for (const e of ["entregado", "cancelado", "devuelto"] as const) {
+      expect(apartaInventario(e), e).toBe(false);
+    }
+  });
+
+  it("un abono sobre una cotización no existe, así que tampoco hay anticipo", () => {
+    expect(esAnticipo("cotizacion", "sin_pago")).toBe(false);
+  });
+
+  it("el error de una transición imposible la nombra por su etiqueta", () => {
+    const errores = validarTransicion({
+      estadoActual: "cotizacion",
+      estadoNuevo: "agendado",
+      pagoActual: "sin_pago",
+      pagoNuevo: "sin_pago",
+    });
+    expect(errores).toHaveLength(1);
+    expect(errores[0]!.mensaje).toBe("Un pedido «Cotización» no puede pasar a «Agendado».");
   });
 });

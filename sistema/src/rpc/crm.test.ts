@@ -67,10 +67,23 @@ describe("SistemaWeb · lo que llega a un navegador", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
-    // El sobre solo lleva la versión y el sello de tiempo. Se fija aquí la
-    // lista de sus campos: si alguien le cuelga uno nuevo, esta prueba se pone
-    // roja y hay que mirar a mano si eso puede salir a un navegador.
-    expect(Object.keys(r.datos).sort()).toEqual(["generadoEn", "variantes", "version"]);
+    // El sobre lleva la versión, el sello de tiempo y el celular de los
+    // pedidos. Se fija aquí la lista de sus campos: si alguien le cuelga uno
+    // nuevo, esta prueba se pone roja y hay que mirar a mano si eso puede
+    // salir a un navegador.
+    //
+    // `whatsapp` entró con el botón de «Pedir por WhatsApp», y la revisión a
+    // mano dice que sí puede salir: es el celular del NEGOCIO, el mismo que ya
+    // está en `content.json` y en el botón de WhatsApp de la barra de
+    // navegación desde el primer día. El navegador lo necesita para armar el
+    // enlace `wa.me`. No lleva nada de ninguna clienta, ni el costo, ni
+    // existencias.
+    expect(Object.keys(r.datos).sort()).toEqual([
+      "generadoEn",
+      "variantes",
+      "version",
+      "whatsapp",
+    ]);
 
     // Y lo que se revisa letra por letra son las variantes, NO el sobre: el
     // sello de tiempo es un número de 13 dígitos y a ciertas horas del día
@@ -346,6 +359,39 @@ describe("registrar una venta", () => {
       "SELECT fisico FROM existencias WHERE codigo = 'NAT-M' AND bodega_id = 'bod-1'",
     ).first<{ fisico: number }>();
     expect(e?.fisico).toBe(2);
+  });
+
+  it("baja el costo promedio, no solo el estante", async () => {
+    // La venta del CRM NO pasa por pedidos ni por `marcarEntregada`: va
+    // derecha a `aplicar()`. Si bajara el físico y dejara el promedio quieto,
+    // `valor_inventario` acabaría diciendo que hay mercancía que ya se vendió,
+    // y el costo de las ventas siguientes saldría inflado. Un promedio
+    // corrompido cuadra igual, que es lo peor que puede pasar.
+    await real.DB.prepare("DELETE FROM valor_inventario WHERE codigo = 'NAT-M'").run();
+    await real.DB.prepare(
+      "INSERT INTO valor_inventario (codigo,unidades,valor_cents) VALUES ('NAT-M',20,6000)",
+    ).run();
+
+    const r = await crm().registrarVenta(DUENA, {
+      idempotencia: clave(),
+      lineas: [{ codigo: "NAT-M", cantidad: 5 }],
+      pagado: "todo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+
+    // round(6000 × 5 / 20) = 1500.
+    const v = await real.DB.prepare(
+      "SELECT unidades, valor_cents FROM valor_inventario WHERE codigo = 'NAT-M'",
+    ).first<{ unidades: number; valor_cents: number }>();
+    expect(v).toEqual({ unidades: 15, valor_cents: 4500 });
+
+    // Y queda copiado en el movimiento, para que el asiento de esta venta no
+    // dependa del promedio de mañana (05-contabilidad §4).
+    const m = await real.DB.prepare(
+      `SELECT costo_unit_cents FROM movimientos_inventario
+        WHERE codigo = 'NAT-M' AND tipo = 'venta' ORDER BY creado_en DESC, id DESC LIMIT 1`,
+    ).first<{ costo_unit_cents: number | null }>();
+    expect(m?.costo_unit_cents).toBe(300);
   });
 
   it("no deja vender más de lo que hay", async () => {

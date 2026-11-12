@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { type Yo, dinero, fecha, useCarga } from "../api";
 import { Carga, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
 import { AccionesPedido, type PedidoParaActuar } from "./AccionesPedido";
-import { NuevoPedido } from "./NuevoPedido";
+import { type ModoDeDocumento, NuevoPedido } from "./NuevoPedido";
 
 /**
  * Los pedidos.
@@ -44,6 +44,9 @@ interface Pedido {
 /** Los estados, en el orden del recorrido de una venta. */
 const ESTADOS: { clave: string; nombre: string }[] = [
   { clave: "", nombre: "Todos" },
+  // Primero del recorrido: una cotización es este mismo documento antes de
+  // apartar nada.
+  { clave: "cotizacion", nombre: "Cotizaciones" },
   { clave: "por_abonar", nombre: "Por abonar" },
   { clave: "agendado", nombre: "Agendados" },
   { clave: "en_ruta", nombre: "En ruta" },
@@ -53,6 +56,7 @@ const ESTADOS: { clave: string; nombre: string }[] = [
 ];
 
 const NOMBRE_ESTADO: Record<string, string> = {
+  cotizacion: "Cotización",
   por_abonar: "Por abonar",
   agendado: "Agendado",
   en_ruta: "En ruta",
@@ -83,6 +87,11 @@ const NOMBRE_ORIGEN: Record<string, string> = {
  *
  * `por_abonar` va en ámbar y no en gris: es el único estado que se vence solo,
  * y lo que se vence solo tiene que pedir atención aunque nadie lo mire.
+ *
+ * `cotizacion` va en NEUTRO a propósito, aunque también pueda caducar: una
+ * cotización sin confirmar no bloquea nada ni le debe nada a nadie. Si pidiera
+ * atención en ámbar, la lista estaría gritando por documentos que no tienen
+ * ningún problema — y entonces el ámbar deja de significar «mire esto».
  */
 function tonoDe(estado: string): "neutro" | "bien" | "aviso" | "mal" {
   if (estado === "entregado") return "bien";
@@ -119,7 +128,9 @@ export function Pedidos() {
     `/api/pedidos${cola === "" ? "" : `?${cola}`}`,
     [recarga],
   );
-  const [tomando, setTomando] = useState(false);
+  // Qué hoja está abierta, o ninguna. Un solo estado para las dos: con dos
+  // banderas podrían quedar las dos abiertas a la vez.
+  const [haciendo, setHaciendo] = useState<ModoDeDocumento | null>(null);
   const [actuando, setActuando] = useState<PedidoParaActuar | null>(null);
 
   // Mirar los pedidos es una cosa y moverlos es otra: la contadora los ve y no
@@ -130,13 +141,28 @@ export function Pedidos() {
   return (
     <div className="grid gap-4">
       {puedeTocar ? (
-        <button
-          type="button"
-          onClick={() => setTomando(true)}
-          className="tactil w-full rounded-[14px] bg-accent px-4 py-3 font-bold text-accent-fg focus-visible:outline-accent-edge focus-visible:outline-2 md:w-auto md:justify-self-start"
-        >
-          + Tomar un pedido
-        </button>
+        // Los dos verbos del mostrador, uno al lado del otro. En el teléfono
+        // se apilan a ancho completo (`grid` sin columnas) y en computadora van
+        // en fila: nada de `min-width` en píxeles, que el §7 prohíbe.
+        <div className="grid gap-2 md:flex md:justify-start">
+          <button
+            type="button"
+            onClick={() => setHaciendo("pedido")}
+            className="tactil w-full rounded-[14px] bg-accent px-4 py-3 font-bold text-accent-fg focus-visible:outline-accent-edge focus-visible:outline-2 md:w-auto"
+          >
+            + Tomar un pedido
+          </button>
+          {/* Secundario y no otro botón de acento: tomar un pedido es lo que
+              se hace todo el día; cotizar es de vez en cuando, y dos botones
+              igual de fuertes obligan a leer antes de tocar. */}
+          <button
+            type="button"
+            onClick={() => setHaciendo("cotizacion")}
+            className="tactil w-full rounded-[14px] border border-line px-4 py-3 font-bold text-fg focus-visible:outline-accent-edge focus-visible:outline-2 md:w-auto"
+          >
+            + Hacer una cotización
+          </button>
+        </div>
       ) : null}
 
       <Tarjeta>
@@ -183,14 +209,21 @@ export function Pedidos() {
           d.pedidos.length === 0 ? (
             <Vacio
               titulo={
-                estado === "" && busca === ""
-                  ? "Todavía no hay pedidos"
-                  : "Ningún pedido con ese filtro"
+                estado === "cotizacion" && busca === ""
+                  ? "Todavía no hay cotizaciones"
+                  : estado === "" && busca === ""
+                    ? "Todavía no hay pedidos"
+                    : "Ningún pedido con ese filtro"
               }
               detalle={
-                estado === "" && busca === ""
-                  ? "Aquí van a aparecer en cuanto entre el primero, venga de la web, de WhatsApp o del panel."
-                  : "Pruebe con otro estado, o borre lo que escribió en la búsqueda."
+                // La cotización vacía explica QUÉ es, y no «pruebe otro
+                // filtro»: es la pantalla donde la dueña se entera de que
+                // existe la posibilidad.
+                estado === "cotizacion" && busca === ""
+                  ? "Una cotización es un pedido que todavía no aparta mercancía: sirve para pasarle un precio a una clienta sin quitarle las cajas a nadie. Al confirmarla se convierte en pedido y entonces sí se aparta."
+                  : estado === "" && busca === ""
+                    ? "Aquí van a aparecer en cuanto entre el primero, venga de la web, de WhatsApp o del panel."
+                    : "Pruebe con otro estado, o borre lo que escribió en la búsqueda."
               }
             />
           ) : (
@@ -220,7 +253,11 @@ export function Pedidos() {
                             className="m-0 block w-full cursor-pointer border-0 bg-transparent p-0 text-left font-bold text-fg underline decoration-line underline-offset-4 focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2"
                           >
                             {p.numero}
-                            <span className="sr-only"> — tocar para agendar o cancelar</span>
+                            <span className="sr-only">
+                              {p.estado === "cotizacion"
+                                ? " — tocar para confirmar o descartar"
+                                : " — tocar para agendar o cancelar"}
+                            </span>
                           </button>
                         ) : (
                           p.numero
@@ -242,13 +279,21 @@ export function Pedidos() {
                       </Celda>
                       <Celda etiqueta="Saldo" papel="clave">
                         {/* Nulo y cero no son lo mismo: nulo es «usted no ve
-                            el dinero», cero es «no debe nada». */}
-                        {p.saldo_cents === null ? (
+                            el dinero», cero es «no debe nada».
+
+                            Y una COTIZACIÓN no debe nada todavía: su total es
+                            lo que costaría, no lo que la clienta debe. Puesto
+                            bajo una columna llamada «Saldo» y sin decirlo, se
+                            lee como una deuda que nadie contrajo — y alguien
+                            acabaría cobrándola. */}
+                        {p.total_cents === null ? (
                           <span className="text-muted">—</span>
+                        ) : p.estado === "cotizacion" ? (
+                          <span className="text-muted">{dinero(p.total_cents)} cotizados</span>
                         ) : p.saldo_cents === 0 ? (
                           <span className="text-muted">Al día</span>
                         ) : (
-                          dinero(p.saldo_cents)
+                          dinero(p.saldo_cents ?? 0)
                         )}
                       </Celda>
                       <Celda etiqueta="Cuándo" papel="meta">
@@ -272,8 +317,11 @@ export function Pedidos() {
         }
       </Carga>
       <NuevoPedido
-        abierta={tomando}
-        alCerrar={() => setTomando(false)}
+        abierta={haciendo !== null}
+        // `?? "pedido"` para que el tipo cierre al cerrarse la hoja; con
+        // `abierta` en falso no se pinta nada, así que el valor no se ve.
+        modo={haciendo ?? "pedido"}
+        alCerrar={() => setHaciendo(null)}
         alCrear={() => setRecarga((n) => n + 1)}
       />
 

@@ -1,0 +1,51 @@
+-- 0013_whatsapp_por_variante.sql · Apagar el botón de WhatsApp en un producto
+-- concreto
+--
+-- El dueño lo pidió así: la web va a tener pago en línea, pero también se va a
+-- poder pedir por WhatsApp, y «desde Ajustes el administrador decide si muestra
+-- o no el botón de WhatsApp, por producto».
+--
+-- Son DOS decisiones distintas y por eso viven en dos sitios:
+--
+--   · ¿se pide por WhatsApp en esta tienda?  → el ajuste global
+--     `whatsapp_pedidos_activo`, en la tabla `ajustes`, que es donde viven las
+--     reglas del negocio y donde quedan con su historial y su motivo.
+--   · ¿y en ESTE artículo?                   → esta columna.
+--
+-- Meterlo todo en el ajuste global no alcanzaba: no hay forma de decir «en el
+-- combo grande no» sin nombrar artículos dentro de un ajuste, y una lista de
+-- códigos dentro de un JSON de configuración se queda vieja en silencio el día
+-- que un código se renombra o se borra. Aquí la columna vive en la fila del
+-- artículo y desaparece con él.
+--
+-- NACE NULA Y PUEDE QUEDARSE NULA, y el nulo SIGNIFICA algo
+--
+--   NULL → «lo que diga Ajustes». Es el valor de las 12 variantes que ya
+--          existen, y es lo correcto: nadie ha decidido nada por artículo
+--          todavía, y un 0 o un 1 lo afirmaría de todas.
+--   1    → se enseña aunque... no, se enseña si el ajuste global está
+--          encendido. Esta columna NO enciende nada por su cuenta: ver abajo.
+--   0    → no se enseña en este artículo, pase lo que pase.
+--
+-- Sin DEFAULT a propósito, por lo mismo que `direcciones.pais` en 0012: un
+-- DEFAULT daría la decisión por tomada en todas las filas que ya están.
+--
+-- POR QUÉ UN 1 NO ENCIENDE NADA POR SU CUENTA
+--
+-- El ajuste global es el interruptor de la tienda. Si un 1 por artículo pudiera
+-- saltárselo, apagar WhatsApp en Ajustes —que es lo que la dueña haría si el
+-- celular se pierde o se cambia— dejaría botones vivos por ahí, apuntando a un
+-- número que ya no contesta, sin que nada avise. Así que la regla es:
+--
+--     se enseña  =  ajuste global encendido  Y  (columna IS NULL O columna = 1)
+--
+-- Vive en un solo sitio, `src/rpc/catalogo.ts`, que es por donde la web recibe
+-- el catálogo. El navegador recibe la decisión ya tomada: así no puede
+-- equivocarse al combinarlas, y mañana se puede cambiar la regla sin desplegar
+-- la web.
+--
+-- El CHECK deja pasar el nulo: en SQLite un CHECK solo falla si da FALSO, y
+-- `NULL IN (0,1)` da NULL. Es justo lo que se quiere.
+
+ALTER TABLE variantes ADD COLUMN pedir_por_whatsapp INTEGER
+  CHECK (pedir_por_whatsapp IN (0, 1));

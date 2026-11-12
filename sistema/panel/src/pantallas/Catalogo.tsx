@@ -19,6 +19,8 @@ interface Variante {
   version: number;
   imagen: string | null;
   es_combo: number;
+  /** El botón de WhatsApp en este artículo. `null` = lo que diga Ajustes. */
+  pedir_por_whatsapp: number | null;
   costo_unidades?: number | null;
   costo_valor_cents?: number | null;
 }

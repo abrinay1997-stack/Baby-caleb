@@ -156,7 +156,7 @@ export function revisar(valor: unknown, nombresConocidos: readonly string[] = []
   const nombres = nombresConocidos
     .map((n) => n.trim())
     .filter((n) => n.length >= 3)
-    .map((n) => n.toLowerCase());
+    .map(comoPalabra);
 
   const mirar = (v: unknown, camino: string): void => {
     if (typeof v === "string") {
@@ -167,9 +167,8 @@ export function revisar(valor: unknown, nombresConocidos: readonly string[] = []
         encontradas.push({ camino, que: "celular", muestra: recorte(v) });
       }
 
-      const enMinuscula = v.toLowerCase();
       for (const n of nombres) {
-        if (enMinuscula.includes(n)) {
+        if (n.test(v)) {
           encontradas.push({ camino, que: "nombre_de_clienta", muestra: recorte(v) });
           break;
         }
@@ -203,6 +202,43 @@ export function revisar(valor: unknown, nombresConocidos: readonly string[] = []
 
   mirar(valor, "");
   return encontradas;
+}
+
+/**
+ * El nombre de una clienta, como PALABRA y no como trozo de palabra.
+ *
+ * Antes se buscaba con `includes`, que da positivo con cualquier palabra que
+ * lleve el nombre dentro. El caso que lo delató no es raro: una clienta llamada
+ * **Ana** y la palabra **Panamá** —«p-ana-má»—, así que `ver_bodegas`, cuyas
+ * bodegas se llaman «Bodega Ciudad de Panamá», se descartaba ENTERA. Y no era
+ * cosa de una herramienta nueva: `ver_stock` sin código ya devolvía esos mismos
+ * nombres de bodega, y las zonas de envío de fábrica incluyen «Panamá Oeste» y
+ * «Juan Díaz».
+ *
+ * El efecto no se parece a un fallo. La guarda no recorta ni tacha: DESCARTA el
+ * resultado entero y le dice al modelo que traía datos de una clienta. O sea
+ * que el asistente habría contestado «no pude averiguarlo» para siempre por una
+ * clienta llamada Ana, y nadie habría sabido por qué. Es el mismo problema que
+ * ya tuvo el patrón de los celulares, y su lección está escrita más arriba en
+ * este archivo: una guarda que grita con cosas inocentes acaba apagada, y
+ * entonces no guarda nada.
+ *
+ * Los bordes NO son `\b`. `\b` cuenta como letra solo lo que cabe en ASCII, y
+ * con eso `\bjosé\b` no casa con «josé pidió»: después de la «é» no hay
+ * frontera, porque ni la «é» ni el espacio son letras para `\b`. Media
+ * clientela quedaría sin vigilar por llevar acento. Las miras de abajo
+ * preguntan por `\p{L}` y `\p{N}`, que sí saben de acentos, y el nombre se
+ * escapa antes porque un nombre puede traer cualquier carácter dentro.
+ *
+ * Lo que se pierde a cambio: un nombre metido dentro de otro más largo —«Rosa»
+ * dentro de «Rosalinda»— ya no se caza. Y los dígitos cuentan como frontera
+ * a propósito: sin eso, un código como «BC-ANA01» seguiría dando positivo, y
+ * este sistema está lleno de códigos. Eso era casualidad, no vigilancia: a
+ * quien hay que cazar es a Rosa, y a Rosa se la sigue cazando.
+ */
+function comoPalabra(nombre: string): RegExp {
+  const escapado = nombre.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapado}(?![\\p{L}\\p{N}])`, "iu");
 }
 
 function queEs(clave: string): Filtracion["que"] {

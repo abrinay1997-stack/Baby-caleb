@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PERMISOS, permisosDe } from "../src/seguridad/roles";
@@ -30,6 +32,28 @@ function clavesDe(nombre: string): string[] {
 }
 
 describe("el panel de muestra", () => {
+  /**
+   * Que el guion al menos SE PUEDA LEER.
+   *
+   * Un merge dejó este archivo con la llamada a `ajuste("checkout_activo")`
+   * sin cerrar y las 2073 pruebas del sistema siguieron verdes: las de aquí
+   * abajo leen la fuente como TEXTO y buscan con expresiones regulares, así
+   * que un paréntesis de más les da igual. El archivo roto solo se notó al
+   * arrancar el servidor a mano, y lo que se cayó con él fue la auditoría del
+   * panel entera.
+   *
+   * No se puede importar: al importarlo se pone a escuchar en un puerto. Así
+   * que se compila sin ejecutar, que es justo lo que hace `node --check`.
+   */
+  it("es un archivo que Node puede compilar", async () => {
+    await expect(
+      promisify(execFile)(process.execPath, [
+        "--check",
+        join(import.meta.dirname, "panel-de-muestra.mjs"),
+      ]),
+    ).resolves.toBeTruthy();
+  });
+
   it("usa los permisos de verdad de la dueña, ni uno más ni uno menos", () => {
     expect(clavesDe("PERMISOS_DUENA")).toEqual(Object.keys(permisosDe("duena")).sort());
   });
@@ -48,8 +72,28 @@ describe("el panel de muestra", () => {
                      "/api/bodegas", "/api/zonas", "/api/ajustes", "/api/usuarios",
                      // Clientas: sin su muestra, la auditoría mediría un 404
                      // en la pantalla donde se escribe la cédula.
-                     "/api/clientes"]) {
+                     "/api/clientes",
+                     // El checkout: lo pide la pantalla de Ajustes para poder
+                     // decir si `checkout_activo` está surtiendo efecto. Sin
+                     // su muestra, esa tarjeta —que existe justo porque el
+                     // interruptor mentía— no la mira nunca nadie.
+                     "/api/checkout"]) {
       expect(rutas, `falta la muestra de ${r}`).toContain(r);
+    }
+  });
+
+  /**
+   * Y la muestra de pedidos trae una COTIZACIÓN.
+   *
+   * La hoja que la confirma solo existe sobre una fila en ese estado: sin
+   * ella, el auditor abre la pantalla de pedidos, no encuentra ninguna
+   * cotización y pasa de largo diciendo «sin fallas» de lo que ya estaba.
+   */
+  it("trae un pedido en cada estado que el panel sabe pintar, cotización incluida", () => {
+    const estados = [...fuente.matchAll(/estado: "(\w+)",\s*\n\s*estado_pago:/g)].map((m) => m[1]!);
+    for (const e of ["cotizacion", "por_abonar", "agendado", "en_ruta", "entregado", "cancelado",
+                     "devuelto"]) {
+      expect(estados, `falta un pedido en estado ${e}`).toContain(e);
     }
   });
 

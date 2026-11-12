@@ -110,7 +110,13 @@ function comoSeDevuelve(final: Final): Record<string, unknown> {
  */
 export type HacerProveedor = (env: Env) => Proveedor | null;
 
-const porMeta: HacerProveedor = (env) => {
+/**
+ * Se exporta porque la puerta de Telegram usa EL MISMO cerebro
+ * (`api/telegram-rutas.ts`). Copiarlo allá pondría el modelo por omisión en
+ * dos sitios, y el día que cambie uno la dueña tendría dos Caleb distintos
+ * según por dónde le hablara.
+ */
+export const porMeta: HacerProveedor = (env) => {
   const llave = (env.META_API_KEY ?? "").trim();
   if (llave === "") return null;
   return meta({ clave: llave, modelo: env.MODELO_ASISTENTE ?? "muse-spark-1.3-contributor" });

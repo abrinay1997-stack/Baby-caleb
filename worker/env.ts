@@ -102,4 +102,25 @@ export interface Env {
    * Por eso se pone a mano.
    */
   readonly CF_ANALYTICS_TOKEN?: string;
+
+  /**
+   * El identificador del píxel de Meta. **EL INTERRUPTOR, Y NACE APAGADO.**
+   *
+   * Vacío o ausente, el Worker no escribe la etiqueta y el navegador no tiene
+   * ningún identificador que usar: el píxel no existe para la web, con
+   * consentimiento o sin él. Así se puede desplegar todo el aparato del
+   * consentimiento sin encender el rastreo.
+   *
+   * Va como variable y no como secreto, igual que `CF_ANALYTICS_TOKEN`: acaba
+   * escrito en el HTML de cada página, así que no es un secreto por mucho que
+   * lo parezca.
+   *
+   * Lo que el Worker escribe es SOLO el número, nunca el `<script>` de Meta.
+   * El script lo cuelga el navegador y solo después de un sí
+   * (`src/consentimiento/pixel.ts`): desde el servidor no se puede saber qué
+   * decidió esta persona —la decisión vive en SU navegador y no viaja—, así
+   * que un script inyectado aquí cargaría antes de preguntar. Hay una prueba
+   * en `worker/head.test.ts` que lo vigila.
+   */
+  readonly META_PIXEL_ID?: string;
 }

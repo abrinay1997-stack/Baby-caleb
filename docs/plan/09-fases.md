@@ -240,7 +240,7 @@ prorrateo; conciliación con CSV reales anonimizados; balance = 0 tras un mes si
 |---|---|---|
 | F6.1 | Catálogo completo | Las herramientas de [06 §5](06-asistente.md#5-herramientas-iniciales) con su prueba |
 | F6.2 | Chat del panel | Botón flotante, contexto de pantalla, pasos en vivo por SSE, tarjetas Permitir/Rechazar |
-| F6.3 | Telegram | `cerebro.ts` del CRM suma las herramientas del sistema por RPC; confirmaciones con botones; `registrarUsoIA` |
+| F6.3 | Telegram | **Hecho distinto (2026-11-12):** el webhook vive en el SISTEMA (`POST /telegram/webhook`, fuera de Access) y mueve el turno con `conversar(...)`, en vez de que el `cerebro.ts` del CRM pida las herramientas por RPC — ver la corrección de [06 §4](06-asistente.md#4-canales). Confirmaciones con botones y gasto anotado, sí. Queda sin memoria de conversación y sin host decidido |
 | F6.4 | MCP | `/mcp` con OAuth o token personal; empieza con lectura |
 | F6.5 | Modelo y tope | Muse Spark Contributor (D-19) con la capa de referencias (D-20) y su prueba; modelo de respaldo; tope mensual global y por persona |
 | F6.6 | Defensas | Las de [06 §7](06-asistente.md#7-defensas) con sus pruebas |

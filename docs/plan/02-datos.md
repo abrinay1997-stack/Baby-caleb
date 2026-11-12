@@ -309,8 +309,8 @@ CREATE TABLE pedidos (
   cliente_id         TEXT NOT NULL REFERENCES clientes(id),
   origen             TEXT NOT NULL CHECK (origen IN ('web','whatsapp','instagram','messenger','telegram','panel')),
   conversacion_ref   TEXT,                             -- id de conversación del CRM, si nació en un chat
-  estado             TEXT NOT NULL CHECK (estado IN ('por_abonar','agendado','en_ruta','entregado',
-                       'cancelado','devuelto')),
+  estado             TEXT NOT NULL CHECK (estado IN ('cotizacion','por_abonar','agendado','en_ruta',
+                       'entregado','cancelado','devuelto')),
   estado_pago        TEXT NOT NULL CHECK (estado_pago IN ('sin_pago','abonado','pagado',
                        'reembolso_parcial','reembolsado')),
   direccion_id       TEXT REFERENCES direcciones(id),
@@ -323,7 +323,7 @@ CREATE TABLE pedidos (
   pagado_cents       INTEGER NOT NULL DEFAULT 0 CHECK (pagado_cents >= 0),
   abono_minimo_cents INTEGER NOT NULL,                 -- copiado de ajustes al crear: la regla no cambia a mitad
   requiere_pago_total INTEGER NOT NULL DEFAULT 0 CHECK (requiere_pago_total IN (0,1)),
-  vence_en           INTEGER,                          -- solo en por_abonar
+  vence_en           INTEGER,                          -- en cotizacion: hasta cuándo vale el precio; en por_abonar: hasta cuándo se guarda el apartado
   notas_cliente      TEXT,
   notas_internas     TEXT,
   version            INTEGER NOT NULL DEFAULT 1,
@@ -355,7 +355,10 @@ CREATE TABLE pedido_eventos (
 
 ```mermaid
 stateDiagram-v2
+  [*] --> cotizacion: panel o asistente (no aparta nada)
   [*] --> por_abonar: web, chat o panel
+  cotizacion --> por_abonar: la clienta acepta — AQUÍ se aparta el inventario
+  cotizacion --> cancelado: caduca o la descarta (no hubo venta: ni asiento ni reserva)
   por_abonar --> agendado: pagado ≥ abono mínimo (o total si requiere_pago_total)
   por_abonar --> cancelado: vence sin abono, o la clienta desiste
   agendado --> en_ruta: motorizado sale (o guía de Ferguson)
@@ -368,6 +371,29 @@ stateDiagram-v2
   devuelto --> [*]
 ```
 
+**La cotización es el MISMO documento, al modelo de Odoo** (lo pidió el dueño). No es una tabla
+aparte ni un borrador que se copia: es `pedidos.estado = 'cotizacion'`, con su número, sus líneas y
+sus precios ya puestos por el servidor. Confirmarla es la transición a `por_abonar`, con el mismo
+camino y la misma fila de control que cualquier otra.
+
+Lo que la define es lo que NO hace:
+
+- **no toca `existencias.reservado`** y **no escribe `pedido_linea_componentes`** (que es la tabla
+  de lo apartado). Diez cotizaciones por la misma caja no mienten sobre el inventario;
+- por eso se puede cotizar lo que hoy está agotado, y por eso al confirmar se vuelve a elegir
+  bodega y se resuelve la receta de los combos con los datos de ESE momento;
+- si al confirmar ya no alcanza, se dice nombrando el artículo y **el documento sigue siendo una
+  cotización**: el batch es todo o nada;
+- **no escribe ningún asiento contable**, ni al crearla ni al confirmarla ni al descartarla. Una
+  cotización no es un hecho económico, y la venta se sigue reconociendo al entregar
+  ([05](05-contabilidad.md)).
+
+Caduca con `vence_en`, que sale de `ajustes.cotizacion_dias_validez`. Esa clave nace `PENDIENTE`
+—nadie ha confirmado cuántos días Baby Caleb mantiene un precio por escrito— y mientras lo esté, la
+cotización se crea sin fecha de caducidad. Es el lado seguro: una cotización vencida no se puede
+confirmar, así que un número inventado de menos dejaría a la clienta con un papel que el sistema
+rechaza.
+
 ### Estado del pago (independiente)
 
 `sin_pago → abonado → pagado`, y de `abonado` o `pagado` a `reembolso_parcial` o `reembolsado`.
@@ -376,6 +402,9 @@ de Nébula: `pagado_cents = 0 → sin_pago`, `0 < pagado < total → abonado`, `
 
 Reglas de transición (con fila de control en cada una):
 
+- `cotizacion → por_abonar` (confirmar) aparta el inventario con la misma función que usa
+  `crearPedido`, y falla entera si no alcanza. Una cotización caducada no se confirma.
+- `cotizacion → cancelado` no libera nada ni escribe asientos: no había nada apartado ni vendido.
 - `por_abonar → agendado` exige `pagado_cents ≥ abono_minimo_cents`, o `= total_cents` si
   `requiere_pago_total = 1` (Ferguson, y cualquier pedido cuyo pago fue con tarjeta o PayPal).
 - `agendado → en_ruta` sigue la política `contra_entrega` de `abonos.ts` de Nébula (sale con saldo y
@@ -536,11 +565,12 @@ Las tablas del asistente (`asistente_conversaciones`, `asistente_mensajes`, `acc
 |---|---|---|
 | `abono_minimo_cents` | 500 | KB del CRM, `pagos-y-abonos.md` («abonar mínimo $5.00») |
 | `ferguson_pago_total` | true | KB del CRM, mismo documento |
-| `checkout_activo` | false | Se enciende en F4 |
+| `checkout_activo` | false | La intención de la dueña. Por sí solo no enciende nada: lo que decide si la web cobra es `src/dominio/checkout.ts`, que lo cruza con las pasarelas listas. Ver [04 §11](04-pagos.md) |
 | `pasarelas_activas` | [] | Se encienden una por una en F4 |
 | `metodos_para_abono` | ["yappy","manual"] | Confirmado el 2026-10-29 (D-14) |
 | `reserva_minutos_pago_en_linea` | PENDIENTE | Propuesta: 30 |
 | `reserva_horas_comprobante` | PENDIENTE | Propuesta: 2 |
+| `cotizacion_dias_validez` | PENDIENTE | Cuántos días vale una cotización. **La dueña.** Sin decidir, no caduca |
 | `ventanas_entrega` | PENDIENTE | La dueña |
 | `comisiones` | PENDIENTE | Contratos de cada pasarela |
 | `cancelacion_con_abono` | PENDIENTE | ¿Reembolso o crédito? La dueña |

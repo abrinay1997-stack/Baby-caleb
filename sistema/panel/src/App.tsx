@@ -9,6 +9,7 @@ import { Catalogo } from "./pantallas/Catalogo";
 import { Clientas } from "./pantallas/Clientas";
 import { Cobros } from "./pantallas/Cobros";
 import { Entregas } from "./pantallas/Entregas";
+import { Motorizados } from "./pantallas/Motorizados";
 import { Contabilidad } from "./pantallas/Contabilidad";
 import { Existencias } from "./pantallas/Existencias";
 import { Pedidos } from "./pantallas/Pedidos";
@@ -71,6 +72,7 @@ export function App() {
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="existencias" element={<Existencias />} />
             <Route path="entregas" element={<Entregas />} />
+            <Route path="motorizados" element={<Motorizados />} />
             <Route path="bodegas" element={<Bodegas />} />
             <Route path="zonas" element={<Zonas />} />
             <Route path="ajustes" element={<Ajustes />} />

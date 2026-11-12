@@ -73,6 +73,7 @@ import {
   alta as altaDeUsuario,
   cambiarAcceso as cambiarAccesoDeUsuario,
 } from "../db/usuarios";
+import { MINUTOS_VINCULO, crearCodigoDeVinculo } from "../db/telegram";
 import {
   buscar as buscarClientas,
   editar as editarClienta,
@@ -82,8 +83,19 @@ import {
 import type { CambiosEnClienta, CambiosEnDireccion } from "../db/clientes";
 import { type HacerProveedor, registrarRutasDelAsistente } from "./asistente-rutas";
 import { codigoHttp } from "./estados";
-import { crearPedido } from "../db/pedidos";
-import { agendar as agendarPedido, cancelar as cancelarPedido } from "../db/transiciones";
+import {
+  cambiarEstado as cambiarEstadoMotorizado,
+  crear as crearMotorizado,
+  editar as editarMotorizado,
+  listar as listarMotorizados,
+} from "../db/motorizados";
+import { verCheckout } from "../db/checkout";
+import { crearPedido, reglasDelPedido as reglasDeUnPedidoNuevo } from "../db/pedidos";
+import {
+  agendar as agendarPedido,
+  cancelar as cancelarPedido,
+  confirmarCotizacion,
+} from "../db/transiciones";
 import {
   armarRuta,
   cancelarRuta,
@@ -398,7 +410,8 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
     // consulta.
     const { results } = await c.env.DB.prepare(
       `SELECT v.codigo, v.nombre, v.talla, v.unidades_por_caja, v.precio_cents,
-              v.tasa_itbms_bp, v.publicado, v.activo, v.version, v.imagen, v.es_combo, p.familia, p.nombre AS producto
+              v.tasa_itbms_bp, v.publicado, v.activo, v.version, v.imagen, v.es_combo,
+              v.pedir_por_whatsapp, p.familia, p.nombre AS producto
               ${conCosto ? ", vi.unidades AS costo_unidades, vi.valor_cents AS costo_valor_cents" : ""}
        FROM variantes v
        JOIN productos p ON p.id = v.producto_id
@@ -490,6 +503,23 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
       return c.json(fallo("entrada_invalida", "falta la versión que se leyó"), 400);
     }
 
+    // El botón de WhatsApp tiene TRES estados y el nulo es uno de ellos:
+    // ausente = «no toques este campo», `null` = «lo que diga Ajustes»,
+    // booleano = decidido en este artículo. Cualquier otra cosa se rechaza con
+    // su propio motivo en vez de interpretarse: un `"si"` tragado como `false`
+    // apagaría el botón de un producto sin que nadie lo pidiera, y la pantalla
+    // diría que guardó bien.
+    const boton = b["pedirPorWhatsapp"];
+    if (boton !== undefined && boton !== null && typeof boton !== "boolean") {
+      return c.json(
+        fallo(
+          "entrada_invalida",
+          "pedirPorWhatsapp solo acepta true, false o null (null = lo que diga Ajustes)",
+        ),
+        400,
+      );
+    }
+
     const r = await editarVariante(
       contextoCatalogo(c),
       c.req.param("codigo"),
@@ -504,6 +534,9 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
           : { precioCents: entero(b["precioCents"]) as number }),
         ...(b["tasaItbmsBp"] === undefined ? {} : { tasaItbmsBp: entero(b["tasaItbmsBp"]) ?? null }),
         ...(typeof b["publicado"] === "boolean" ? { publicado: b["publicado"] } : {}),
+        ...(b["pedirPorWhatsapp"] === undefined
+          ? {}
+          : { pedirPorWhatsapp: b["pedirPorWhatsapp"] as boolean | null }),
         ...(texto(b["motivo"]) === undefined ? {} : { motivo: texto(b["motivo"]) as string }),
       },
       version,
@@ -1021,6 +1054,27 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
+  /**
+   * ¿Puede la web cobrar? Y si no, qué falta.
+   *
+   * Esta ruta es la que hace que `ajustes.checkout_activo` deje de mentir.
+   * Antes ese interruptor valía `true` en producción y NINGÚN código lo
+   * consultaba: la dueña lo encendía y no pasaba nada, lo apagaba y tampoco
+   * (docs/TRAMPAS.md §13). Ahora hay quien lo lea, y lo que contesta no es el
+   * valor guardado sino lo que ese valor está consiguiendo.
+   *
+   * Va con `ajustes` y no con `cobros`: es la pantalla de Configuración la que
+   * la pide, al lado del propio interruptor, y lo que devuelve es
+   * configuración —qué está puesto y qué falta—, no dinero.
+   *
+   * No lleva ni una credencial: `verCheckout` se apoya en `estado` de
+   * pasarelas, cuya consulta no nombra siquiera la columna del secreto.
+   */
+  panel.get("/checkout", exige("ajustes"), async (c) => {
+    const r = await verCheckout(contextoPasarelas(c));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
   panel.post("/pasarelas/:pasarela/credenciales/:credencial", exigeEditar("ajustes"), async (c) => {
     const b = await cuerpo(c);
     if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
@@ -1237,46 +1291,71 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
   });
 
   /**
-   * Las reglas que `crearPedido` exige RESUELTAS.
+   * Las reglas que `crearPedido` exige, resueltas.
    *
-   * Esa función se niega a inventar ninguna —«aquí no se inventa ninguno»,
-   * dice su contrato— así que quien la llama tiene que leer los ajustes y
-   * traérselas. Esto es ese paso, en un solo sitio para que la ruta del panel
-   * y la de la web no acaben resolviéndolas distinto.
-   *
-   * `abono_minimo_cents` NO admite PENDIENTE por diseño (su esquema lo dice),
-   * así que siempre hay un número: el de la dueña, o el de fábrica.
-   *
-   * El plazo sale de `reserva_horas_comprobante` y no de
-   * `reserva_minutos_pago_en_linea`, porque un pedido tomado DESDE EL PANEL lo
-   * toma una persona hablando con la clienta, y se paga con comprobante o en
-   * efectivo, no por un enlace de pago. Con la clave sin decidir el plazo es
-   * `null` —«no vence»—, que es un valor que el contrato de `crearPedido`
-   * contempla, no un hueco: un pedido que tomó una persona no se cancela solo
-   * a espaldas de quien lo tomó.
+   * Vivían aquí, atadas a un `Context` de Hono. Se mudaron a
+   * `src/db/pedidos.ts`, al lado de `crearPedido`, porque la herramienta
+   * `crear_pedido` del asistente las necesita igual y una segunda copia de esa
+   * interpretación habría hecho que el mismo ajuste significara dos cosas
+   * según por qué puerta entrara el pedido. El porqué largo está allá.
    */
-  async function reglasDelPedido(
-    c: Context<Entorno>,
-  ): Promise<Resultado<{ abonoMinimoCents: number; minutosParaAbonar: number | null }>> {
-    const r = await leerVigentes({ db: c.env.DB, ahora: Date.now() });
-    if (!r.ok) return r;
-    const de = (clave: string) => r.datos.ajustes.find((a) => a.clave === clave);
+  const reglasDelPedido = (c: Context<Entorno>) =>
+    reglasDeUnPedidoNuevo({ db: c.env.DB, ahora: Date.now() });
 
-    const abono = de("abono_minimo_cents");
-    if (abono === undefined || abono.pendiente || typeof abono.valor !== "number") {
+
+  /**
+   * Lo que se teclea para tomar un pedido o para hacer una cotización.
+   *
+   * Es la MISMA lectura del cuerpo para las dos rutas, y a propósito: el
+   * documento es el mismo (modelo de Odoo), así que dos lecturas distintas
+   * serían dos formas de entender «qué lleva» que acabarían discrepando.
+   * `origen` se fija en «panel» y no se lee del cuerpo — si quien llama pudiera
+   * declararse «web», un pedido tecleado a mano contaría como una venta que la
+   * tienda nunca hizo.
+   *
+   * Ningún precio entra por aquí: el cuerpo ni siquiera tiene dónde escribir
+   * uno. Los pone el servidor desde el catálogo.
+   */
+  async function loQueSePidio(
+    c: Context<Entorno>,
+    cotizacion: boolean,
+  ): Promise<Resultado<Parameters<typeof crearPedido>[1]>> {
+    const b = await cuerpo(c);
+    if (b === null) return fallo("entrada_invalida", "falta el cuerpo");
+
+    const lineas = b["lineas"];
+    if (!Array.isArray(lineas) || lineas.length === 0) {
       return fallo(
         "entrada_invalida",
-        "falta decidir el abono mínimo. Está en Configuración › Ajustes.",
+        cotizacion
+          ? "una cotización sin líneas no cotiza nada"
+          : "un pedido sin líneas no es un pedido",
       );
     }
 
-    const horas = de("reserva_horas_comprobante");
-    const minutosParaAbonar =
-      horas === undefined || horas.pendiente || typeof horas.valor !== "number"
-        ? null
-        : horas.valor * 60;
+    // La llave de idempotencia la pone la PANTALLA, una por formulario
+    // abierto. Sin ella, un doble toque con mala señal crea dos documentos, y
+    // en el caso del pedido aparta el stock dos veces — eso solo se descubre
+    // contando cajas.
+    const idempotencia = texto(b["idempotencia"]);
+    if (idempotencia === undefined || idempotencia.trim() === "") {
+      return fallo("entrada_invalida", "falta la llave de idempotencia");
+    }
 
-    return ok({ abonoMinimoCents: abono.valor, minutosParaAbonar });
+    return ok({
+      idempotencia: idempotencia.trim(),
+      clienteId: texto(b["clienteId"]) ?? "",
+      origen: "panel" as const,
+      lineas: lineas as never,
+      ...(cotizacion ? { cotizacion: true } : {}),
+      ...(texto(b["zona"]) === undefined ? {} : { zona: texto(b["zona"]) as string }),
+      ...(texto(b["direccionId"]) === undefined
+        ? {}
+        : { direccionId: texto(b["direccionId"]) as string }),
+      ...(texto(b["notasCliente"]) === undefined
+        ? {}
+        : { notasCliente: texto(b["notasCliente"]) as string }),
+    });
   }
 
   /**
@@ -1297,21 +1376,8 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
    * escribir un precio.
    */
   panel.post("/pedidos", exigeEditar("pedidos"), async (c) => {
-    const b = await cuerpo(c);
-    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
-
-    const lineas = b["lineas"];
-    if (!Array.isArray(lineas) || lineas.length === 0) {
-      return c.json(fallo("entrada_invalida", "un pedido sin líneas no es un pedido"), 400);
-    }
-
-    // La llave de idempotencia la pone la PANTALLA, una por formulario abierto.
-    // Sin ella, un doble toque con mala señal crea dos pedidos y aparta el
-    // stock dos veces, y eso solo se descubre contando cajas.
-    const idempotencia = texto(b["idempotencia"]);
-    if (idempotencia === undefined || idempotencia.trim() === "") {
-      return c.json(fallo("entrada_invalida", "falta la llave de idempotencia"), 400);
-    }
+    const pedido = await loQueSePidio(c, false);
+    if (!pedido.ok) return c.json(pedido, codigoHttp(pedido.codigo));
 
     const reglas = await reglasDelPedido(c);
     if (!reglas.ok) return c.json(reglas, codigoHttp(reglas.codigo));
@@ -1324,21 +1390,76 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
         abonoMinimoCents: reglas.datos.abonoMinimoCents,
         minutosParaAbonar: reglas.datos.minutosParaAbonar,
       },
-      {
-        idempotencia: idempotencia.trim(),
-        clienteId: texto(b["clienteId"]) ?? "",
-        origen: "panel",
-        lineas: lineas as never,
-        ...(texto(b["zona"]) === undefined ? {} : { zona: texto(b["zona"]) as string }),
-        ...(texto(b["direccionId"]) === undefined
-          ? {}
-          : { direccionId: texto(b["direccionId"]) as string }),
-        ...(texto(b["notasCliente"]) === undefined
-          ? {}
-          : { notasCliente: texto(b["notasCliente"]) as string }),
-      },
+      pedido.datos,
     );
     return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cotizaciones
+  //
+  // El dueño lo pidió «tomando el modelo de Odoo»: una cotización, al
+  // confirmarse, SE CONVIERTE en pedido. Es el mismo documento cambiando de
+  // estado, no dos documentos — así que aquí no hay `GET /cotizaciones` ni
+  // `GET /cotizaciones/:id`: se leen con `GET /pedidos?estado=cotizacion` y con
+  // `GET /pedidos/:id`, que son las consultas que ya existían. Dos lectores del
+  // mismo documento acabarían recortando el dinero por rol de dos maneras
+  // distintas, y el flojo es el que nadie revisa.
+  //
+  // Y tampoco hay una ruta para cancelarla: `POST /pedidos/:id/cancelar` ya la
+  // acepta. Lo único propio de una cotización son sus dos verbos: hacerla y
+  // confirmarla.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Hacer una cotización: el mismo documento, sin apartar nada.
+   *
+   * Lee el cuerpo con la misma función que un pedido y llama a la misma
+   * `crearPedido`. Lo único que cambia es la bandera, y lo que la bandera
+   * cambia es lo que NO se hace: no se toca `existencias.reservado` y no se
+   * escribe `pedido_linea_componentes`.
+   *
+   * Va con `pedidos` en editar y no con un permiso propio: cotizar es parte de
+   * atender, y quien toma pedidos es quien cotiza. No mueve dinero ni
+   * inventario, así que no sube de nivel.
+   */
+  panel.post("/cotizaciones", exigeEditar("pedidos"), async (c) => {
+    const pedido = await loQueSePidio(c, true);
+    if (!pedido.ok) return c.json(pedido, codigoHttp(pedido.codigo));
+
+    const reglas = await reglasDelPedido(c);
+    if (!reglas.ok) return c.json(reglas, codigoHttp(reglas.codigo));
+
+    const r = await crearPedido(
+      {
+        db: c.env.DB,
+        ahora: Date.now(),
+        actor: c.get("usuario").correo,
+        abonoMinimoCents: reglas.datos.abonoMinimoCents,
+        minutosParaAbonar: reglas.datos.minutosParaAbonar,
+        minutosDeValidezCotizacion: reglas.datos.minutosDeValidezCotizacion,
+      },
+      pedido.datos,
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Confirmarla: se convierte en pedido y AHÍ se aparta el inventario.
+   *
+   * No recibe nada en el cuerpo. Los precios son los que la cotización ya
+   * llevaba escritos —volver a calcularlos al confirmar sería no haber
+   * cotizado— y si alcanza o no la mercancía lo decide el servidor con las
+   * existencias de este momento.
+   *
+   * Si ya no hay, responde `sin_stock` nombrando el artículo y **la cotización
+   * se queda siendo cotización**: ni se agenda, ni se cancela, ni se queda a
+   * medias. Es lo que se pidió, y lo garantiza el batch de
+   * `confirmarCotizacion`, que es todo o nada.
+   */
+  panel.post("/cotizaciones/:id/confirmar", exigeEditar("pedidos"), async (c) => {
+    const r = await confirmarCotizacion(contextoCatalogo(c), c.req.param("id"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   /**
@@ -1628,6 +1749,73 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
   });
 
   // ---------------------------------------------------------------------------
+  // Motorizados
+  //
+  // Esto destapa el circuito, no lo amplía. Toda la cadena de entregas pedía un
+  // `motorizadoId` y nada en el sistema podía crear uno: `armarRuta`,
+  // `despacharRuta` y `sugerirMotorizado` estaban escritos, probados y
+  // esperando una fila que solo se metía con SQL a mano.
+  //
+  // Leer va con `pedidos` y escribir con `ajustes`, que es más estrecho a
+  // propósito: quien atiende necesita SABER a quién asignarle una ruta, pero
+  // dar de alta a alguien que va a entrar a la casa de las clientas con la
+  // mercancía del negocio es decisión de la dueña, no de quien toma pedidos.
+  // ---------------------------------------------------------------------------
+
+  /** Quiénes hay, en qué andan y cuánto llevan hoy. */
+  panel.get("/motorizados", exige("pedidos"), async (c) => {
+    const todos = texto(c.req.query("todos")) === "1";
+    const r = await listarMotorizados(c.env.DB, {
+      incluirInactivos: todos,
+      hoy: fechaDePanama(Date.now()),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Uno nuevo. Nace activo: se da de alta el día que empieza a trabajar. */
+  panel.post("/motorizados", exigeEditar("ajustes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await crearMotorizado(
+      { db: c.env.DB, ahora: Date.now() },
+      { nombre: b["nombre"], celular: b["celular"], vehiculo: b["vehiculo"] },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /** Corregirle el nombre, el celular o en qué anda. */
+  panel.patch("/motorizados/:id", exigeEditar("ajustes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const cambios: { nombre?: unknown; celular?: unknown; vehiculo?: unknown } = {};
+    if ("nombre" in b) cambios.nombre = b["nombre"];
+    if ("celular" in b) cambios.celular = b["celular"];
+    if ("vehiculo" in b) cambios.vehiculo = b["vehiculo"];
+    const r = await editarMotorizado(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      cambios,
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Activo, en pausa o fuera.
+   *
+   * Ruta aparte de la de arriba porque esto cambia lo que el sistema LE DEJA
+   * hacer —solo un `activo` recibe ruta— y eso no es lo mismo que arreglarle
+   * una tilde al nombre. Devuelve cuántas rutas tiene sin cerrar para que la
+   * pantalla lo pueda decir antes de que se descubra mañana.
+   */
+  panel.post("/motorizados/:id/estado", exigeEditar("ajustes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await cambiarEstadoMotorizado(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      b["estado"],
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
   // Entregas (F4.5)
   //
   // TODAS entran por el panel, que está detrás de Cloudflare Access. El
@@ -1910,6 +2098,43 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
       b["activo"],
     );
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Un código para vincular el Telegram de alguien.
+   *
+   * La puerta de Telegram autentica cruzando el `chat_id` con
+   * `usuarios.telegram_chat_id`, y esa columna existe desde la primera
+   * migración sin que nada la escribiera: la única forma de poner un chat ahí
+   * era un UPDATE a mano en la consola de D1, y la dueña de este sistema no
+   * usa la terminal. Una puerta cuya llave se fabrica por SQL es una puerta
+   * cerrada.
+   *
+   * El código se devuelve UNA vez y no se guarda en ningún sitio: en la tabla
+   * queda su hash. Vale para un solo uso, vence a los `MINUTOS_VINCULO`
+   * minutos y pedir otro anula el anterior.
+   *
+   * **Lo que la pantalla tiene que decir**, porque es el precio de la regla
+   * del silencio: si el código se pega mal, el bot no contesta NADA —a un chat
+   * sin vincular no se le contesta ni un error, para no confirmar que detrás
+   * hay un sistema del negocio—. Así que «no pasó nada» significa «genere
+   * otro», y si eso no está escrito en la pantalla, nadie lo va a adivinar.
+   *
+   * Lleva `exigeEditar("ajustes")` —o sea, solo la dueña— porque este código
+   * es una llave: con él, un chat cualquiera queda hablando con Caleb con los
+   * permisos de la persona que se vincula.
+   */
+  panel.post("/usuarios/:id/telegram", exigeEditar("ajustes"), async (c) => {
+    const usuario = c.get("usuario");
+    const r = await crearCodigoDeVinculo(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      usuario.id,
+    );
+    return c.json(
+      r.ok ? ok({ ...r.datos, minutos: MINUTOS_VINCULO }) : r,
+      r.ok ? 201 : codigoHttp(r.codigo),
+    );
   });
 
   /**

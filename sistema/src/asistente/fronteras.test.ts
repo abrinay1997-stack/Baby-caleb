@@ -83,12 +83,20 @@ const contexto = (): Contexto => ({
  * Se prueban en orden y vale la primera que el esquema acepte. Antes esto era
  * un solo `{ codigo }`, y por eso la guarda de D-20 se saltaba en silencio
  * cualquier herramienta que pidiera sus argumentos de otra manera.
+ *
+ * `pedido` y `clienta` entraron con las herramientas de pedidos y de dinero:
+ * `ver_pedido` pide un número de pedido y `historial_de_cliente` una
+ * referencia de clienta, así que ninguna de las formas de arriba les vale. Sin
+ * añadirlas, esta prueba se habría puesto roja nombrándolas —que es lo que
+ * está escrita para hacer— en vez de saltárselas en silencio.
  */
 const formasDeLlamar = (codigo: string): unknown[] => [
   { codigo },
   { texto: codigo },
   { codigo, texto: codigo },
   {},
+  { pedido: codigo },
+  { clienta: codigo },
 ];
 
 function argumentosPara(h: HerramientaCualquiera, codigo: string): unknown | null {

@@ -104,6 +104,10 @@ export function comoSeLee(clave: Clave, valor: unknown): string {
       return valor === true ? "Encendido" : "Apagado";
     case "texto":
       return typeof valor === "string" ? valor : "—";
+    case "telefono":
+      // Con el `+` delante, que es como se lee un número internacional. Se
+      // GUARDA sin él porque es lo que quiere `wa.me`; esto es solo la lectura.
+      return typeof valor === "string" ? `+${valor}` : "—";
     case "opcion":
       return typeof valor === "string" ? comoSeLeeOpcion(valor) : "—";
     case "lista_de_opciones":
@@ -257,6 +261,12 @@ export function valorDelBorrador(
     case "texto":
       return { valor: b.texto.trim() };
 
+    case "telefono":
+      // Sin limpiar aquí: el `+`, los espacios y los guiones los quita
+      // `validar` en el servidor, que es la única copia que cuenta. Dos sitios
+      // normalizando el mismo número acabarían discrepando en uno.
+      return { valor: b.texto.trim() };
+
     case "opcion":
       if (b.texto === "") return { error: "Elija una de las opciones." };
       return { valor: b.texto };
@@ -355,6 +365,24 @@ function Editor({
             value={borrador.texto}
             onChange={(ev) => cambiar({ texto: ev.target.value })}
             placeholder="muse-spark-1.2-contributor"
+          />
+        </Campo>
+      );
+
+    case "telefono":
+      return (
+        <Campo
+          etiqueta="El número, con el código del país"
+          ayuda="Se puede pegar tal cual sale del teléfono: 507 6757-5065 o +50767575065. Se guarda solo con los números."
+        >
+          <input
+            className={ENTRADA}
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={borrador.texto}
+            onChange={(ev) => cambiar({ texto: ev.target.value })}
+            placeholder="+507 6757-5065"
           />
         </Campo>
       );
@@ -784,6 +812,30 @@ export function Ajustes() {
 
   const puedeCambiar = yo.fase === "listo" && puedeEditar(yo.datos.usuario.rol, "ajustes");
 
+  /**
+   * Qué está consiguiendo `checkout_activo`.
+   *
+   * Hasta hoy esta pantalla decía «Encendido» y se quedaba tan ancha. Era
+   * verdad sobre el valor guardado y mentira sobre el mundo: ningún código
+   * consultaba ese interruptor, así que la dueña podía encenderlo y no pasaba
+   * nada (docs/TRAMPAS.md §13). Ahora se le pregunta al servidor qué está
+   * haciendo, y se escribe.
+   *
+   * Se pide aparte y no se calcula aquí: cruzar el interruptor con las
+   * pasarelas desde el navegador serían dos sitios decidiendo lo mismo, y el
+   * que se equivoca del lado flojo es el que nadie revisa.
+   */
+  const checkout = useCarga<{
+    interruptor: boolean;
+    cobra: boolean;
+    inerte: boolean;
+    listas: string[];
+    enPrueba: string[];
+    impedimentos: string[];
+    resumen: string;
+    llave_maestra_puesta: boolean | null;
+  }>("/api/checkout", [recargas]);
+
   return (
     <Carga estado={datos} que="los ajustes">
       {(d) => {
@@ -820,6 +872,51 @@ export function Ajustes() {
               </Tarjeta>
             ))}
 
+            {/* El cobro en la web, dicho como está.
+                No es una tarjeta más: es la que existe porque este interruptor
+                llevaba meses encendido sin hacer nada y la pantalla decía
+                «Encendido» a secas. Sale SIEMPRE que hay respuesta —cobre o no
+                cobre— porque «sí cobra, con Yappy» es tan útil como la lista
+                de lo que falta. */}
+            {checkout.fase === "listo" ? (
+              <Tarjeta className={checkout.datos.cobra ? "" : "border-accent-edge"}>
+                <p className="m-0 font-bold">Pagar desde la web: {checkout.datos.resumen}</p>
+                {checkout.datos.impedimentos.length > 0 ? (
+                  <ul className="m-0 mt-2 grid gap-1 pl-5 text-muted">
+                    {checkout.datos.impedimentos.map((i) => (
+                      <li key={i}>{i}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {checkout.datos.enPrueba.length > 0 ? (
+                  <p className="m-0 mt-2 text-muted">
+                    En modo de prueba: {checkout.datos.enPrueba.join(", ")}. Cobrarían con
+                    credenciales de prueba, así que no cuentan.
+                  </p>
+                ) : null}
+                {checkout.datos.llave_maestra_puesta === false ? (
+                  <p role="alert" className="m-0 mt-2 text-muted">
+                    Y al sistema le falta la llave con la que se guardan las credenciales. Eso no se
+                    arregla aquí: avísele a Juan.
+                  </p>
+                ) : null}
+              </Tarjeta>
+            ) : null}
+            {/* Si no se pudo preguntar, se dice. Callar dejaría la fila de
+                abajo diciendo «Encendido» sin nadie que lo matice, que es
+                exactamente el estado del que venimos. */}
+            {checkout.fase === "error" ? (
+              <Tarjeta className="border-accent-edge">
+                <p role="alert" className="m-0 font-bold">
+                  No pudimos comprobar si la web puede cobrar
+                </p>
+                <p className="m-0 mt-1 text-muted">
+                  {checkout.mensaje}. Mientras no se sepa, no dé por hecho que el interruptor de
+                  abajo está haciendo algo.
+                </p>
+              </Tarjeta>
+            ) : null}
+
             <Rejilla
               columnas={["Regla", "Valor", "De dónde sale", "Desde cuándo", "Cambiar"]}
             >
@@ -835,6 +932,16 @@ export function Ajustes() {
                     ) : (
                       <strong>{comoSeLee(a.clave, a.valor)}</strong>
                     )}
+                    {/* «Encendido» a secas era la mentira. La fila sigue
+                        diciendo el valor guardado —que es lo que esta columna
+                        es— y al lado dice si está surtiendo efecto. */}
+                    {a.clave === "checkout_activo" &&
+                    checkout.fase === "listo" &&
+                    checkout.datos.inerte ? (
+                      <span className="mt-1 block text-[13px] text-muted">
+                        Sin efecto todavía: la web no cobra. Arriba está lo que falta.
+                      </span>
+                    ) : null}
                   </Celda>
                   <Celda etiqueta="De dónde sale" className="text-muted">
                     {a.origen === "guardado" ? (

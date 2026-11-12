@@ -86,6 +86,40 @@ class Analitica {
   }
 }
 
+/**
+ * El identificador del píxel de Meta, y NADA MÁS que el identificador.
+ *
+ * Aquí no se inyecta el `<script>` de Meta, y no es un olvido: el permiso de
+ * la persona vive en SU navegador (`bc.consentimiento.v1` en `localStorage`) y
+ * no viaja al servidor a propósito —guardarlo aquí obligaría a identificar el
+ * navegador para poder volver a leerlo, o sea a rastrear a alguien para
+ * recordar que no quiere que lo rastreen—. Así que desde este lado es
+ * imposible saber si esta persona dijo sí: cualquier script que se cuelgue
+ * aquí cargaría ANTES de preguntar, que es exactamente lo que la Ley 81 de
+ * 2019 no permite para un rastreador de terceros.
+ *
+ * Lo único que sale de aquí es un número en una `<meta>`. El `<script>` lo
+ * cuelga el navegador, después del sí, en `src/consentimiento/pixel.ts`.
+ *
+ * El número se valida antes de escribirlo, por lo mismo que el token de la
+ * analítica de aquí arriba: viene de la configuración y acaba dentro de un
+ * atributo HTML.
+ *
+ * Y se AÑADE en vez de venir declarada en `index.html` con el valor vacío,
+ * que es lo que hace el resto de este archivo. El motivo: con la variable
+ * vacía —que es como nace— no debe quedar en la página ni una pista de que
+ * aquí hay un píxel. Una etiqueta vacía en las siete páginas sería eso.
+ */
+const PIXEL_VALIDO = /^[0-9]{10,20}$/;
+
+class IdDelPixel {
+  constructor(private readonly id: string) {}
+
+  element(el: Element): void {
+    el.append(`<meta name="meta-pixel-id" content="${this.id}">`, { html: true });
+  }
+}
+
 /** Cuelga un `<script type="application/ld+json">` al final del `<head>`. */
 class DatosEstructurados {
   constructor(private readonly datos: Record<string, unknown>) {}
@@ -104,6 +138,13 @@ export function reescribirHead(
   url: URL,
   siteUrl: string,
   tokenAnalitica?: string,
+  /**
+   * El identificador del píxel de Meta. Vacío o ausente = no se escribe nada.
+   *
+   * Va después del token de la analítica y no al principio para no cambiarle
+   * la firma a quien ya llama a esta función con tres o cuatro argumentos.
+   */
+  idDelPixel?: string,
   /**
    * El catálogo, solo para las fichas de producto (F3.7).
    *
@@ -165,6 +206,20 @@ export function reescribirHead(
         JSON.stringify({
           evento: "analitica_token_invalido",
           detalle: "CF_ANALYTICS_TOKEN no son 32 caracteres hexadecimales; no se inyecta el beacon",
+        }),
+      );
+    }
+  }
+
+  const pixel = (idDelPixel ?? "").trim();
+  if (pixel !== "") {
+    if (PIXEL_VALIDO.test(pixel)) {
+      rw = rw.on("head", new IdDelPixel(pixel));
+    } else {
+      console.warn(
+        JSON.stringify({
+          evento: "pixel_id_invalido",
+          detalle: "META_PIXEL_ID no es un número de 10 a 20 cifras; no se escribe la etiqueta",
         }),
       );
     }

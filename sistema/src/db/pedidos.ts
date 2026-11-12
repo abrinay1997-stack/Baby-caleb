@@ -1,5 +1,6 @@
 import { ulid } from "../ids";
 import { fallo, ok, type Resultado } from "../contrato/resultado";
+import { type ContextoDeLectura, leerVigentes } from "./ajustes";
 
 /**
  * Crear un pedido (F4.2).
@@ -24,6 +25,20 @@ import { fallo, ok, type Resultado } from "../contrato/resultado";
  * quedan escritos en la fila. Si la dueña cambia una regla el martes, el
  * pedido del lunes se cierra con la del lunes — una regla que cambia a mitad
  * de un pedido es una discusión con la clienta.
+ *
+ * ## Y una cotización, que es este mismo documento sin apartar nada
+ *
+ * El dueño lo pidió «tomando el modelo de Odoo»: una cotización, al
+ * confirmarse, SE CONVIERTE en pedido. Es el mismo documento cambiando de
+ * estado, así que se crea con esta misma función y `entrada.cotizacion = true`
+ * — no hay una `crearCotizacion` paralela que vuelva a decidir los precios, ni
+ * una tabla aparte de la que haya que copiar las líneas al confirmar.
+ *
+ * Lo único que cambia la bandera es LO QUE NO HACE: no toca
+ * `existencias.reservado`, no escribe `pedido_linea_componentes` y por tanto no
+ * lleva ninguna fila de control de reserva. El apartado ocurre al confirmar
+ * (`confirmarCotizacion` en `transiciones.ts`), que es la transición a
+ * `por_abonar` y el único camino por el que este sistema aparta mercancía.
  */
 
 export interface LineaPedida {
@@ -43,6 +58,23 @@ export interface PedidoNuevo {
   readonly direccionId?: string;
   readonly conversacionRef?: string;
   readonly notasCliente?: string;
+  /**
+   * Por qué se hace, cuando quien lo hace es el asistente.
+   *
+   * Queda en `pedido_eventos.datos_json` del evento «creado». No es decorado:
+   * el catálogo de herramientas EXIGE un motivo a todo lo que escribe
+   * (`registro.test.ts`), y un parámetro que se pide y no se guarda sería
+   * pedir una explicación para tirarla.
+   */
+  readonly motivo?: string;
+  /**
+   * `true` crea una COTIZACIÓN: el mismo documento, con sus precios ya puestos
+   * por el servidor, pero sin apartar ni una caja.
+   *
+   * Es una bandera y no una función aparte porque el documento es el mismo
+   * (modelo de Odoo): confirmarla no copia nada, solo cambia su estado.
+   */
+  readonly cotizacion?: boolean;
 }
 
 export interface PedidoCreado {
@@ -54,6 +86,17 @@ export interface PedidoCreado {
   readonly abonoMinimoCents: number;
   readonly requierePagoTotal: boolean;
   readonly venceEn: number | null;
+  /**
+   * En qué estado nació: `cotizacion` o `por_abonar`.
+   *
+   * Va en la respuesta y no se deduce de la entrada porque la pantalla tiene
+   * que decir dos cosas distintas —«ya está apartado el inventario» o «esto no
+   * aparta nada todavía»— y deducirlo de lo que ELLA mandó es creerse a sí
+   * misma en vez de al servidor.
+   */
+  readonly estado: "cotizacion" | "por_abonar";
+  /** Si se apartó inventario. `false` en una cotización, siempre. */
+  readonly aparto: boolean;
 }
 
 export interface ContextoPedido {
@@ -64,6 +107,20 @@ export interface ContextoPedido {
   readonly abonoMinimoCents: number;
   /** Minutos que se le guarda el pedido sin abono. `null` = no vence. */
   readonly minutosParaAbonar: number | null;
+  /**
+   * Minutos que vale una COTIZACIÓN. `null` o ausente = no caduca sola.
+   *
+   * Sale de `ajustes.cotizacion_dias_validez`, que nace en `PENDIENTE`: nadie
+   * ha confirmado cuántos días vale una cotización de Baby Caleb. Y PENDIENTE
+   * no es cero ni es «una semana porque suena razonable»: con la clave sin
+   * decidir la cotización se crea sin fecha de caducidad y la pantalla de
+   * Ajustes dice que falta decidirlo.
+   *
+   * Es un campo aparte de `minutosParaAbonar` porque son dos relojes
+   * distintos: uno mide cuánto se le GUARDA la mercancía a una clienta (y por
+   * eso aprieta), el otro cuánto vale un precio que se le pasó por escrito.
+   */
+  readonly minutosDeValidezCotizacion?: number | null;
 }
 
 interface FilaVariante {
@@ -94,6 +151,134 @@ async function siguienteNumero(db: D1Database): Promise<number | null> {
   return f?.valor ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// Apartar inventario: un solo sitio, dos momentos posibles
+// ---------------------------------------------------------------------------
+
+/** Lo que hay que quitar de lo libre, ya resuelto a piezas y a bodega. */
+export interface Apartado {
+  /** La línea del pedido de la que cuelga. */
+  readonly lineaId: string;
+  readonly codigo: string;
+  readonly bodegaId: string;
+  readonly cantidad: number;
+}
+
+/**
+ * Los enunciados que APARTAN una pieza, y la prueba de que lo hicieron.
+ *
+ * Están aquí, en una función, porque se usan en DOS momentos: al crear un
+ * pedido normal y al confirmar una cotización. Escribirlos dos veces sería
+ * tener dos formas de apartar mercancía, y el día que una se corrigiera y la
+ * otra no, el inventario diría una cosa distinta según por dónde entró la
+ * venta. Es la razón por la que `confirmarCotizacion` no escribe su propio
+ * camino: llama a este.
+ *
+ * Son tres enunciados y cada uno tiene su motivo:
+ *
+ * 1. `UPDATE existencias SET reservado = reservado + ?` — lo que aparta.
+ *
+ * 2. **La fila de control, mirando el estado YA CAMBIADO.** Lo que aporta,
+ *    exactamente: que el UPDATE NO ENCUENTRE SU FILA. Un `UPDATE … WHERE
+ *    codigo=? AND bodega_id=?` que no casa con nada no falla —afecta cero
+ *    filas y sigue—, así que sin esto el pedido quedaría SIN NINGUNA RESERVA y
+ *    nadie se enteraría hasta que faltara la mercancía. Pasa con una bodega
+ *    que no tiene fila de existencias para ese código: recién creada, o un
+ *    código que nunca estuvo ahí.
+ *
+ *    Reservar de más NO lo caza esta fila: lo caza el
+ *    `CHECK (reservado <= fisico)` de la propia tabla `existencias`. Vale la
+ *    pena tenerlo claro para no creer que esta línea protege algo que protege
+ *    otra.
+ *
+ * 3. `pedido_linea_componentes` guarda LO APARTADO, no la receta de donde
+ *    salió: la receta puede cambiar, y al cancelar hay que devolver
+ *    exactamente lo que se quitó.
+ */
+export function enunciadosDeApartado(
+  ctx: { readonly db: D1Database; readonly ahora: number },
+  a: Apartado,
+): D1PreparedStatement[] {
+  return [
+    ctx.db
+      .prepare("UPDATE existencias SET reservado = reservado + ? WHERE codigo = ? AND bodega_id = ?")
+      .bind(a.cantidad, a.codigo, a.bodegaId),
+    ctx.db
+      .prepare(
+        `INSERT INTO controles (id, regla, ok, creado_en)
+         VALUES (?, ?, (SELECT COUNT(*) FROM existencias
+                        WHERE codigo = ? AND bodega_id = ? AND fisico >= reservado), ?)`,
+      )
+      .bind(ulid(ctx.ahora), `reservar:${a.codigo}`, a.codigo, a.bodegaId, ctx.ahora),
+    ctx.db
+      .prepare(
+        `INSERT INTO pedido_linea_componentes (linea_id,codigo,bodega_id,cantidad)
+         VALUES (?,?,?,?)`,
+      )
+      .bind(a.lineaId, a.codigo, a.bodegaId, a.cantidad),
+  ];
+}
+
+/**
+ * Las piezas que hay que apartar para vender `cantidad` de `codigo`.
+ *
+ * Para una variante normal es ella misma; para un COMBO son sus componentes
+ * con la receta YA MULTIPLICADA. Devuelve `null` cuando el combo no tiene
+ * receta, que no es lo mismo que un combo de cero piezas: un combo sin
+ * componentes no se puede armar, y dejarlo pasar crearía un documento que no
+ * aparta NADA — la mercancía se vendería dos veces.
+ *
+ * Se lee en el momento de apartar, no antes: en una cotización eso es al
+ * confirmar, y es lo correcto, porque la receta que vale es la del día en que
+ * se saca la mercancía de la bodega.
+ */
+export async function componentesDe(
+  db: D1Database,
+  codigo: string,
+  esCombo: boolean,
+  cantidad: number,
+): Promise<{ codigo: string; cantidad: number }[] | null> {
+  if (!esCombo) return [{ codigo, cantidad }];
+
+  const { results } = await db
+    .prepare("SELECT codigo, cantidad FROM combo_componentes WHERE combo_codigo = ?")
+    .bind(codigo)
+    .all<{ codigo: string; cantidad: number }>();
+
+  if (results.length === 0) return null;
+  return results.map((r) => ({ codigo: r.codigo, cantidad: r.cantidad * cantidad }));
+}
+
+/**
+ * Una bodega activa que tenga libre TODO lo que se le pide, o `null`.
+ *
+ * Tiene que poder con todos los componentes a la vez. Para una variante normal
+ * eso es ella sola; para un combo son sus piezas, y repartirlo entre dos
+ * bodegas sería una entrega que alguien tendría que armar a mano sin que el
+ * sistema lo dijera.
+ *
+ * Esta lectura NO garantiza nada —entre leer y escribir cabe otro pedido—; lo
+ * que garantiza es la fila de control de `enunciadosDeApartado`.
+ */
+export async function bodegaQuePuede(
+  db: D1Database,
+  componentes: readonly { codigo: string; cantidad: number }[],
+): Promise<string | null> {
+  const faltanEn = componentes
+    .map(
+      () =>
+        "(SELECT COALESCE(SUM(e.fisico - e.reservado), 0) FROM existencias e WHERE e.codigo = ? AND e.bodega_id = b.id) < ?",
+    )
+    .join(" OR ");
+  const valores = componentes.flatMap((c) => [c.codigo, c.cantidad]);
+
+  const e = await db
+    .prepare(`SELECT b.id AS id FROM bodegas b WHERE b.activa = 1 AND NOT (${faltanEn}) LIMIT 1`)
+    .bind(...valores)
+    .first<{ id: string }>();
+  return e?.id ?? null;
+}
+
 /** 256 bits en base64url: lo que abre el enlace de seguimiento. */
 function tokenPublico(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -107,8 +292,15 @@ export async function crearPedido(
   ctx: ContextoPedido,
   entrada: PedidoNuevo,
 ): Promise<Resultado<PedidoCreado>> {
+  const esCotizacion = entrada.cotizacion === true;
+
   if (entrada.lineas.length === 0) {
-    return fallo("entrada_invalida", "un pedido sin líneas no es un pedido");
+    return fallo(
+      "entrada_invalida",
+      esCotizacion
+        ? "una cotización sin líneas no cotiza nada"
+        : "un pedido sin líneas no es un pedido",
+    );
   }
 
   // ── Las líneas, con el precio y el nombre del SERVIDOR ────────────────────
@@ -148,25 +340,13 @@ export async function crearPedido(
     // Un combo no tiene existencias propias: lo que se aparta son sus piezas.
     // La receta se lee AQUÍ y se congela en `componentes`; de ahí sale lo que
     // se guarda, y es lo que se devolverá al cancelar.
-    let componentes: { codigo: string; cantidad: number }[] = [];
-    if (v.es_combo === 1) {
-      const { results } = await ctx.db
-        .prepare("SELECT codigo, cantidad FROM combo_componentes WHERE combo_codigo = ?")
-        .bind(l.codigo)
-        .all<{ codigo: string; cantidad: number }>();
-
-      // Un combo sin receta no se vende. Es el mismo caso que en el catálogo,
-      // donde sale agotado: aquí, si se dejara pasar, se crearía un pedido que
-      // no aparta NADA y la mercancía se vendería dos veces.
-      if (results.length === 0) {
-        return fallo("sin_stock", `el combo ${l.codigo} no tiene componentes: no se puede armar`);
-      }
-      componentes = results.map((r) => ({
-        codigo: r.codigo,
-        cantidad: r.cantidad * l.cantidad,
-      }));
-    } else {
-      componentes = [{ codigo: v.codigo, cantidad: l.cantidad }];
+    //
+    // En una cotización esto se lee igual —hace falta para saber si hay con
+    // qué y en qué bodega— pero NO se guarda: la receta que vale es la del día
+    // en que se saque la mercancía, y ese día es el de la confirmación.
+    const componentes = await componentesDe(ctx.db, v.codigo, v.es_combo === 1, l.cantidad);
+    if (componentes === null) {
+      return fallo("sin_stock", `el combo ${l.codigo} no tiene componentes: no se puede armar`);
     }
 
     // La bodega: la que digan, o la que tenga con qué. Se elige MIRANDO lo
@@ -181,22 +361,31 @@ export async function crearPedido(
       if (b === null) return fallo("no_encontrado", `no existe la bodega «${l.bodega}»`);
       bodegaId = b.id;
     } else {
-      // La bodega tiene que poder con TODOS los componentes. Para una
-      // variante normal eso es ella sola; para un combo son sus piezas, y
-      // repartirlo entre dos bodegas sería una entrega que alguien tendría
-      // que armar a mano sin que el sistema lo dijera.
-      const faltanEn = componentes
-        .map(() => "(SELECT COALESCE(SUM(e.fisico - e.reservado), 0) FROM existencias e WHERE e.codigo = ? AND e.bodega_id = b.id) < ?")
-        .join(" OR ");
-      const valores = componentes.flatMap((c) => [c.codigo, c.cantidad]);
+      bodegaId = await bodegaQuePuede(ctx.db, componentes);
 
-      const e = await ctx.db
-        .prepare(
-          `SELECT b.id AS id FROM bodegas b WHERE b.activa = 1 AND NOT (${faltanEn}) LIMIT 1`,
-        )
-        .bind(...valores)
-        .first<{ id: string }>();
-      if (e === null) {
+      // Y aquí está la diferencia que define una cotización: **que no haya
+      // existencias NO la frena**. Cotizar es decir un precio, no apartar
+      // mercancía, y negarse a cotizar lo que hoy está agotado es negarse
+      // justo cuando la clienta pregunta si lo van a traer.
+      //
+      // Sin bodega que pueda se anota una activa cualquiera, y se anota
+      // sabiendo que es provisional: al confirmar se vuelve a elegir con las
+      // existencias de ESE momento (ver `confirmarCotizacion`). Si entonces no
+      // hay, la confirmación falla y el documento se queda siendo una
+      // cotización — que es exactamente lo que se pidió.
+      if (bodegaId === null && esCotizacion) {
+        const cualquiera = await ctx.db
+          .prepare("SELECT id FROM bodegas WHERE activa = 1 LIMIT 1")
+          .first<{ id: string }>();
+        // Sin NINGUNA bodega activa no se puede ni cotizar: `bodega_id` es
+        // NOT NULL y no hay nada honesto que escribir ahí.
+        if (cualquiera === null) {
+          return fallo("entrada_invalida", "no hay ninguna bodega activa donde anotar las líneas");
+        }
+        bodegaId = cualquiera.id;
+      }
+
+      if (bodegaId === null) {
         return fallo(
           "sin_stock",
           v.es_combo === 1
@@ -204,7 +393,6 @@ export async function crearPedido(
             : `no hay ${l.cantidad} de ${l.codigo} en ninguna bodega`,
         );
       }
-      bodegaId = e.id;
     }
 
     resueltas.push({
@@ -256,8 +444,17 @@ export async function crearPedido(
   const pedidoId = ulid(ctx.ahora);
   const numero = `BC-${String(valor).padStart(6, "0")}`;
   const token = tokenPublico();
-  const venceEn =
-    ctx.minutosParaAbonar === null ? null : ctx.ahora + ctx.minutosParaAbonar * 60_000;
+  const estado = esCotizacion ? "cotizacion" : "por_abonar";
+
+  // Dos relojes distintos para la misma columna, según lo que sea el
+  // documento: cuánto vale la cotización, o cuánto se le guarda el apartado.
+  // Los dos admiten `null` —«no caduca»— y en la cotización eso es lo normal
+  // hoy, porque `cotizacion_dias_validez` está en PENDIENTE y PENDIENTE no se
+  // rellena con un número que suene razonable.
+  const minutos = esCotizacion
+    ? (ctx.minutosDeValidezCotizacion ?? null)
+    : ctx.minutosParaAbonar;
+  const venceEn = minutos === null ? null : ctx.ahora + minutos * 60_000;
 
   const enunciados: D1PreparedStatement[] = [
     ctx.db
@@ -265,11 +462,11 @@ export async function crearPedido(
         `INSERT INTO pedidos (id,numero,token,cliente_id,origen,conversacion_ref,estado,estado_pago,
            direccion_id,zona_id,subtotal_cents,envio_cents,descuento_cents,itbms_cents,total_cents,
            pagado_cents,abono_minimo_cents,requiere_pago_total,vence_en,notas_cliente,creado_en,actualizado_en)
-         VALUES (?,?,?,?,?,?,'por_abonar','sin_pago',?,?,?,?,0,?,?,0,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,'sin_pago',?,?,?,?,0,?,?,0,?,?,?,?,?,?)`,
       )
       .bind(
         pedidoId, numero, token, entrada.clienteId, entrada.origen,
-        entrada.conversacionRef ?? null, entrada.direccionId ?? null, zonaId,
+        entrada.conversacionRef ?? null, estado, entrada.direccionId ?? null, zonaId,
         subtotalCents, envioCents, itbmsCents, totalCents,
         ctx.abonoMinimoCents, requierePagoTotal ? 1 : 0, venceEn,
         entrada.notasCliente ?? null, ctx.ahora, ctx.ahora,
@@ -289,40 +486,23 @@ export async function crearPedido(
 
     // Lo que se aparta. Para una variante normal es ella misma; para un combo,
     // sus piezas con la receta ya multiplicada.
-    for (const c of l.componentes) {
-      enunciados.push(
-        ctx.db
-          .prepare("UPDATE existencias SET reservado = reservado + ? WHERE codigo = ? AND bodega_id = ?")
-          .bind(c.cantidad, c.codigo, l.bodegaId),
-        // La fila de control, mirando el estado YA CAMBIADO.
-        //
-        // Lo que aporta, exactamente: que el UPDATE NO ENCUENTRE SU FILA. Un
-        // `UPDATE … WHERE codigo=? AND bodega_id=?` que no casa con nada no
-        // falla — afecta cero filas y sigue—, así que sin esto el pedido se
-        // crearía SIN NINGUNA RESERVA y nadie se enteraría hasta que faltara
-        // la mercancía. Pasa con una bodega que no tiene fila de existencias
-        // para ese código: recién creada, o un código que nunca estuvo ahí.
-        //
-        // Reservar de más NO lo caza esta fila: lo caza el
-        // `CHECK (reservado <= fisico)` de la propia tabla `existencias`. Vale
-        // la pena tenerlo claro para no creer que esta línea protege algo que
-        // protege otra.
-        ctx.db
-          .prepare(
-            `INSERT INTO controles (id, regla, ok, creado_en)
-             VALUES (?, ?, (SELECT COUNT(*) FROM existencias
-                            WHERE codigo = ? AND bodega_id = ? AND fisico >= reservado), ?)`,
-          )
-          .bind(ulid(ctx.ahora), `reservar:${c.codigo}`, c.codigo, l.bodegaId, ctx.ahora),
-        // Y se guarda LO APARTADO, no la receta: la receta puede cambiar, y al
-        // cancelar hay que devolver exactamente lo que se quitó.
-        ctx.db
-          .prepare(
-            `INSERT INTO pedido_linea_componentes (linea_id,codigo,bodega_id,cantidad)
-             VALUES (?,?,?,?)`,
-          )
-          .bind(lineaId, c.codigo, l.bodegaId, c.cantidad),
-      );
+    //
+    // **Una cotización no entra aquí, y es lo esencial de todo el encargo.**
+    // No se toca `existencias.reservado`, así que no hay nada que vigilar con
+    // una fila de control, y no se escribe `pedido_linea_componentes`, que es
+    // la tabla de LO APARTADO. Diez cotizaciones por la misma caja no mienten
+    // sobre el inventario; diez pedidos, sí.
+    if (!esCotizacion) {
+      for (const c of l.componentes) {
+        enunciados.push(
+          ...enunciadosDeApartado(ctx, {
+            lineaId,
+            codigo: c.codigo,
+            bodegaId: l.bodegaId,
+            cantidad: c.cantidad,
+          }),
+        );
+      }
     }
   }
 
@@ -330,13 +510,19 @@ export async function crearPedido(
     ctx.db
       .prepare(
         `INSERT INTO pedido_eventos (id,pedido_id,tipo,de,a,actor,datos_json,creado_en)
-         VALUES (?,?,'creado',NULL,'por_abonar',?,?,?)`,
+         VALUES (?,?,'creado',NULL,?,?,?,?)`,
       )
       .bind(
         ulid(ctx.ahora),
         pedidoId,
+        estado,
         ctx.actor,
-        JSON.stringify({ idempotencia: entrada.idempotencia, origen: entrada.origen, totalCents }),
+        JSON.stringify({
+          idempotencia: entrada.idempotencia,
+          origen: entrada.origen,
+          totalCents,
+          ...(entrada.motivo === undefined ? {} : { motivo: entrada.motivo }),
+        }),
         ctx.ahora,
       ),
   );
@@ -346,8 +532,13 @@ export async function crearPedido(
   } catch (e) {
     // Casi siempre es que no alcanzaba: entre elegir la bodega y reservar, se
     // metió otro pedido. El número de pedido ya se gastó y queda un hueco.
+    //
+    // En una cotización esto NO puede ser falta de existencias, porque no se
+    // apartó nada: si el batch se cayó, es otra cosa, y decir «sin stock»
+    // mandaría a quien lo lea a mirar la bodega en vez del error de verdad
+    // (TRAMPAS §10: cada código de error nombra SU causa).
     const texto = e instanceof Error ? e.message : String(e);
-    return /CHECK|controles/i.test(texto)
+    return !esCotizacion && /CHECK|controles/i.test(texto)
       ? fallo("sin_stock", "alguien se llevó las últimas unidades mientras se creaba el pedido")
       : fallo("interno", texto);
   }
@@ -361,5 +552,78 @@ export async function crearPedido(
     abonoMinimoCents: ctx.abonoMinimoCents,
     requierePagoTotal,
     venceEn,
+    estado,
+    aparto: !esCotizacion,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Las reglas que `crearPedido` exige, resueltas
+// ---------------------------------------------------------------------------
+
+/**
+ * Las reglas que `crearPedido` exige RESUELTAS.
+ *
+ * Esa función se niega a inventar ninguna —«aquí no se inventa ninguno», dice
+ * su contrato— así que quien la llama tiene que leer los ajustes y traérselas.
+ * Esto es ese paso, **en un solo sitio** para que la ruta del panel, la de la
+ * web y la herramienta del asistente no acaben resolviéndolas distinto.
+ *
+ * Vivía dentro de `src/api/panel.ts`, atada a un `Context` de Hono, y por eso
+ * no se podía reutilizar: la herramienta `crear_pedido` del asistente habría
+ * tenido que escribir su propia copia de esta interpretación, y dos sitios
+ * leyendo el mismo ajuste con criterio propio es exactamente cómo una regla del
+ * negocio empieza a significar dos cosas. Ahora vive al lado de `crearPedido`,
+ * que es quien la necesita.
+ *
+ * `abono_minimo_cents` NO admite PENDIENTE por diseño (su esquema lo dice), así
+ * que siempre hay un número: el de la dueña, o el de fábrica.
+ *
+ * El plazo sale de `reserva_horas_comprobante` y no de
+ * `reserva_minutos_pago_en_linea`, porque un pedido que toma la casa lo toma
+ * una persona hablando con la clienta, y se paga con comprobante o en efectivo,
+ * no por un enlace de pago. Con la clave sin decidir el plazo es `null` —«no
+ * vence»—, que es un valor que el contrato de `crearPedido` contempla, no un
+ * hueco: un pedido que tomó una persona no se cancela solo a espaldas de quien
+ * lo tomó.
+ */
+export async function reglasDelPedido(
+  ctx: ContextoDeLectura,
+): Promise<
+  Resultado<{
+    abonoMinimoCents: number;
+    minutosParaAbonar: number | null;
+    minutosDeValidezCotizacion: number | null;
+  }>
+> {
+  const r = await leerVigentes(ctx);
+  if (!r.ok) return r;
+  const de = (clave: string) => r.datos.ajustes.find((a) => a.clave === clave);
+
+  const abono = de("abono_minimo_cents");
+  if (abono === undefined || abono.pendiente || typeof abono.valor !== "number") {
+    return fallo(
+      "entrada_invalida",
+      "falta decidir el abono mínimo. Está en Configuración › Ajustes.",
+    );
+  }
+
+  const horas = de("reserva_horas_comprobante");
+  const minutosParaAbonar =
+    horas === undefined || horas.pendiente || typeof horas.valor !== "number"
+      ? null
+      : horas.valor * 60;
+
+  // Cuánto vale una cotización. Nace PENDIENTE —nadie ha confirmado cuántos
+  // días Baby Caleb mantiene un precio por escrito— y PENDIENTE no se rellena:
+  // sin decidir, la cotización no caduca sola. Ese es el lado seguro, porque
+  // una cotización vencida no se puede confirmar y un número inventado de
+  // menos dejaría a la clienta con un papel que el sistema rechaza.
+  const dias = de("cotizacion_dias_validez");
+  const minutosDeValidezCotizacion =
+    dias === undefined || dias.pendiente || typeof dias.valor !== "number"
+      ? null
+      : dias.valor * 24 * 60;
+
+  return ok({ abonoMinimoCents: abono.valor, minutosParaAbonar, minutosDeValidezCotizacion });
 }

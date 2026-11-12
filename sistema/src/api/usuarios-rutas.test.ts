@@ -249,3 +249,82 @@ describe("PATCH /usuarios/:id", () => {
     expect(r.estado).toBe(403);
   });
 });
+
+/**
+ * El código para vincular un Telegram.
+ *
+ * `usuarios.telegram_chat_id` existe desde la primera migración y nada la
+ * escribía: la única forma de poner un chat ahí era un UPDATE a mano en la
+ * consola de D1, y la dueña de este sistema no usa la terminal. Esta ruta es
+ * la llave de la puerta de Telegram, así que se prueba POR DONDE la va a
+ * pedir ella.
+ */
+describe("POST /usuarios/:id/telegram", () => {
+  /**
+   * La dueña que pide el código tiene que EXISTIR en `usuarios`.
+   *
+   * `telegram_vinculos.creado_por` lleva llave foránea, y por la puerta de
+   * verdad eso se cumple siempre: el usuario sale de cruzar el correo de
+   * Access con esta tabla. Aquí el resolver es de mentira, así que la fila hay
+   * que ponerla a mano — y que haga falta es justamente lo que dice que la
+   * llave foránea está viva.
+   */
+  beforeEach(async () => {
+    await real.DB.prepare(
+      `INSERT OR IGNORE INTO usuarios (id, correo, nombre, rol, telegram_chat_id, activo, creado_en)
+       VALUES (?, ?, ?, 'duena', NULL, 1, 1800000000000)`,
+    )
+      .bind(comoRol("duena").id, comoRol("duena").correo, comoRol("duena").nombre)
+      .run();
+  });
+
+  it("devuelve un código legible y dice cuánto vale", async () => {
+    const id = await darDeAlta();
+    const r = await post(duena, `/usuarios/${id}/telegram`, {});
+
+    expect(r.estado, JSON.stringify(r.cuerpo)).toBe(201);
+    const datos = r.cuerpo["datos"] as { codigo: string; vence_en: number; minutos: number };
+    expect(datos.codigo).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+    expect(datos.minutos).toBeGreaterThan(0);
+    expect(datos.vence_en).toBeGreaterThan(Date.now());
+  });
+
+  it("el código no se guarda: en la tabla queda su hash", async () => {
+    const id = await darDeAlta();
+    const r = await post(duena, `/usuarios/${id}/telegram`, {});
+    const { codigo } = r.cuerpo["datos"] as { codigo: string };
+
+    const fila = await real.DB.prepare(
+      "SELECT codigo_hash FROM telegram_vinculos WHERE usuario_id = ?",
+    )
+      .bind(id)
+      .first<{ codigo_hash: string }>();
+
+    expect(fila?.codigo_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(fila?.codigo_hash).not.toContain(codigo.replace(/-/g, ""));
+  });
+
+  it("solo la dueña lo pide: es una llave, no un dato", async () => {
+    // Con ese código, un chat cualquiera queda hablando con Caleb con los
+    // permisos de la persona que se vincula.
+    const id = await darDeAlta();
+    for (const rol of ["asistente", "contadora"] as const) {
+      const r = await post(entrandoComo(rol), `/usuarios/${id}/telegram`, {});
+      expect(r.estado, `${rol} no debería poder`).toBe(403);
+    }
+  });
+
+  it("no se le hace a alguien que no existe", async () => {
+    const r = await post(duena, "/usuarios/u-que-no-existe/telegram", {});
+    expect(r.estado).toBe(404);
+  });
+
+  it("ni a alguien sin acceso al panel: la puerta de Telegram exige activo = 1", async () => {
+    const id = await darDeAlta();
+    await patch(duena, `/usuarios/${id}`, { activo: false });
+
+    const r = await post(duena, `/usuarios/${id}/telegram`, {});
+    expect(r.estado).toBe(422);
+    expect(String(r.cuerpo["mensaje"])).toContain("acceso");
+  });
+});

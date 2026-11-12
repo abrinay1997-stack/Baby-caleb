@@ -35,6 +35,12 @@ archivo es el índice que faltaba.
   bitácoras) no se editan ni se borran.
 - **El diseño de la web no se toca** sin pedido explícito: lo nuevo usa los
   bloques y los tokens que ya existen (`brand.json`, `src/styles/`).
+
+- **El panel se usa desde el teléfono.** Antes de tocar `sistema/panel/src/`,
+  lea `docs/design-system.md`: 44 px en lo táctil, 16 px en los campos, piso de
+  12 px, nada de `100vh` ni de `min-width` en píxeles. Lo comprueba
+  `npm run panel:auditar`, y una pantalla nueva hay que añadirla a **las dos**
+  listas (el auditor y el servidor de muestra) o no se mide.
 - **Todo lleva MCP, y en el mismo cambio.** Un ajuste nuevo, un campo nuevo o
   una capacidad nueva no están terminados hasta que se pueden usar también por
   MCP. No es una fase posterior ni un «ya lo añadimos después»: se construye en

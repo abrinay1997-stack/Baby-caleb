@@ -519,6 +519,27 @@ const RESPUESTAS = {
    */
   "/api/pedidos": ok({
     pedidos: [
+      // La cotización va PRIMERA, y con un nombre largo: es la fila nueva y es
+      // la que nadie ha mirado todavía en un teléfono. Sin ella, el auditor
+      // mediría la pantalla de pedidos sin una sola cotización y no diría nada
+      // de la hoja que la confirma (docs/TRAMPAS.md §4: una pantalla que no se
+      // mide no dice «está bien», no dice nada).
+      {
+        id: "ped-0",
+        numero: "BC-1040",
+        estado: "cotizacion",
+        estado_pago: "sin_pago",
+        cliente: "Madelaine Esther Castillo de Bethancourt",
+        origen: "whatsapp",
+        lineas: 2,
+        creado_en: 1_794_190_000_000,
+        // Sin fecha de caducidad: `cotizacion_dias_validez` está PENDIENTE, y
+        // así es como se ve hoy de verdad.
+        vence_en: null,
+        total_cents: 12_300,
+        pagado_cents: 0,
+        saldo_cents: 12_300,
+      },
       {
         id: "ped-1",
         numero: "BC-1041",
@@ -605,6 +626,30 @@ const RESPUESTAS = {
       },
     ],
     hayMas: false,
+  }),
+
+  /**
+   * `/checkout`: el veredicto que la pantalla de Ajustes enseña arriba.
+   *
+   * Es el estado REAL de hoy (2026-11-12): el interruptor encendido, tres
+   * pasarelas, cero credenciales, y el carrito de la web terminando en
+   * WhatsApp. Sin esta muestra, la tarjeta que explica todo eso se vería como
+   * un 404 y la auditoría seguiría diciendo «sin fallas» sobre las filas que
+   * ya estaban.
+   */
+  "/api/checkout": ok({
+    interruptor: true,
+    cobra: false,
+    inerte: true,
+    listas: [],
+    enPrueba: [],
+    impedimentos: [
+      "Ninguna pasarela está encendida, así que no hay con qué cobrar. Se encienden una por una en Pasarelas de cobro, después de un cobro real de prueba y su reembolso.",
+      "A ninguna de las 3 pasarelas se le han puesto todavía sus credenciales: Yappy · Botón de Pago, Tilopay · tarjetas y cuotas, PayPal. Las da cada pasarela cuando aprueba el comercio.",
+      "El carrito de la web todavía no sabe mandar a pagar: termina en un mensaje de WhatsApp con el pedido ya escrito. Eso se programa cuando haya una pasarela con la que probarlo.",
+    ],
+    resumen: "Encendido, pero todavía sin efecto: la web no cobra. Abajo está lo que falta.",
+    llave_maestra_puesta: true,
   }),
 
   "/api/contabilidad": ok({
@@ -810,29 +855,64 @@ const RESPUESTAS = {
       clientas: (url.searchParams.get("buscar") ?? "").trim() === "" ? [] : CLIENTAS_DE_MUESTRA,
     }),
 
+  /**
+   * `/cotizaciones`: lo que contesta el servidor al hacer una.
+   *
+   * La pantalla pinta la pantalla de «listo» con ESTA respuesta —el número, el
+   * total, y sobre todo `aparto: false`, que es lo que le hace escribir «esto
+   * no aparta mercancía»—. Sin la muestra, esa pantalla final contestaría «Sin
+   * muestra para /api/cotizaciones» y el aviso que explica qué es una
+   * cotización no lo vería nunca nadie.
+   *
+   * `venceEn` en nulo porque `cotizacion_dias_validez` está PENDIENTE: así se
+   * ve el texto de «no caduca», que es el de hoy.
+   */
+  "/api/cotizaciones": ok({
+    id: "ped-nueva",
+    numero: "BC-1047",
+    token: "tok-de-muestra",
+    totalCents: 9_900,
+    envioCents: 350,
+    abonoMinimoCents: 1_000,
+    requierePagoTotal: false,
+    venceEn: null,
+    estado: "cotizacion",
+    aparto: false,
+  }),
+
   // `/catalogo`: las columnas del SELECT, con costo porque el rol es dueña.
   "/api/catalogo": ok({
     muestraCosto: true,
     variantes: [
+      // `pedir_por_whatsapp`: los TRES estados tienen que verse en la muestra.
+      // `null` es «lo que diga Ajustes» y es el de casi todo; el 0 y el 1 son
+      // decisiones por artículo. Una hoja que solo se ha mirado con el valor
+      // de fábrica es una hoja que no se ha mirado.
       { codigo: "BC-001-03", nombre: "Body manga larga pima", talla: "0-3m", unidades_por_caja: 12,
         precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Ropa",
+        pedir_por_whatsapp: null,
         producto: "Body manga larga algodón pima", costo_unidades: 23, costo_valor_cents: 14720 },
       { codigo: "BC-001-36", nombre: "Body manga larga pima", talla: "3-6m", unidades_por_caja: 12,
         precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Ropa",
+        pedir_por_whatsapp: null,
         producto: "Body manga larga algodón pima", costo_unidades: 11, costo_valor_cents: 7040 },
       { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", talla: "Única", unidades_por_caja: 6,
         precio_cents: 2890, tasa_itbms_bp: 700, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Textil",
+        pedir_por_whatsapp: 1,
         producto: "Set de 3 mantas de muselina", costo_unidades: 2, costo_valor_cents: 3020 },
       { codigo: "BC-003-RN", nombre: "Gorro de punto recién nacido", talla: "RN", unidades_por_caja: 24,
         precio_cents: 790, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Accesorios",
+        pedir_por_whatsapp: null,
         producto: "Gorro de punto recién nacido", costo_unidades: 0, costo_valor_cents: 0 },
       { codigo: "BC-004-U", nombre: "Pañalera impermeable grande", talla: "Única", unidades_por_caja: 4,
         precio_cents: 4550, tasa_itbms_bp: 700, publicado: 0, activo: 0, version: 1, imagen: null, es_combo: 0, familia: "Bolsos",
+        pedir_por_whatsapp: 0,
         producto: "Pañalera impermeable grande", costo_unidades: 11, costo_valor_cents: 26400 },
           {
         codigo: "BC-COMBO-1", producto: "Combo recién nacido", nombre: "Combo recién nacido",
         talla: null, unidades_por_caja: 1, precio_cents: 3500, tasa_itbms_bp: 0,
         publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 1, familia: "Combos",
+        pedir_por_whatsapp: 0,
         costo_unidades: null, costo_valor_cents: null,
       },
 ],
@@ -856,6 +936,61 @@ const RESPUESTAS = {
         fisico: 11, reservado: 1, libres: 10, minimo: null },
     ],
   }),
+
+  // `/motorizados`: con los tres estados y con uno sin vehículo.
+  //
+  // Los tres estados a propósito: la pastilla se pinta distinta para «activo»
+  // y la hoja de editar deja marcada la opción que ya estaba, así que una
+  // muestra con solo activos aprobaría media pantalla. Y uno con el vehículo
+  // en null porque la columna lo permite —no siempre se sabe en qué anda— y
+  // esa celda tiene su propio texto.
+  //
+  // `entregas_hoy` con un número de verdad en el que está activo: es lo que
+  // hace salir el aviso de «hoy lleva N entregas» al ponerlo en pausa, que es
+  // la única parte de esta pantalla que avisa de algo.
+  // Y RESPETA `?todos=1`, como el Worker: por defecto el inactivo no sale.
+  // Una muestra que los devuelve siempre aprobaría un botón de «ver también a
+  // los que ya no trabajan» que no se nota que hace nada.
+  // Y RESPETA `?todos=1`, como el Worker: por defecto el inactivo no sale.
+  // Una muestra que los devolviera siempre aprobaría un botón de «ver también
+  // a los que ya no trabajan» sin que se note que hace algo.
+  "/api/motorizados": (url) => {
+    const todos = [
+      {
+        id: "m1",
+        nombre: "Luis Pérez",
+        celular_e164: "50760000001",
+        estado: "activo",
+        vehiculo: "moto",
+        tiene_pin: false,
+        entregas_hoy: 4,
+      },
+      {
+        id: "m2",
+        nombre: "Ana Gómez",
+        celular_e164: "50760000002",
+        estado: "pausa",
+        vehiculo: null,
+        tiene_pin: false,
+        entregas_hoy: 0,
+      },
+      {
+        id: "m3",
+        nombre: "Carlos Mendoza",
+        celular_e164: "50760000003",
+        estado: "inactivo",
+        vehiculo: "auto",
+        tiene_pin: false,
+        entregas_hoy: 0,
+      },
+    ];
+    return ok({
+      motorizados:
+        url.searchParams.get("todos") === "1"
+          ? todos
+          : todos.filter((m) => m.estado !== "inactivo"),
+    });
+  },
 
   "/api/bodegas": ok({
     bodegas: [
@@ -933,9 +1068,24 @@ const RESPUESTAS = {
       }),
       ajuste("stock_bajo", 5),
       ajuste("ferguson_pago_total", true),
-      ajuste("checkout_activo", false),
+      // ENCENDIDO, como en producción, y a propósito.
+      //
+      // Antes la muestra lo traía apagado, así que la auditoría nunca veía el
+      // estado que de verdad tiene la dueña delante: encendido y sin hacer
+      // nada. Una muestra que esquiva el caso incómodo aprueba una pantalla
+      // que en producción se lee distinto.
+      ajuste("checkout_activo", true, {
+        origen: "guardado", version: 1, vigente_desde: Date.now() - 40 * dia,
+        cambiado_por: "duena@babycaleb.com", motivo: "Para poder cobrar en la página",
+      }),
+      ajuste("whatsapp_pedidos_activo", true),
+      ajuste("whatsapp_numero", "50767575065", {
+        origen: "guardado", version: 1, vigente_desde: Date.now() - 30 * dia,
+        cambiado_por: "duena@babycaleb.com", motivo: "El celular de siempre del negocio",
+      }),
       ajuste("pasarelas_activas", []),
       ajuste("metodos_para_abono", ["yappy", "manual"]),
+      ajuste("cotizacion_dias_validez", PENDIENTE),
       ajuste("reserva_minutos_pago_en_linea", 30, {
         origen: "guardado", version: 1, vigente_desde: Date.now() - 2 * dia,
         cambiado_por: "duena@babycaleb.com", motivo: "Media hora alcanza para pagar por Yappy",

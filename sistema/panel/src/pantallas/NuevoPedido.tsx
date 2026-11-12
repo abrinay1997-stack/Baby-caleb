@@ -1,14 +1,28 @@
 import { useEffect, useState } from "react";
 import { buscarProductos } from "./buscar-productos";
-import { dinero, pedir, useCarga } from "../api";
+import { dinero, fecha, pedir, useCarga } from "../api";
 import { Hoja } from "../armazon/Hoja";
 
 /**
- * Tomar un pedido desde el panel.
+ * Tomar un pedido desde el panel — o hacer una cotización.
  *
  * Es para quien atiende por teléfono o por WhatsApp: la clienta dice qué
  * quiere y alguien lo teclea. La web y el bot crearán pedidos por su cuenta;
  * esta pantalla es la puerta de las personas.
+ *
+ * ## Las dos son la MISMA hoja, y eso no es ahorro de código
+ *
+ * Es el modelo que pidió el dueño, el de Odoo: una cotización, al confirmarse,
+ * se convierte en pedido. Es el mismo documento, así que se llena con el mismo
+ * formulario — la clienta, los productos, la zona, las notas. Dos hojas
+ * distintas acabarían preguntando cosas distintas, y entonces confirmar una
+ * cotización tendría que pedir lo que faltaba, que es justo lo que una
+ * conversión no hace.
+ *
+ * Lo único que cambia `modo` es el título, la ruta a la que se manda, el texto
+ * del botón y **lo que se promete al terminar**: un pedido dice «ya está
+ * apartado el inventario»; una cotización dice que no aparta nada. Esa frase
+ * es la parte importante de la diferencia.
  *
  * Dos cosas que definen su forma:
  *
@@ -54,21 +68,51 @@ interface PedidoCreado {
   envioCents: number;
   abonoMinimoCents: number;
   requierePagoTotal: boolean;
+  /** Lo dice el SERVIDOR, no la pantalla: «cotizacion» o «por_abonar». */
+  estado: "cotizacion" | "por_abonar";
+  /** Si se apartó inventario. En una cotización, `false` siempre. */
+  aparto: boolean;
+  /** Hasta cuándo vale, si vale hasta alguna fecha. */
+  venceEn: number | null;
 }
 
 /** Una llave por formulario abierto: dos toques no hacen dos pedidos. */
 const nuevaLlave = (): string =>
   `panel-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
+/** Qué se está haciendo. Lo único que cambia entre los dos usos de la hoja. */
+export type ModoDeDocumento = "pedido" | "cotizacion";
+
+const PALABRAS: Record<
+  ModoDeDocumento,
+  { titulo: string; boton: string; trabajando: string; ruta: string }
+> = {
+  pedido: {
+    titulo: "Tomar un pedido",
+    boton: "Tomar el pedido",
+    trabajando: "Tomando el pedido…",
+    ruta: "/api/pedidos",
+  },
+  cotizacion: {
+    titulo: "Hacer una cotización",
+    boton: "Hacer la cotización",
+    trabajando: "Haciendo la cotización…",
+    ruta: "/api/cotizaciones",
+  },
+};
+
 export function NuevoPedido({
   abierta,
   alCerrar,
   alCrear,
+  modo = "pedido",
 }: {
   abierta: boolean;
   alCerrar: () => void;
   alCrear: () => void;
+  modo?: ModoDeDocumento;
 }) {
+  const palabras = PALABRAS[modo];
   const catalogo = useCarga<{ variantes: Variante[] }>("/api/catalogo");
   const zonas = useCarga<{ zonas: Zona[] }>("/api/zonas");
 
@@ -165,13 +209,17 @@ export function NuevoPedido({
       return;
     }
     if (lineas.length === 0) {
-      setError("Un pedido sin productos no es un pedido.");
+      setError(
+        modo === "cotizacion"
+          ? "Una cotización sin productos no cotiza nada."
+          : "Un pedido sin productos no es un pedido.",
+      );
       return;
     }
     setError(null);
     setGuardando(true);
     try {
-      const r = await pedir<PedidoCreado>("/api/pedidos", {
+      const r = await pedir<PedidoCreado>(palabras.ruta, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -199,7 +247,11 @@ export function NuevoPedido({
   return (
     <Hoja
       abierta={abierta}
-      titulo={hecho === null ? "Tomar un pedido" : `Pedido ${hecho.numero}`}
+      titulo={
+        hecho === null
+          ? palabras.titulo
+          : `${hecho.estado === "cotizacion" ? "Cotización" : "Pedido"} ${hecho.numero}`
+      }
       alCerrar={alCerrar}
       pie={
         hecho !== null ? (
@@ -217,7 +269,7 @@ export function NuevoPedido({
             disabled={guardando || clienta === null || lineas.length === 0}
             className="tactil w-full rounded-[14px] bg-accent px-4 py-3 font-bold text-accent-fg disabled:opacity-60 focus-visible:outline-accent-edge focus-visible:outline-2"
           >
-            {guardando ? "Tomando el pedido…" : "Tomar el pedido"}
+            {guardando ? palabras.trabajando : palabras.boton}
           </button>
         )
       }
@@ -225,8 +277,18 @@ export function NuevoPedido({
       {hecho !== null ? (
         <div className="grid gap-3">
           <p className="m-0 text-[15px]">
-            Listo. El pedido <strong>{hecho.numero}</strong> quedó apartado a nombre de{" "}
-            <strong>{clienta?.nombre ?? "la clienta"}</strong>.
+            Listo.{" "}
+            {hecho.estado === "cotizacion" ? (
+              <>
+                La cotización <strong>{hecho.numero}</strong> quedó hecha a nombre de{" "}
+                <strong>{clienta?.nombre ?? "la clienta"}</strong>.
+              </>
+            ) : (
+              <>
+                El pedido <strong>{hecho.numero}</strong> quedó apartado a nombre de{" "}
+                <strong>{clienta?.nombre ?? "la clienta"}</strong>.
+              </>
+            )}
           </p>
           <dl className="m-0 grid gap-2">
             <div className="flex justify-between border-b border-line pb-2">
@@ -238,17 +300,43 @@ export function NuevoPedido({
               <dd className="m-0">{dinero(hecho.envioCents)}</dd>
             </div>
             <div className="flex justify-between">
+              {/* En una cotización todavía no hay nada que abonar: el abono
+                  es lo que hará falta CUANDO se confirme. Decir «abono
+                  mínimo» a secas sobre un documento que no se cobra deja a
+                  quien atiende pidiéndole dinero a la clienta por algo que
+                  aún no es un pedido. */}
               <dt className="text-muted">
-                {hecho.requierePagoTotal ? "Hay que pagar el total" : "Abono mínimo"}
+                {hecho.requierePagoTotal
+                  ? hecho.aparto
+                    ? "Hay que pagar el total"
+                    : "Al confirmarla hay que pagar el total"
+                  : hecho.aparto
+                    ? "Abono mínimo"
+                    : "Abono mínimo al confirmarla"}
               </dt>
               <dd className="m-0 font-bold">
                 {dinero(hecho.requierePagoTotal ? hecho.totalCents : hecho.abonoMinimoCents)}
               </dd>
             </div>
           </dl>
-          <p className="m-0 text-[13px] text-muted">
-            Ya está apartado el inventario. Se agenda cuando entre el abono.
-          </p>
+          {/* La frase que de verdad distingue los dos documentos. Se escribe
+              según lo que contestó el SERVIDOR (`aparto`), no según el modo
+              con el que se abrió la hoja: creerse a sí misma es como una
+              pantalla acaba prometiendo algo que no pasó. */}
+          {hecho.aparto ? (
+            <p className="m-0 text-[13px] text-muted">
+              Ya está apartado el inventario. Se agenda cuando entre el abono.
+            </p>
+          ) : (
+            <p className="m-0 rounded-[10px] bg-surface p-3 text-[14px]">
+              <strong>Esto no aparta mercancía.</strong> La cotización solo dice el precio: las
+              cajas siguen a la venta para quien las pida primero. Se apartan cuando usted la
+              confirme, y entonces pasa a ser un pedido.
+              {hecho.venceEn === null
+                ? " No caduca: todavía no está decidido cuántos días vale una cotización."
+                : ` Vale hasta el ${fecha(hecho.venceEn)}.`}
+            </p>
+          )}
         </div>
       ) : (
         <div className="grid gap-5">

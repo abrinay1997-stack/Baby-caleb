@@ -13,8 +13,7 @@ import {
 import { getContentData } from '../data/content';
 import { useCarrito } from '../carrito/useCarrito';
 import { CompartirProducto } from '../components/CompartirProducto'
-
-const WHATSAPP_BASE = 'https://wa.me/50767575065?text=';
+import { PedirPorWhatsapp } from '../components/PedirPorWhatsapp'
 
 /** Cuánto se queda el «Agregado» antes de volver a su texto normal. */
 const AVISO_MS = 2000;
@@ -84,9 +83,6 @@ export default function FichaProducto() {
   const peso = rangoDePeso(variante);
   const agotado = variante.disponibilidad === 'agotado';
   const url = `${window.location.origin}/productos/${variante.slug}`;
-  const mensaje = encodeURIComponent(
-    `Hola Baby Caleb, quiero pedir: ${variante.nombre} (${precioLegible(variante.precioCents)})`
-  );
 
   return (
     <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
@@ -162,15 +158,12 @@ export default function FichaProducto() {
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row">
-              <a
-                href={`${WHATSAPP_BASE}${mensaje}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Pedir ${variante.nombre} por WhatsApp`}
-                className={buttonVariants({ variant: agotado ? 'outline' : 'accent' })}
-              >
-                {agotado ? 'Avísenme cuando entre' : 'Pedir por WhatsApp'}
-              </a>
+              {/* Sale o no sale según lo que diga el panel: el ajuste
+                  «Dejar pedir por WhatsApp» más lo que tenga decidido ESTE
+                  artículo en su ficha. La decisión llega resuelta del sistema y
+                  el número también; aquí no se combina nada ni se escribe
+                  ningún celular a mano. */}
+              <PedirPorWhatsapp variante={variante} agotado={agotado} />
 
               {/* Agotado no se agrega: el carrito acabaría pidiendo algo que no
                   hay, y quien lo descubre es la clienta al final. */}

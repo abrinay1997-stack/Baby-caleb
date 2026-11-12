@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { editarVariante } from "../../db/catalogo-admin";
 import { aplicar, bodegaPorNombre, trasladar } from "../../db/inventario";
 import { ulid } from "../../ids";
 import { definir } from "../registro";
@@ -99,12 +100,33 @@ export const cambiarPrecio = definir({
 export const ajustarStock = definir({
   nombre: "ajustar_stock",
   descripcion:
-    "Corrige las existencias de un artículo en una bodega después de un conteo. «fijar» pone el número que se contó; «sumar» y «restar» mueven por la diferencia. Ejemplo: ajustar_stock con codigo «NAT-M», bodega «Bodega Ciudad de Panamá», modo «fijar» y cantidad 12.",
+    "Corrige las existencias de un artículo en una bodega después de un conteo. «fijar» pone el número que se contó; «sumar» y «restar» mueven por la diferencia. Si aparece mercancía y se sabe lo que costó, se dice con costo_unitario_cents y así entra también al costo promedio. Ejemplo: ajustar_stock con codigo «NAT-M», bodega «Bodega Ciudad de Panamá», modo «fijar» y cantidad 12.",
   parametros: z.object({
     codigo,
     bodega: z.string().min(1).max(60).describe("El nombre de la bodega, tal como aparece en el panel."),
     modo: z.enum(["sumar", "restar", "fijar"]).describe("«fijar» es lo que se usa tras un conteo."),
     cantidad: z.number().int().min(0).max(1_000_000),
+    /**
+     * La puerta de MCP al costo promedio (TRAMPAS §13: una capacidad que solo
+     * se alcanza desde una pantalla no está terminada).
+     *
+     * Solo cuando el ajuste hace ENTRAR mercancía: en una salida el costo lo
+     * decide el promedio, no quien la pide (05-contabilidad §4). Si no se
+     * manda, el promedio no se toca y el costo de esas unidades queda sin
+     * saberse — que es la verdad. Un cero diría que fue gratis.
+     *
+     * Se llama `..._cents` para que la confirmación que lee la dueña lo
+     * enseñe en dólares: `resumir()` convierte toda clave que acabe así.
+     */
+    costo_unitario_cents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .optional()
+      .describe(
+        "Lo que costó CADA unidad que entra, en centavos: $3.50 son 350. Solo cuando entra mercancía. Sin esto, el costo promedio no se toca y la ganancia de lo que se venda de este artículo seguirá sin poderse calcular.",
+      ),
     motivo,
   }),
   nivel: "sensible",
@@ -130,13 +152,36 @@ export const ajustarStock = definir({
 
     if (delta === 0) throw new Error(`${args.codigo} ya está en ${args.cantidad} en «${args.bodega}»`);
 
+    // Se dice en vez de ignorarse: un costo que se acepta y no se usa deja a
+    // quien lo mandó creyendo que el promedio se cargó.
+    if (args.costo_unitario_cents !== undefined && delta < 0) {
+      throw new Error(
+        `el costo se dice cuando ENTRA mercancía, y este ajuste saca ${-delta} de ${args.codigo}; en una salida el costo lo decide el costo promedio`,
+      );
+    }
+
     const r = await aplicar(
       { db: ctx.db, actor: ctx.usuario.id, ahora: ctx.ahora },
-      [{ codigo: args.codigo, bodegaId: bodega.id, delta, tipo: "ajuste", motivo: args.motivo }],
+      [
+        {
+          codigo: args.codigo,
+          bodegaId: bodega.id,
+          delta,
+          tipo: "ajuste",
+          motivo: args.motivo,
+          ...(args.costo_unitario_cents === undefined
+            ? {}
+            : { costoUnitCents: args.costo_unitario_cents }),
+        },
+      ],
       { tipo: "ajuste", id: ulid(ctx.ahora) },
     );
     if (!r.ok) throw new Error(r.mensaje);
 
+    // El costo NO vuelve en la respuesta, ni cuando lo mandó quien pregunta:
+    // el costo sale del asistente por una sola puerta, que es ninguna
+    // (`asistente/fronteras.test.ts`). Lo que vuelve es lo que hay en el
+    // estante.
     return { codigo: args.codigo, bodega: bodega.nombre, antes: fila.fisico, ahora: fila.fisico + delta, deshacerId: r.datos.deshacerId };
   },
 });
@@ -226,9 +271,79 @@ export const registrarMerma = definir({
   },
 });
 
+export const cambiarBotonWhatsapp = definir({
+  nombre: "cambiar_boton_whatsapp",
+  descripcion:
+    "Decide si la web enseña el botón «Pedir por WhatsApp» en UN artículo. «heredar» lo deja como diga Ajustes, que es lo normal; «si» y «no» lo deciden solo para ese artículo. Para apagarlo en TODA la tienda se usa cambiar_ajuste con «whatsapp_pedidos_activo». Ejemplo: cambiar_boton_whatsapp con codigo «BC-COMBO-1» y mostrar «no» quita el botón de ese combo y lo deja solo con el carrito.",
+  parametros: z.object({
+    codigo,
+    mostrar: z
+      .enum(["si", "no", "heredar"])
+      .describe(
+        "«heredar» = lo que diga Ajustes (es el valor de fábrica de todos los artículos).",
+      ),
+    motivo,
+  }),
+  nivel: "sensible",
+  categoria: "catalogo",
+  roles: ["duena"],
+
+  async ejecutar(ctx, args) {
+    const antes = await ctx.db
+      .prepare("SELECT pedir_por_whatsapp, version FROM variantes WHERE codigo = ?")
+      .bind(args.codigo)
+      .first<{ pedir_por_whatsapp: number | null; version: number }>();
+
+    if (antes === null) throw new Error(`no existe el artículo ${args.codigo}`);
+
+    const quiere = args.mostrar === "heredar" ? null : args.mostrar === "si" ? 1 : 0;
+    // `antes.pedir_por_whatsapp` puede ser null, y `null === null` es true en
+    // JavaScript: aquí sí se pueden comparar directo. En SQL no, y por eso el
+    // control de abajo usa `IS`.
+    if (antes.pedir_por_whatsapp === quiere) {
+      throw new Error(`${args.codigo} ya estaba así`);
+    }
+
+    // Va por el MISMO camino que el panel —`editarVariante`— y no con un
+    // UPDATE propio: ahí viven el control contra la actualización perdida y la
+    // comparación con `IS` que hace falta para una columna que puede ser nula.
+    // Un segundo camino hacia la misma columna es un segundo sitio donde esas
+    // dos cosas se olvidan (es la lección de `trasladar_stock`, aquí arriba).
+    const r = await editarVariante(
+      { db: ctx.db, actor: ctx.usuario.id, ahora: ctx.ahora },
+      args.codigo,
+      {
+        pedirPorWhatsapp: quiere === null ? null : quiere === 1,
+        motivo: args.motivo,
+      },
+      antes.version,
+    );
+    if (!r.ok) throw new Error(r.mensaje);
+
+    return {
+      codigo: args.codigo,
+      antes:
+        antes.pedir_por_whatsapp === null
+          ? "heredar"
+          : antes.pedir_por_whatsapp === 1
+            ? "si"
+            : "no",
+      ahora: args.mostrar,
+      // Lo que de verdad va a ver la clienta depende TAMBIÉN del ajuste
+      // global, así que se dice aquí: un «sí» en el artículo con el ajuste
+      // apagado no enseña ningún botón, y quien lo pidió tiene que saberlo
+      // ahora y no cuando mire la web.
+      aviso:
+        "Lo que la web enseña sale de esto Y del ajuste «whatsapp_pedidos_activo». Si ese está apagado, o no hay número puesto en «whatsapp_numero», el botón no sale en ningún artículo.",
+      version: r.datos.version,
+    };
+  },
+});
+
 export const HERRAMIENTAS_DE_PRECIOS_Y_STOCK = [
   cambiarPrecio,
   ajustarStock,
   trasladarStock,
   registrarMerma,
+  cambiarBotonWhatsapp,
 ] as const;

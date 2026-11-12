@@ -91,6 +91,15 @@ export const SECCIONES: Seccion[] = [
         permiso: "pedidos",
       },
       {
+        ruta: "/motorizados",
+        nombre: "Quién reparte",
+        descripcion: "El equipo de la calle: quién está activo y en qué anda",
+        // Verlos va con «pedidos» porque quien reparte las rutas del día
+        // necesita saber a quién asignarlas. Darlos de alta pide «ajustes», y
+        // eso lo comprueba el servidor, no este mapa.
+        permiso: "pedidos",
+      },
+      {
         ruta: "/zonas",
         nombre: "Zonas de envío",
         descripcion: "A dónde se entrega y cuánto cuesta",

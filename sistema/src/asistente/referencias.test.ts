@@ -160,6 +160,38 @@ describe("la guarda: qué NO puede salir hacia el modelo", () => {
     ).toEqual([]);
   });
 
+  it("el nombre se busca como PALABRA, no como trozo de otra", () => {
+    // Con «Ana» en la base, `includes` daba positivo con «ventanas de
+    // entrega», «mañana» y «manga». Lo destapó la prueba que barre todas las
+    // herramientas al añadir `ver_ajustes`, que devuelve los nombres de los
+    // ajustes —entre ellos `ventanas_entrega`—. Es la misma lección del patrón
+    // del celular: una guarda que grita con cosas inocentes acaba apagada.
+    for (const v of [
+      "ventanas_entrega",
+      "Las ventanas de entrega",
+      "subirlo mañana no cambia nada",
+      "Body manga larga",
+    ]) {
+      expect(revisar({ nota: v }, ["Ana"]), `gritó con «${v}»`).toEqual([]);
+    }
+  });
+
+  it("pero un nombre de verdad no se le escapa por eso", () => {
+    // El contrapeso. Afinar no puede volverla ciega, y un nombre filtrado
+    // aparece pegado a cualquier signo, no rodeado de espacios.
+    for (const v of ["Ana pidió dos mantas", "cliente:Ana", "ANA GÓMEZ", "para (Ana), mañana"]) {
+      expect(revisar({ nota: v }, ["Ana"]), `se le escapó «${v}»`).not.toEqual([]);
+    }
+  });
+
+  it("un nombre con acentos se caza igual, y no al revés", () => {
+    // `\b` de JavaScript trata la tilde como frontera de palabra, así que
+    // cazaría «Ánalia» buscando «nalia». Los límites se miran con letras
+    // Unicode justamente por esto.
+    expect(revisar({ nota: "pedido de Begoña" }, ["Begoña"])).not.toEqual([]);
+    expect(revisar({ nota: "Analia vino hoy" }, ["Ana"])).toEqual([]);
+  });
+
   it("un nombre muy corto no se persigue", () => {
     // Con nombres de una o dos letras, cualquier palabra daría positivo y la
     // guarda se volvería ruido que alguien acabaría apagando.
@@ -225,7 +257,19 @@ describe("la guarda, aplicada a TODAS las herramientas", () => {
     // de otra manera —`buscar_articulo`, que recibe `texto`— quedaba sin
     // vigilar y la prueba seguía verde. Una prueba que se salta lo que no
     // entiende no es una prueba: es una lista de buenas intenciones.
-    const formas: unknown[] = [{ codigo }, { texto: codigo }, {}];
+    //
+    // `pedido` y `clienta` se añadieron con las herramientas de pedidos y de
+    // dinero, que son justo las que tocan `clientes`: `ver_pedido` pide un
+    // número de pedido y `historial_de_cliente` una referencia. Dejarlas fuera
+    // habría sacado de esta prueba precisamente a las que más falta hace
+    // vigilar.
+    const formas: unknown[] = [
+      { codigo },
+      { texto: codigo },
+      {},
+      { pedido: codigo },
+      { clienta: codigo },
+    ];
     const probadas: string[] = [];
 
     for (const h of todas) {

@@ -45,6 +45,25 @@ publicando (lección del puente del CRM).
 Receta de D'Casa que se adopta: cambio en una rama `claude/...` con su prueba → staging → capturas
 a la dueña → su visto bueno → PR → `main` → producción a mano. Producción nunca se publica sola.
 
+> **Hoy un despliegue a staging siempre termina en rojo, y no porque algo esté roto.**
+>
+> El Worker sube bien y la base migra bien; lo que falla es el paso de `/salud`. La
+> dirección de staging (`babycaleb-sistema-staging...workers.dev`) está **detrás de
+> Cloudflare Access** —así lo quiere `wrangler.jsonc`, para que nadie entre a staging por
+> la puerta de atrás— y Access contesta un 302 de login antes de que el Worker corra. El
+> guion lo dice con todas sus letras cuando falla, así que no hay que venir a leer esto
+> para entenderlo.
+>
+> Se arregla con un **Service Token** en Zero Trust, una política *Service Auth* en esa
+> aplicación de Access, y `ACCESS_CLIENT_ID` + `ACCESS_CLIENT_SECRET` en los secretos del
+> repositorio. `salud.sh` ya los manda si existen.
+>
+> **En producción no pasa**: ahí la salud se mide en `ruta.babycaleb.com/salud`, que es la
+> superficie del motorizado y no tiene Access delante (comprobado: contesta 200).
+>
+> Mientras tanto hay que mirar el rojo de staging en vez de darlo por sabido, que es
+> exactamente lo que un control que siempre falla acaba consiguiendo que nadie haga.
+
 ### Repositorio del CRM
 
 Su `deploy.yml` sigue igual. Se agrega la prueba de huella del contrato y, al cambiar el contrato,
