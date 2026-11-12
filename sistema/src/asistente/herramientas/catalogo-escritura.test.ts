@@ -298,22 +298,113 @@ describe("crear_variante", () => {
     expect(h?.cambiado_por).toBe("duena@babycaleb.com");
   });
 
-  it("NO crea existencias: crear no mueve inventario", async () => {
-    // Es el argumento por el que estas tres son construcción y no sensible. Si
-    // un día crearan una fila de existencias, esto se pone rojo y hay que
-    // volver a mirar el nivel.
+  it("crea el casillero VACÍO en cada bodega, y no mueve una sola unidad", async () => {
+    // Esta prueba decía antes «NO crea existencias», y era el argumento por el
+    // que crear es construcción y no sensible. Se puso roja al arreglar el
+    // fallo del casillero, que es exactamente para lo que estaba — así que
+    // tocó volver a mirar el nivel, y la respuesta fue que sigue siendo
+    // construcción: un casillero en cero no mueve mercancía, crea el SITIO
+    // donde contarla. Lo que de verdad justifica el nivel es lo de abajo:
+    // ningún movimiento y ninguna unidad.
+    //
+    // Sin el casillero, la presentación nacía sin sitio donde contarla y
+    // `ajustar_stock` la rechazaba para siempre («no está dado de alta en esa
+    // bodega»), sin más salida que crear una bodega nueva, que no se borra.
     const codigo = await unaVariante();
-    const { results } = await env.DB.prepare("SELECT codigo FROM existencias WHERE codigo = ?")
-      .bind(codigo)
-      .all();
-    expect(results).toEqual([]);
 
+    const { results } = await env.DB.prepare(
+      "SELECT bodega_id, fisico, reservado, minimo FROM existencias WHERE codigo = ?",
+    )
+      .bind(codigo)
+      .all<{ bodega_id: string; fisico: number; reservado: number; minimo: number | null }>();
+
+    const bodegas = await env.DB.prepare("SELECT COUNT(*) AS cuantas FROM bodegas").first<{
+      cuantas: number;
+    }>();
+    expect(results.length, "falta su casillero en alguna bodega").toBe(bodegas?.cuantas);
+    for (const fila of results) {
+      expect(fila.fisico, "un casillero nuevo nace vacío").toBe(0);
+      expect(fila.reservado).toBe(0);
+      expect(fila.minimo, "sin aviso de stock bajo, como hace bodegas.ts").toBeNull();
+    }
+
+    // Y lo que de verdad decide el nivel: crear no escribe en el libro de
+    // movimientos ni deja una sola unidad en ninguna parte.
     const mov = await env.DB.prepare(
       "SELECT COUNT(*) AS cuantos FROM movimientos_inventario WHERE codigo = ?",
     )
       .bind(codigo)
       .first<{ cuantos: number }>();
-    expect(mov?.cuantos).toBe(0);
+    expect(mov?.cuantos, "crear no mueve inventario").toBe(0);
+
+    const unidades = await env.DB.prepare(
+      "SELECT COALESCE(SUM(fisico),0) AS u FROM existencias WHERE codigo = ?",
+    )
+      .bind(codigo)
+      .first<{ u: number }>();
+    expect(unidades?.u).toBe(0);
+  });
+
+  it("también en una bodega APAGADA, o volver a usarla la dejaría sin sitio", async () => {
+    // Esta prueba existe porque la mutación contraria sobrevivió. Al arreglar
+    // el casillero escribí «a todas las bodegas» en vez de «a las activas», y
+    // razoné por qué —una bodega apagada se puede volver a encender con
+    // `cambiarUso`, y entonces estas presentaciones no tendrían casillero en
+    // ella: el mismo fallo un piso más abajo—. Pero cambiarlo a `activa = 1`
+    // pasaba las 36 pruebas, así que ese razonamiento no lo vigilaba nadie.
+    const dormida = `bod-apagada-${Date.now()}`;
+    await env.DB.prepare("INSERT INTO bodegas (id,nombre,activa) VALUES (?,?,0)")
+      .bind(dormida, `Bodega dormida ${Date.now()}`)
+      .run();
+
+    try {
+      const codigo = await unaVariante();
+      const fila = await env.DB.prepare(
+        "SELECT fisico FROM existencias WHERE codigo = ? AND bodega_id = ?",
+      )
+        .bind(codigo, dormida)
+        .first<{ fisico: number }>();
+      expect(fila, "una bodega apagada también necesita su casillero").not.toBeNull();
+      expect(fila?.fisico).toBe(0);
+    } finally {
+      // Se limpia al salir: las demás pruebas cuentan bodegas.
+      await env.DB.prepare("DELETE FROM existencias WHERE bodega_id = ?").bind(dormida).run();
+      await env.DB.prepare("DELETE FROM bodegas WHERE id = ?").bind(dormida).run();
+    }
+  });
+
+  it("y con el casillero ya se le puede cargar inventario: el circuito entra", async () => {
+    // La prueba del agujero. Antes de arreglarlo, esto contestaba «no está
+    // dado de alta en esa bodega» y no había forma de seguir: una presentación
+    // creada después de las bodegas no se podía inventariar nunca.
+    const codigo = await unaVariante();
+    const bodega = await env.DB.prepare("SELECT nombre FROM bodegas LIMIT 1").first<{
+      nombre: string;
+    }>();
+
+    const r = await ejecutar(
+      quien(),
+      registro,
+      pedir("ajustar_stock", {
+        codigo,
+        bodega: bodega?.nombre,
+        modo: "fijar",
+        cantidad: 7,
+        costo_unitario_cents: 250,
+        motivo: "carga inicial de la prueba",
+      }),
+    );
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok || r.datos.clase !== "por_confirmar") throw new Error("no quedó esperando");
+    const hecho = await permitir(r.datos.accionId);
+    expect(hecho.ok, JSON.stringify(hecho)).toBe(true);
+
+    const fila = await env.DB.prepare(
+      "SELECT fisico FROM existencias WHERE codigo = ? AND bodega_id = (SELECT id FROM bodegas WHERE nombre = ?)",
+    )
+      .bind(codigo, bodega?.nombre)
+      .first<{ fisico: number }>();
+    expect(fila?.fisico).toBe(7);
   });
 
   it("acepta el código en minúsculas y lo guarda en mayúsculas", async () => {
@@ -612,11 +703,15 @@ describe("ver_retiro_variante", () => {
   it("con ventas o movimientos avisa de que NO desaparece, y dice por qué", async () => {
     const codigo = await unaVariante();
     const bodega = await env.DB.prepare("SELECT id FROM bodegas LIMIT 1").first<{ id: string }>();
-    await env.DB.prepare(
-      "INSERT INTO existencias (codigo,bodega_id,fisico,reservado,minimo) VALUES (?,?,7,0,NULL)",
+    // UPDATE y no INSERT: desde que crear una presentación le da su casillero
+    // en cada bodega, la fila YA existe y un INSERT choca con la llave. Se le
+    // pone mercancía encima, que es lo que esta prueba quiere simular.
+    const puesto = await env.DB.prepare(
+      "UPDATE existencias SET fisico = 7 WHERE codigo = ? AND bodega_id = ?",
     )
       .bind(codigo, bodega?.id)
       .run();
+    expect(puesto.meta.changes, "no existía el casillero que se iba a llenar").toBe(1);
 
     const r = await verRetiroDeVariante.ejecutar(ctx(), { codigo });
     expect(r.modo).toBe("se_oculta");
@@ -662,11 +757,15 @@ describe("retirar_variante", () => {
     // alguien compró y pagó.
     const codigo = await unaVariante();
     const bodega = await env.DB.prepare("SELECT id FROM bodegas LIMIT 1").first<{ id: string }>();
-    await env.DB.prepare(
-      "INSERT INTO existencias (codigo,bodega_id,fisico,reservado,minimo) VALUES (?,?,4,0,NULL)",
+    // UPDATE y no INSERT: desde que crear una presentación le da su casillero
+    // en cada bodega, la fila YA existe y un INSERT choca con la llave. Se le
+    // pone mercancía encima, que es lo que esta prueba quiere simular.
+    const puesto = await env.DB.prepare(
+      "UPDATE existencias SET fisico = 4 WHERE codigo = ? AND bodega_id = ?",
     )
       .bind(codigo, bodega?.id)
       .run();
+    expect(puesto.meta.changes, "no existía el casillero que se iba a llenar").toBe(1);
 
     const r = await ejecutar(
       quien(),

@@ -230,6 +230,27 @@ describe("la guarda, aplicada a TODAS las herramientas", () => {
            referencia_tipo,referencia_id,motivo,actor,creado_en)
          VALUES (?, ?, ?, 14, 'compra', 640, 'compra', 'co-1', NULL, 'ana@babycaleb.com', ?)`,
       ).bind(id("mv"), codigo, bodega, ahora()),
+      // Un ajuste CAMBIADO por alguien, con su correo.
+      //
+      // Faltaba, y por ese hueco se escapó un fallo entero a producción.
+      // `ajustes.cambiado_por` solo tiene valor en los ajustes que alguien
+      // tocó, y tanto en local como en las pruebas la tabla arranca vacía: así
+      // que este barrido recorría `ver_ajustes` sobre un resultado donde ese
+      // campo era null en todas las filas y pasaba en verde, mientras en
+      // producción —con la dueña habiendo cambiado una sola cifra— la
+      // herramienta devolvía su correo entero, el servidor de MCP tumbaba el
+      // resultado COMPLETO y `ver_ajustes` estaba muerta. Se descubrió
+      // pidiéndola en vivo por MCP; ahora se descubre aquí.
+      //
+      // Va en ESTE barrido y no solo en la prueba de `ver_ajustes` porque esto
+      // es lo que cubre a las herramientas que todavía no existen: la próxima
+      // que devuelva un `cambiado_por`, un `actor` o un `creado_por` se
+      // encuentra esto puesto. OR IGNORE porque la llave es (clave, version) y
+      // con que exista uno basta.
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO ajustes (clave,version,valor_json,vigente_desde,cambiado_por,motivo)
+         VALUES ('stock_bajo',1,'5',?,'ana@babycaleb.com','sembrado por la guarda de D-20')`,
+      ).bind(ahora()),
     ]);
 
     // Los nombres que hay en la base: es la única forma honesta de cazar un

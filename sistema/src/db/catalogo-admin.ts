@@ -300,6 +300,34 @@ export async function crearVariante(
            VALUES (?,?,?,?,?,?)`,
         )
         .bind(ulid(ctx.ahora), datos.codigo, datos.precioCents, ctx.ahora, ctx.actor, "alta"),
+      // Su casillero en CADA bodega, en el mismo lote.
+      //
+      // Sin esto una presentación nueva nace sin sitio donde contarla, y el
+      // sistema —con razón— se niega a moverle mercancía: «no está dado de
+      // alta en esa bodega». No es un cero, es un «no se sabe», y distinguir
+      // las dos cosas es lo que impide que un código mal tecleado se convierta
+      // en una entrada de inventario.
+      //
+      // El problema es que hasta hoy NADIE se lo daba. El único `INSERT INTO
+      // existencias` del repositorio estaba en `bodegas.ts`, que reparte
+      // casilleros a las variantes que existían cuando se creó la bodega. Los
+      // doce artículos de producción funcionan solo porque nacieron en la
+      // misma migración que las bodegas; el primero que se diera de alta
+      // después no se podría inventariar jamás, y el único camino era crear
+      // una bodega nueva —que no se borra—. Lo destapó una prueba del circuito
+      // por MCP.
+      //
+      // Va a TODAS las bodegas, no solo a las activas: la invariante que
+      // mantienen la migración 0003 y `bodegas.ts` juntas es que cada
+      // presentación no-combo tiene su fila en cada bodega. Si se saltaran las
+      // apagadas, volver a usar una (`cambiarUso`) la dejaría sin casillero
+      // para estas presentaciones, que es este mismo fallo un piso más abajo.
+      ctx.db
+        .prepare(
+          `INSERT INTO existencias (codigo, bodega_id, fisico, reservado, minimo)
+           SELECT ?, b.id, 0, 0, NULL FROM bodegas b`,
+        )
+        .bind(datos.codigo),
     ]);
   } catch (e) {
     const texto = e instanceof Error ? e.message : String(e);
@@ -687,6 +715,35 @@ export async function crearProductoConVariante(
            VALUES (?,?,?,?,?,?)`,
         )
         .bind(ulid(ctx.ahora), variante.codigo, variante.precioCents, ctx.ahora, ctx.actor, "alta"),
+      // Su casillero en CADA bodega, igual que en `crearVariante` y por el
+      // mismo motivo.
+      //
+      // Sin esto una presentación nueva nace sin sitio donde contarla, y el
+      // sistema —con razón— se niega a moverle mercancía: «no está dado de
+      // alta en esa bodega». No es un cero, es un «no se sabe», y distinguir
+      // las dos cosas es lo que impide que un código mal tecleado se convierta
+      // en una entrada de inventario.
+      //
+      // El problema es que hasta hoy NADIE se lo daba. El único `INSERT INTO
+      // existencias` del repositorio estaba en `bodegas.ts`, que reparte
+      // casilleros a las variantes que existían cuando se creó la bodega. Los
+      // doce artículos de producción funcionan solo porque nacieron en la
+      // misma migración que las bodegas; el primero que se diera de alta
+      // después no se podría inventariar jamás, y el único camino era crear
+      // una bodega nueva —que no se borra—. Lo destapó una prueba del circuito
+      // por MCP.
+      //
+      // Va a TODAS las bodegas, no solo a las activas: la invariante que
+      // mantienen la migración 0003 y `bodegas.ts` juntas es que cada
+      // presentación no-combo tiene su fila en cada bodega. Si se saltaran las
+      // apagadas, volver a usar una (`cambiarUso`) la dejaría sin casillero
+      // para estas presentaciones, que es este mismo fallo un piso más abajo.
+      ctx.db
+        .prepare(
+          `INSERT INTO existencias (codigo, bodega_id, fisico, reservado, minimo)
+           SELECT ?, b.id, 0, 0, NULL FROM bodegas b`,
+        )
+        .bind(variante.codigo),
     ]);
   } catch (e) {
     const t = e instanceof Error ? e.message : String(e);
