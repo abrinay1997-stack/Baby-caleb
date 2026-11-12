@@ -82,20 +82,23 @@ el id de la acción).
 | `resumen_del_dia` | lectura | todos |
 | `ventas_del_periodo(desde?, hasta?, por?)` | lectura | dueña, contadora |
 | `quien_me_debe` | lectura | dueña, contadora |
-| `pedidos_de_hoy` · `buscar_pedido(numero o clienta)` | lectura | todos |
-| `buscar_cliente` · `historial_de_cliente` | lectura | dueña, asistente |
+| `buscar_pedido(estado?, busca?, clienta?)` · `ver_pedido(numero o id)` | lectura | dueña, asistente, contadora |
+| `buscar_cliente` · `historial_de_cliente` | lectura | dueña, asistente, contadora |
 | `ver_stock(codigo?)` · `movimientos(codigo?)` | lectura | todos |
 | `que_reponer(proveedor?, meses?, reserva?)` | lectura | dueña |
 | `dinero_en_cuentas` · `estado_de_resultados` · `gastos_del_periodo` | lectura | dueña, contadora |
 | `margen_por_producto` · `ventas_por_canal` · `costo_por_clienta_nueva` | lectura | dueña |
-| `entregas_del_dia` · `pagos_por_confirmar` | lectura | dueña, asistente |
+| `entregas_del_dia` | lectura | dueña, asistente |
+| `pagos_por_confirmar` | lectura | dueña |
 | `clientas_para_recompra` | lectura | dueña |
-| `crear_pedido` (queda por_abonar) | construcción | dueña, asistente |
+| `agendar_pedido` | construcción | dueña, asistente |
+| `dar_de_alta_clienta(nombre, celular)` → devuelve la referencia | construcción | dueña, asistente |
 | `anotar_en_pedido` · `anotar_en_cliente` | construcción | dueña, asistente |
 | `registrar_gasto` (con foto del recibo) | construcción | dueña, asistente |
 | `registrar_compra` (borrador) · `poner_tiempo_de_llegada` | construcción | dueña |
 | `asignar_motorizado` · `programar_entrega` | construcción | dueña, asistente |
-| `confirmar_abono` · `registrar_cobro` | sensible | dueña |
+| `crear_pedido` (queda por_abonar; aparta mercancía) | sensible | dueña |
+| `confirmar_abono` · `registrar_cobro` · `rechazar_cobro` | sensible | dueña |
 | `cambiar_precio` · `ajustar_stock` · `registrar_merma` · `trasladar_stock` | sensible | dueña |
 | `recibir_compra` | sensible | dueña |
 | `anular_pedido` · `reembolsar` | sensible | dueña |
@@ -103,6 +106,22 @@ el id de la acción).
 | `cambiar_ajuste` (abono mínimo, pasarela activa…) | sensible | dueña |
 
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
+
+**Tres filas se corrigieron al implementarlas (F-pedidos y F-dinero), y conviene saber por
+qué** — la tabla se escribió antes de que existieran `src/seguridad/roles.ts` y la política:
+
+- **Los roles salen de la matriz, no de esta tabla.** `buscar_cliente`,
+  `historial_de_cliente` y leer pedidos van con el permiso `pedidos`, que la contadora
+  tiene en «ver»: es lo que ya puede hacer desde el panel, así que la herramienta no
+  ensancha nada. Al revés, `pagos_por_confirmar` va con `cobros`, que hoy **solo** tiene
+  la dueña: la asistente lleva pedidos y gastos y no ve lo que entró.
+- **`crear_pedido` es sensible, no construcción.** Crear un pedido sube `reservado` y esas
+  unidades dejan de poderse vender: eso es tocar existencias, y lo que toca existencias se
+  propone y lo permite una persona. Como consecuencia es solo de la dueña —lo sensible lo
+  confirma ella, y hay una prueba en `registro.test.ts` que se cae si se le da a alguien
+  más—, aunque la asistente sí pueda tomar pedidos desde el panel.
+- **`agendar_pedido` sí es construcción**: la mercancía ya estaba apartada desde que se
+  creó el pedido, y agendar no mueve ni dinero ni existencias.
 
 ## 6. Modelo, costo y caché
 

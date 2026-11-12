@@ -225,7 +225,19 @@ describe("la guarda, aplicada a TODAS las herramientas", () => {
     // de otra manera —`buscar_articulo`, que recibe `texto`— quedaba sin
     // vigilar y la prueba seguía verde. Una prueba que se salta lo que no
     // entiende no es una prueba: es una lista de buenas intenciones.
-    const formas: unknown[] = [{ codigo }, { texto: codigo }, {}];
+    //
+    // `pedido` y `clienta` se añadieron con las herramientas de pedidos y de
+    // dinero, que son justo las que tocan `clientes`: `ver_pedido` pide un
+    // número de pedido y `historial_de_cliente` una referencia. Dejarlas fuera
+    // habría sacado de esta prueba precisamente a las que más falta hace
+    // vigilar.
+    const formas: unknown[] = [
+      { codigo },
+      { texto: codigo },
+      {},
+      { pedido: codigo },
+      { clienta: codigo },
+    ];
     const probadas: string[] = [];
 
     for (const h of todas) {

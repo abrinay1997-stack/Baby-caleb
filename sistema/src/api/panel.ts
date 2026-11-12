@@ -82,7 +82,7 @@ import {
 import type { CambiosEnClienta, CambiosEnDireccion } from "../db/clientes";
 import { type HacerProveedor, registrarRutasDelAsistente } from "./asistente-rutas";
 import { codigoHttp } from "./estados";
-import { crearPedido } from "../db/pedidos";
+import { crearPedido, reglasDelPedido as reglasDeUnPedidoNuevo } from "../db/pedidos";
 import { agendar as agendarPedido, cancelar as cancelarPedido } from "../db/transiciones";
 import {
   armarRuta,
@@ -1237,47 +1237,16 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
   });
 
   /**
-   * Las reglas que `crearPedido` exige RESUELTAS.
+   * Las reglas que `crearPedido` exige, resueltas.
    *
-   * Esa función se niega a inventar ninguna —«aquí no se inventa ninguno»,
-   * dice su contrato— así que quien la llama tiene que leer los ajustes y
-   * traérselas. Esto es ese paso, en un solo sitio para que la ruta del panel
-   * y la de la web no acaben resolviéndolas distinto.
-   *
-   * `abono_minimo_cents` NO admite PENDIENTE por diseño (su esquema lo dice),
-   * así que siempre hay un número: el de la dueña, o el de fábrica.
-   *
-   * El plazo sale de `reserva_horas_comprobante` y no de
-   * `reserva_minutos_pago_en_linea`, porque un pedido tomado DESDE EL PANEL lo
-   * toma una persona hablando con la clienta, y se paga con comprobante o en
-   * efectivo, no por un enlace de pago. Con la clave sin decidir el plazo es
-   * `null` —«no vence»—, que es un valor que el contrato de `crearPedido`
-   * contempla, no un hueco: un pedido que tomó una persona no se cancela solo
-   * a espaldas de quien lo tomó.
+   * Vivían aquí, atadas a un `Context` de Hono. Se mudaron a
+   * `src/db/pedidos.ts`, al lado de `crearPedido`, porque la herramienta
+   * `crear_pedido` del asistente las necesita igual y una segunda copia de esa
+   * interpretación habría hecho que el mismo ajuste significara dos cosas
+   * según por qué puerta entrara el pedido. El porqué largo está allá.
    */
-  async function reglasDelPedido(
-    c: Context<Entorno>,
-  ): Promise<Resultado<{ abonoMinimoCents: number; minutosParaAbonar: number | null }>> {
-    const r = await leerVigentes({ db: c.env.DB, ahora: Date.now() });
-    if (!r.ok) return r;
-    const de = (clave: string) => r.datos.ajustes.find((a) => a.clave === clave);
-
-    const abono = de("abono_minimo_cents");
-    if (abono === undefined || abono.pendiente || typeof abono.valor !== "number") {
-      return fallo(
-        "entrada_invalida",
-        "falta decidir el abono mínimo. Está en Configuración › Ajustes.",
-      );
-    }
-
-    const horas = de("reserva_horas_comprobante");
-    const minutosParaAbonar =
-      horas === undefined || horas.pendiente || typeof horas.valor !== "number"
-        ? null
-        : horas.valor * 60;
-
-    return ok({ abonoMinimoCents: abono.valor, minutosParaAbonar });
-  }
+  const reglasDelPedido = (c: Context<Entorno>) =>
+    reglasDeUnPedidoNuevo({ db: c.env.DB, ahora: Date.now() });
 
   /**
    * Tomar un pedido desde el panel.

@@ -1,5 +1,6 @@
 import { ulid } from "../ids";
 import { fallo, ok, type Resultado } from "../contrato/resultado";
+import { type ContextoDeLectura, leerVigentes } from "./ajustes";
 
 /**
  * Crear un pedido (F4.2).
@@ -362,4 +363,58 @@ export async function crearPedido(
     requierePagoTotal,
     venceEn,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Las reglas que `crearPedido` exige, resueltas
+// ---------------------------------------------------------------------------
+
+/**
+ * Las reglas que `crearPedido` exige RESUELTAS.
+ *
+ * Esa función se niega a inventar ninguna —«aquí no se inventa ninguno», dice
+ * su contrato— así que quien la llama tiene que leer los ajustes y traérselas.
+ * Esto es ese paso, **en un solo sitio** para que la ruta del panel, la de la
+ * web y la herramienta del asistente no acaben resolviéndolas distinto.
+ *
+ * Vivía dentro de `src/api/panel.ts`, atada a un `Context` de Hono, y por eso
+ * no se podía reutilizar: la herramienta `crear_pedido` del asistente habría
+ * tenido que escribir su propia copia de esta interpretación, y dos sitios
+ * leyendo el mismo ajuste con criterio propio es exactamente cómo una regla del
+ * negocio empieza a significar dos cosas. Ahora vive al lado de `crearPedido`,
+ * que es quien la necesita.
+ *
+ * `abono_minimo_cents` NO admite PENDIENTE por diseño (su esquema lo dice), así
+ * que siempre hay un número: el de la dueña, o el de fábrica.
+ *
+ * El plazo sale de `reserva_horas_comprobante` y no de
+ * `reserva_minutos_pago_en_linea`, porque un pedido que toma la casa lo toma
+ * una persona hablando con la clienta, y se paga con comprobante o en efectivo,
+ * no por un enlace de pago. Con la clave sin decidir el plazo es `null` —«no
+ * vence»—, que es un valor que el contrato de `crearPedido` contempla, no un
+ * hueco: un pedido que tomó una persona no se cancela solo a espaldas de quien
+ * lo tomó.
+ */
+export async function reglasDelPedido(
+  ctx: ContextoDeLectura,
+): Promise<Resultado<{ abonoMinimoCents: number; minutosParaAbonar: number | null }>> {
+  const r = await leerVigentes(ctx);
+  if (!r.ok) return r;
+  const de = (clave: string) => r.datos.ajustes.find((a) => a.clave === clave);
+
+  const abono = de("abono_minimo_cents");
+  if (abono === undefined || abono.pendiente || typeof abono.valor !== "number") {
+    return fallo(
+      "entrada_invalida",
+      "falta decidir el abono mínimo. Está en Configuración › Ajustes.",
+    );
+  }
+
+  const horas = de("reserva_horas_comprobante");
+  const minutosParaAbonar =
+    horas === undefined || horas.pendiente || typeof horas.valor !== "number"
+      ? null
+      : horas.valor * 60;
+
+  return ok({ abonoMinimoCents: abono.valor, minutosParaAbonar });
 }
