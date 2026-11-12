@@ -57,6 +57,7 @@ const UN_VALOR: Record<Clave, unknown> = {
   metodos_para_abono: ["yappy", "manual"],
   reserva_minutos_pago_en_linea: 30,
   reserva_horas_comprobante: 2,
+  cotizacion_dias_validez: 15,
   ventanas_entrega: ventanas,
   comisiones,
   cancelacion_con_abono: "credito",

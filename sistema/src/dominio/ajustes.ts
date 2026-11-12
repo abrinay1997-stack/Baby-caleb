@@ -233,11 +233,30 @@ export const ESQUEMAS = {
     admitePendiente: false,
   },
 
+  /**
+   * **Este interruptor hoy no hace nada, y la pantalla lo dice.**
+   *
+   * Durante meses su texto prometía que apagarlo quitaba el cobro de la web.
+   * No era verdad en ninguna de las dos direcciones: ningún código lo
+   * consultaba, así que encendido o apagado el carrito terminaba igual, en un
+   * mensaje de WhatsApp. Un ajuste que dice controlar algo que no controla es
+   * peor que no tener el ajuste (docs/TRAMPAS.md §13).
+   *
+   * Lo que de verdad decide si se puede cobrar en la web vive en
+   * `src/dominio/checkout.ts`, que cruza este interruptor con las pasarelas que
+   * están en condiciones de cobrar. Hoy son cero —tres pasarelas, ninguna
+   * credencial— así que la respuesta es «no» con el interruptor encendido, y
+   * eso es lo que se lee en Ajustes.
+   *
+   * El `explica` de abajo dice lo que el interruptor hace HOY. Cuando una
+   * pasarela esté lista, lo que cambia no es este texto: cambia la respuesta
+   * de `estadoDelCheckout`, que se calcula de los datos.
+   */
   checkout_activo: {
     tipo: "booleano",
     titulo: "Pagar desde la web",
     explica:
-      "Apagado, la web enseña el catálogo pero nadie puede pagar ahí: el pedido sigue haciéndose por WhatsApp. Es el interruptor que se apaga si algo va mal.",
+      "La intención de la dueña: si quiere que la web cobre cuando pueda cobrar. Por sí solo no enciende nada — hace falta además una pasarela con sus credenciales puestas y encendida. La pantalla dice si está haciendo efecto o no, y qué falta.",
     admitePendiente: false,
   },
 
@@ -260,6 +279,33 @@ export const ESQUEMAS = {
     // «no quiero pedidos por WhatsApp» ya tiene su interruptor propio aquí
     // arriba; dos formas de decir lo mismo acaban diciendo cosas distintas.
     admitePendiente: false,
+  },
+
+  /**
+   * Cuántos días vale una cotización.
+   *
+   * Nace en `PENDIENTE` y se queda ahí hasta que la dueña lo diga: nadie ha
+   * confirmado cuánto tiempo Baby Caleb mantiene un precio por escrito, y
+   * «siete días porque suena razonable» es una cifra a ojo con aspecto de
+   * política comercial. Mientras esté sin decidir, una cotización se crea SIN
+   * fecha de caducidad —`vence_en` en nulo— y no se cancela sola.
+   *
+   * Que no caduque es el lado seguro: una cotización vencida no se puede
+   * confirmar, así que un número inventado de menos dejaría a la clienta con
+   * un papel que el sistema rechaza.
+   */
+  cotizacion_dias_validez: {
+    tipo: "entero",
+    titulo: "Cuántos días vale una cotización",
+    explica:
+      "Pasados esos días, la cotización caduca y hay que hacer una nueva con los precios de ese momento. Una cotización no aparta mercancía, así que caducar no libera nada. Sin decidir, no caduca nunca.",
+    unidad: "días",
+    admitePendiente: true,
+    // Piso 1: menos de un día no es una cotización, es un precio dicho de
+    // palabra. Techo 365: más allá de un año el precio con el que se hizo ya
+    // no existe, y sostenerlo por escrito es una promesa que nadie quiere.
+    minimo: 1,
+    maximo: 365,
   },
 
   pasarelas_activas: {

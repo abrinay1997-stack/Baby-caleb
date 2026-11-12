@@ -36,6 +36,8 @@ import { HERRAMIENTAS_DE_CATALOGO } from "./herramientas/catalogo";
 import { HERRAMIENTAS_DE_CONTABILIDAD } from "./herramientas/contabilidad";
 import { HERRAMIENTAS_DE_DINERO } from "./herramientas/dinero";
 import { HERRAMIENTAS_DE_ENTREGAS } from "./herramientas/entregas";
+import { HERRAMIENTAS_DE_CHECKOUT } from "./herramientas/checkout";
+import { HERRAMIENTAS_DE_COTIZACIONES } from "./herramientas/cotizaciones";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
 import { HERRAMIENTAS_DE_PEDIDOS } from "./herramientas/pedidos";
 import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
@@ -57,6 +59,8 @@ export function catalogo(): Registro {
   for (const h of [
     ...HERRAMIENTAS_DE_CATALOGO,
     ...HERRAMIENTAS_DE_DINERO,
+    ...HERRAMIENTAS_DE_CHECKOUT,
+    ...HERRAMIENTAS_DE_COTIZACIONES,
     ...HERRAMIENTAS_DE_INVENTARIO,
     ...HERRAMIENTAS_DE_PEDIDOS,
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
@@ -79,5 +83,7 @@ export {
   HERRAMIENTAS_DE_ENTREGAS,
   HERRAMIENTAS_DE_INVENTARIO,
   HERRAMIENTAS_DE_PEDIDOS,
+  HERRAMIENTAS_DE_CHECKOUT,
+  HERRAMIENTAS_DE_COTIZACIONES,
   HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
 };

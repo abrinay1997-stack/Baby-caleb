@@ -117,6 +117,9 @@ corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y convie
 | `clientas_para_recompra` | lectura | dueña |
 | `agendar_pedido` | construcción | dueña, asistente |
 | `dar_de_alta_clienta(nombre, celular)` → devuelve la referencia | construcción | dueña, asistente |
+| `crear_pedido` (queda por_abonar) | construcción | dueña, asistente |
+| `crear_cotizacion` (no aparta nada) · `confirmar_cotizacion` (aquí sí aparta) | construcción | dueña, asistente |
+| `ver_checkout` (si la web puede cobrar y qué falta) | lectura | dueña, asistente |
 | `anotar_en_pedido` · `anotar_en_cliente` | construcción | dueña, asistente |
 | `registrar_gasto` (con foto del recibo) | construcción | dueña, asistente |
 | `registrar_compra` (borrador) · `poner_tiempo_de_llegada` | construcción | dueña |

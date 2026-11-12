@@ -37,8 +37,12 @@ Lo pidió el dueño del proyecto. El porqué está en [`../TRAMPAS.md`](../TRAMP
 comprueba `sistema/scripts/sin-mcp.mjs`, que corre en CI: una ruta nueva sin decidir si MCP la
 cubre pone la ejecución en rojo.
 
-Estado de hoy: **69 capacidades en el panel, 6 alcanzables por MCP, 6 que solo tienen sentido en el
-panel y 57 pendientes.** Ese número tiene que bajar, no subir.
+Estado de hoy (2026-11-12): **72 capacidades en el panel, 9 alcanzables por MCP, 6 que solo tienen
+sentido en el panel y 57 pendientes.** El número de pendientes tiene que bajar, no subir — las tres
+capacidades nuevas de hoy (las dos de cotizaciones y el veredicto del checkout) entraron con su
+herramienta en el mismo cambio, que es la regla. El guion también comprueba que la herramienta
+nombrada EXISTA: decir que algo se puede por MCP sin que se pueda es peor que decir «PENDIENTE»,
+porque nadie vuelve a mirarlo.
 
 ## Cómo leerlo
 

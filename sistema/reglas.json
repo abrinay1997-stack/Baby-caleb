@@ -25,6 +25,7 @@
   "metodos_para_abono": ["yappy", "manual"],
   "reserva_minutos_pago_en_linea": "PENDIENTE",
   "reserva_horas_comprobante": "PENDIENTE",
+  "cotizacion_dias_validez": "PENDIENTE",
   "ventanas_entrega": "PENDIENTE",
   "comisiones": "PENDIENTE",
   "cancelacion_con_abono": "PENDIENTE",
