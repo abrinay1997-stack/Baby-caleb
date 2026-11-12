@@ -35,6 +35,14 @@ archivo es el índice que faltaba.
   bitácoras) no se editan ni se borran.
 - **El diseño de la web no se toca** sin pedido explícito: lo nuevo usa los
   bloques y los tokens que ya existen (`brand.json`, `src/styles/`).
+- **Todo lleva MCP, y en el mismo cambio.** Un ajuste nuevo, un campo nuevo o
+  una capacidad nueva no están terminados hasta que se pueden usar también por
+  MCP. No es una fase posterior ni un «ya lo añadimos después»: se construye en
+  paralelo, en el mismo trabajo, o queda a medias. Lo que hoy no tiene MCP
+  también tiene que tenerlo. Y **todo plan futuro lo incluye desde el
+  principio**: un plan sin MCP está incompleto y hay que devolverlo.
+  El porqué está en `docs/TRAMPAS.md` §13.
+
 - **Secretos fuera del chat; datos de clientas fuera de GitHub.**
 - El CRM (`juanarrietabusiness-pixel/CRM-Baby-Caleb`) es otro repo: los cambios
   allá siguen sus propias reglas (`CLAUDE.md` de ese repo).

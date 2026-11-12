@@ -766,6 +766,19 @@ const RESPUESTAS = {
   }),
 
   /**
+   * `/mcp/llaves`: las llaves de conexión de quien mira.
+   *
+   * Tres estados a la vez porque los tres se pintan distinto: una recién
+   * creada que nunca se ha usado, una que se usa a diario, y una revocada.
+   * Con una sola, la pantalla de «revocadas» no la mira nunca nadie.
+   */
+  "/api/mcp/llaves": ok([
+    { id: "llv-1", nombre: "Mi computadora", creado_en: 1762900000000, ultimo_uso_en: 1762990000000, revocado_en: null },
+    { id: "llv-2", nombre: "El servidor de la casa", creado_en: 1762700000000, ultimo_uso_en: null, revocado_en: null },
+    { id: "llv-3", nombre: "La portátil vieja", creado_en: 1760000000000, ultimo_uso_en: 1761000000000, revocado_en: 1762000000000 },
+  ]),
+
+  /**
    * `/asistente`: un turno de Caleb.
    *
    * Contesta SIEMPRE lo mismo y sin llamar a ningún modelo: lo que el auditor

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { panel } from "./api/panel";
+import { mcp } from "./mcp/servidor";
 import { vencerPendientes } from "./asistente/ejecutar";
 import { barrer } from "./db/archivos";
 import { MANEJADORES, atrasados, consumir, publicarPendientes } from "./eventos";
@@ -73,6 +74,19 @@ app.get("/salud", async (c) => {
  * `api/panel.ts` corre antes que cualquiera de sus rutas.
  */
 app.route("/api", panel);
+
+/**
+ * La tercera puerta del asistente: MCP.
+ *
+ * Va FUERA de Access a propósito: un cliente de MCP no tiene navegador y no
+ * puede iniciar sesión con Google. Su puerta es una llave personal, y esa
+ * llave dice quién es — la política del asistente decide por el ROL de la
+ * persona, no por el canal. Ver `src/mcp/servidor.ts`.
+ *
+ * `/mcp` ya estaba en `run_worker_first` de los dos entornos desde hace meses,
+ * apuntando a una ruta que no existía. Ahora existe.
+ */
+app.all("/mcp", async (c) => await mcp(c.req.raw, c.env));
 
 app.all("*", (c) => c.json({ ok: false, codigo: "no_encontrado", mensaje: "ruta desconocida" }, 404));
 

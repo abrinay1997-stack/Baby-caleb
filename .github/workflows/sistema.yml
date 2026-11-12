@@ -86,6 +86,14 @@ jobs:
       # prueba de la huella del contrato y la de los tokens de la marca.
       - run: npm test
 
+      # Todo lleva MCP, y en el mismo cambio (CLAUDE.md, TRAMPAS §13). Esto no
+      # exige que la ruta nueva YA tenga su herramienta: exige que alguien haya
+      # DECIDIDO si la tiene, si es deuda o si no tiene sentido. Una ruta que
+      # aparece sin decidir pone la ejecución en rojo, que es lo único que
+      # impide que la decisión se olvide.
+      - name: Todo lleva MCP
+        run: node scripts/sin-mcp.mjs
+
       # Que el panel construya es una prueba más: un error de JSX o un import
       # roto no lo ve el typecheck de los módulos del Worker.
       - run: npm run panel:build

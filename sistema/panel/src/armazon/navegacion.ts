@@ -125,6 +125,15 @@ export const SECCIONES: Seccion[] = [
         permiso: "ajustes",
       },
       {
+        ruta: "/llaves",
+        nombre: "Llaves de conexión",
+        descripcion: "Para que un programa de fuera consulte el sistema sin abrir el panel",
+        // Sin permiso: cada quien maneja las SUYAS, y todos los roles pueden
+        // querer conectar una herramienta propia. Lo que esa llave alcance lo
+        // sigue decidiendo el rol de quien la creó, no la llave.
+        permiso: null,
+      },
+      {
         ruta: "/usuarios",
         nombre: "Usuarios",
         descripcion: "Quién entra al panel y qué puede",
