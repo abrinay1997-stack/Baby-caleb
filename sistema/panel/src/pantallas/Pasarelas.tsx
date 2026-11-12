@@ -163,6 +163,42 @@ export function comoCobra(p: EstadoDePasarela): "real" | "prueba" | "no" {
   return "no";
 }
 
+/**
+ * Lo PRIMERO que se lee de una pasarela.
+ *
+ * Decía «Encendida: se le ofrece a las clientas» para cualquiera que tuviera
+ * el interruptor puesto, sin mirar si podía cobrar. En producción las tres
+ * están encendidas y a las tres les faltan las credenciales, así que la
+ * tarjeta afirmaba que se les ofrece a las clientas algo que no puede cobrar
+ * nada — y tres renglones más abajo, la misma tarjeta decía «está encendida y
+ * no puede cobrar». La pantalla se contradecía a sí misma en el mismo cuadro.
+ *
+ * Lo vio una persona mirando el panel, no una prueba.
+ *
+ * Usa `comoCobra`, que es la misma clasificación del dominio que usa la frase
+ * de abajo: así las dos líneas de la misma tarjeta no pueden volver a decir
+ * cosas distintas. Es el arreglo de la frase de abajo, terminado: aquella se
+ * corrigió y ésta se quedó.
+ */
+export function etiquetaDeEncendida(p: EstadoDePasarela): string {
+  if (!p.encendida) return "Apagada";
+  switch (comoCobra(p)) {
+    case "real":
+      return "Encendida: se le ofrece a las clientas";
+    case "prueba":
+      return "Encendida, pero en prueba: no cobra";
+    default:
+      // Encendida y sin poder cobrar. Es el estado de las tres hoy, y es el
+      // que la etiqueta vieja pintaba de verde.
+      return "Encendida, pero todavía no puede cobrar";
+  }
+}
+
+/** Verde solo cuando de verdad está cobrando. Lo demás, neutro. */
+export function tonoDeLaPastilla(p: EstadoDePasarela): "bien" | "neutro" {
+  return p.encendida && comoCobra(p) === "real" ? "bien" : "neutro";
+}
+
 /** Lo que se lee debajo de las credenciales. Dice el modo, siempre. */
 export function fraseDeCobro(p: EstadoDePasarela): string {
   switch (comoCobra(p)) {
@@ -641,9 +677,7 @@ function TarjetaDePasarela({
       {/* Lo primero que se lee: encendida o apagada, y en qué modo. Las dos
           cosas con palabras. */}
       <p className="m-0 mt-2 flex flex-wrap gap-2">
-        <Pastilla tono={p.encendida ? "bien" : "neutro"}>
-          {p.encendida ? "Encendida: se le ofrece a las clientas" : "Apagada"}
-        </Pastilla>
+        <Pastilla tono={tonoDeLaPastilla(p)}>{etiquetaDeEncendida(p)}</Pastilla>
         <Pastilla tono={p.modo === "real" ? "aviso" : "neutro"}>{ETIQUETAS_MODO[p.modo]}</Pastilla>
       </p>
 

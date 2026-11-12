@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   comoCobra,
   comoSeLeeLaLinea,
-  fraseDeCobro,
+  etiquetaDeEncendida,
   firmaDe,
+  fraseDeCobro,
   peticionDeAccion,
   tituloDeAccion,
   tituloDeCredencial,
+  tonoDeLaPastilla,
   type Accion,
+  type EstadoDeModo,
   type EstadoDePasarela,
   type LineaDelLibro,
 } from "./Pasarelas";
@@ -281,5 +284,81 @@ describe("qué dice la tarjeta de una pasarela", () => {
       modos: completa.map((m) => ({ ...m, completo: false, faltan: ["Clave secreta"] })),
     });
     expect(comoCobra(p)).toBe("no");
+  });
+});
+
+/**
+ * Lo PRIMERO que se lee de una pasarela no puede desmentir a lo que hay tres
+ * renglones más abajo.
+ *
+ * La pastilla decía «Encendida: se le ofrece a las clientas» para cualquiera
+ * con el interruptor puesto, sin mirar si podía cobrar. En producción las tres
+ * están encendidas y a las tres les faltan las credenciales, así que la
+ * tarjeta afirmaba que se le ofrece a las clientas algo que no cobra nada —
+ * y debajo, la misma tarjeta decía «está encendida y no puede cobrar».
+ *
+ * La frase de abajo se arregló en su día y la pastilla se quedó. Lo vio una
+ * persona mirando el panel desplegado, no una prueba: por eso existe ésta.
+ */
+describe("la pastilla de encendida dice la verdad", () => {
+  /** Un modo completo de verdad, con todos los campos que pide el tipo. */
+  const unModo = (modo: "real" | "prueba", faltan: string[] = []): EstadoDeModo => ({
+    modo,
+    esElActual: true,
+    credenciales: [],
+    faltan,
+    completo: faltan.length === 0,
+  });
+
+  const base = (opciones: Partial<EstadoDePasarela> = {}): EstadoDePasarela =>
+    ({
+      pasarela: "yappy",
+      titulo: "Yappy",
+      encendida: true,
+      modo: "real",
+      modos: [unModo("real")],
+      ...opciones,
+    }) as EstadoDePasarela;
+
+  it("apagada lo dice, y sin adornos", () => {
+    expect(etiquetaDeEncendida(base({ encendida: false }))).toBe("Apagada");
+    expect(tonoDeLaPastilla(base({ encendida: false }))).toBe("neutro");
+  });
+
+  it("encendida y cobrando de verdad: verde y se lo dice a las clientas", () => {
+    expect(etiquetaDeEncendida(base())).toContain("se le ofrece a las clientas");
+    expect(tonoDeLaPastilla(base())).toBe("bien");
+  });
+
+  it("encendida y SIN credenciales: ni verde, ni «se le ofrece»", () => {
+    // El estado de las tres pasarelas en producción hoy, y el que la pastilla
+    // vieja pintaba de verde.
+    const sinLlaves = base({ modos: [unModo("real", ["Client ID", "Secret"])] });
+    const t = etiquetaDeEncendida(sinLlaves);
+    expect(t).toContain("no puede cobrar");
+    expect(t).not.toContain("se le ofrece a las clientas");
+    expect(tonoDeLaPastilla(sinLlaves)).toBe("neutro");
+  });
+
+  it("encendida en PRUEBA: tampoco verde, y dice que no cobra", () => {
+    const prueba = base({ modo: "prueba", modos: [unModo("prueba")] });
+    expect(etiquetaDeEncendida(prueba)).toContain("no cobra");
+    expect(tonoDeLaPastilla(prueba)).toBe("neutro");
+  });
+
+  it("y nunca dice lo contrario que la frase de abajo", () => {
+    // La prueba que cierra la clase: las dos líneas salen de la MISMA
+    // clasificación, así que no pueden separarse otra vez.
+    for (const p of [
+      base(),
+      base({ modos: [unModo("real", ["x"])] }),
+      base({ modo: "prueba", modos: [unModo("prueba")] }),
+    ]) {
+      const arriba = etiquetaDeEncendida(p);
+      const abajo = fraseDeCobro(p);
+      const arribaCobra = arriba.includes("se le ofrece a las clientas");
+      const abajoCobra = abajo.includes("dinero de verdad");
+      expect(arribaCobra, `arriba «${arriba}» y abajo «${abajo}»`).toBe(abajoCobra);
+    }
   });
 });

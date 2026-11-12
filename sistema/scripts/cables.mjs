@@ -42,17 +42,22 @@ async function delSistema() {
 function deLaTienda() {
   const c = JSON.parse(readFileSync(join(raiz, "content.json"), "utf8"));
   const codigos = new Set();
+  const promete = new Map();
   for (const p of c.products ?? []) {
     if (p.descatalogado === true) continue;
-    for (const v of p.variants ?? []) if (v.codigo) codigos.add(v.codigo);
+    for (const v of p.variants ?? []) {
+      if (!v.codigo) continue;
+      codigos.add(v.codigo);
+      promete.set(v.codigo, v);
+    }
   }
-  return codigos;
+  return { codigos, promete };
 }
 
 const dinero = (c) => "$" + (c / 100).toFixed(2);
 
 const variantes = await delSistema();
-const tienda = deLaTienda();
+const { codigos: tienda, promete } = deLaTienda();
 const publicados = new Map(variantes.map((v) => [v.codigo, v]));
 
 const invisibles = [...publicados.keys()].filter((c) => !tienda.has(c));
@@ -98,6 +103,51 @@ if (sospechosos.length > 0) {
   for (const v of sospechosos) {
     console.log("  · " + v.codigo + " — «" + v.nombre + "» a " + dinero(v.precioCents));
   }
+  console.log("");
+}
+
+// Los PESOS que la tienda promete, contra los que dice el sistema.
+//
+// Comparar los códigos no bastaba: los dos lados pueden tener el mismo
+// producto y decir cosas distintas de él. Y aquí lo decían: la web daba otros
+// rangos de peso para los tres pants, con el XXL empezando en 33 libras
+// cuando el sistema dice 55. Un niño de 35 libras recibe tallas distintas
+// según dónde mire, y se lleva una caja de 160 pañales que no le sirven.
+//
+// Lo encontró una persona mirando la página al lado del panel. Esto es para
+// que no haga falta.
+const sinPeso = [];
+const pesos = [];
+for (const [codigo, v] of promete) {
+  const s = publicados.get(codigo);
+  if (!s) continue;
+  // Un producto sin peso en el sistema —unas toallitas, un fular— no es una
+  // discrepancia: es que esa medida no le aplica.
+  if (s.pesoMinLb === null || s.pesoMinLb === undefined) {
+    if (v.range) sinPeso.push(codigo);
+    continue;
+  }
+  const delaWeb = String(v.range ?? "").match(/\d+(?:\.\d+)?/g) ?? [];
+  const delSis = [s.pesoMinLb, s.pesoMaxLb].filter((x) => x !== null && x !== undefined).map(String);
+  if (delaWeb.join("-") !== delSis.join("-")) {
+    pesos.push({ codigo, web: v.range ?? "(nada)", sistema: delSis.join(" a ") + " lb" });
+  }
+}
+
+if (pesos.length > 0) {
+  malas += pesos.length;
+  console.log("LA TIENDA Y EL SISTEMA NO DICEN EL MISMO PESO");
+  console.log("  Una mamá elige la talla por el peso. Si no coinciden, compra la que no es.");
+  for (const x of pesos) {
+    console.log("  · " + x.codigo + ": la web dice «" + x.web + "» y el sistema «" + x.sistema + "»");
+  }
+  console.log("");
+}
+
+if (sinPeso.length > 0) {
+  // No cuenta como falla: es información para quien lo lea.
+  console.log("LA TIENDA DA UN PESO QUE EL SISTEMA NO TIENE (no se puede cotejar)");
+  for (const c of sinPeso) console.log("  · " + c + ": «" + promete.get(c).range + "»");
   console.log("");
 }
 
