@@ -199,6 +199,38 @@ for (const [nombreVista, tamano] of VISTAS) {
     }
   }
 
+  // Caleb: el botón flotante y su hoja.
+  //
+  // Va en TODAS las pantallas, así que una falla suya se multiplica por doce.
+  // Y la hoja de Caleb es la única del panel que crece sola mientras se usa
+  // —cada respuesta añade una burbuja—, que es justo donde se rompen los
+  // tamaños.
+  {
+    await pagina.goto(`${BASE}/pedidos`, { waitUntil: "networkidle" });
+    const boton = pagina.getByRole("button", { name: /Preguntarle a Caleb/i }).first();
+    if ((await boton.count()) > 0) {
+      await boton.click();
+      await pagina.waitForTimeout(300);
+
+      // Con una pregunta ya contestada: la hoja vacía no mide las burbujas.
+      const campo = pagina.getByPlaceholder("Pregúntele a Caleb");
+      if ((await campo.count()) > 0) {
+        await campo.fill("¿cuánto queda de la M?");
+        await pagina.getByRole("button", { name: /^Enviar$/ }).first().click();
+        await pagina.waitForTimeout(400);
+      }
+
+      const deCaleb = await pagina.evaluate(medir);
+      revisadas += 1;
+      for (const f of deCaleb) todas.push({ vista: nombreVista, pantalla: "hoja-caleb", ...f });
+      if (!soloMedir) {
+        await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-caleb.png` });
+      }
+      await pagina.keyboard.press("Escape");
+      await pagina.waitForTimeout(150);
+    }
+  }
+
   // La hoja en ESCRITORIO.
   //
   // Todo el bloque de hojas de abajo vive dentro del «si es teléfono», que se
