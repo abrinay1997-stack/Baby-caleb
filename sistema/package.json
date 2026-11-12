@@ -21,7 +21,8 @@
     "panel:dev": "vite --config panel/vite.config.ts",
     "panel:build": "vite build --config panel/vite.config.ts",
     "panel:muestra": "node scripts/panel-de-muestra.mjs",
-    "panel:auditar": "node scripts/auditar-panel.mjs"
+    "panel:auditar": "node scripts/auditar-panel.mjs",
+    "cables": "node scripts/cables.mjs"
   },
   "dependencies": {
     "hono": "^4.13.17",

@@ -56,14 +56,36 @@ export function Catalogo() {
         d.variantes.length === 0 ? (
           <Vacio
             titulo="El catálogo todavía está vacío"
-            detalle="Se llena en la carga inicial (F3.1), con los productos que hoy están en el CRM. A partir de ese momento, el precio que se ponga aquí es el que ven la web y el bot."
+            detalle="Se llena en la carga inicial (F3.1), con los productos que hoy están en el CRM. A partir de ese momento, el precio que se ponga aquí es el que ve la web."
           />
         ) : (
           <div className="grid gap-4">
             <Tarjeta>
+              {/*
+                Este aviso decía «la web y el bot lo preguntan aquí, así que
+                cambiarlo aquí lo cambia en los TRES sitios sin publicar nada».
+                Las dos mitades eran falsas, y la dueña las lee justo donde iba
+                a actuar:
+
+                - El bot NO pregunta aquí. Hoy lee su propia base, y por eso
+                  llegó a cobrar $20 por una caja que la web vende a $25.
+                - Y «sin publicar nada» solo vale para el PRECIO de un producto
+                  que ya esté en la tienda. Qué productos enseña la tienda lo
+                  decide una lista escrita a mano en el repositorio, así que un
+                  producto nuevo sale aquí con su pastilla verde «En la web» y
+                  no aparece en la tienda hasta que alguien toque esa lista.
+
+                Decirle a alguien que algo se cambió en tres sitios cuando se
+                cambió en uno es peor que no decirle nada: deja de comprobarlo.
+                Así que el aviso dice lo que es verdad hoy, con el nombre del
+                guion que lo vigila para que se pueda comprobar sin creerme.
+              */}
               <p className="m-0 text-muted">
-                Este es el único lugar donde vive el precio. La web y el bot lo preguntan aquí, así
-                que cambiarlo aquí lo cambia en los tres sitios sin publicar nada.
+                Este es el único lugar donde vive el precio, y la tienda lo pregunta aquí: cambiarlo
+                aquí lo cambia en la web sin publicar nada. El bot de WhatsApp todavía no:
+                lee su propia copia, así que un precio cambiado aquí hay que cambiarlo también
+                allá hasta que se conecten. Y un producto NUEVO no sale solo en la tienda aunque
+                diga «En la web»: avísele a Juan para que lo añada.
                 {d.muestraCosto ? null : " Su rol no ve el costo ni el margen."}
               </p>
             </Tarjeta>
