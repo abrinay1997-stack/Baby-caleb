@@ -78,10 +78,13 @@ export function porQueNoSirveLaImagen(datos: ArrayBuffer): string {
   if (esFotoDeIphone(datos)) {
     return (
       "Esa foto está en formato HEIC, que es como las guarda el iPhone y ningún navegador " +
-      "la puede enseñar. Arréglelo así en su teléfono: Ajustes › Cámara › Formatos › " +
-      "«Más compatible», y vuelva a tomarla. Para una foto que ya tiene: ábrala en Fotos, " +
-      "toque Compartir › Opciones, y active «Todos los datos de la foto» en formato JPEG. " +
-      "También sirve mandársela por WhatsApp a usted misma y descargarla: llega en JPG."
+      "la puede enseñar. Desde el iPhone el panel la convierte solo, así que si está " +
+      "leyendo esto es porque la subió desde otro aparato. Lo más fácil es volver a " +
+      "intentarlo desde el teléfono donde la tomó. Si no, arréglelo así: Ajustes › Cámara › " +
+      "Formatos › «Más compatible», y vuelva a tomarla. Para una foto que ya tiene: ábrala " +
+      "en Fotos, toque Compartir › Opciones, y active «Todos los datos de la foto» en " +
+      "formato JPEG. También sirve mandársela por WhatsApp a usted misma y descargarla: " +
+      "llega en JPG."
     );
   }
   return "Ese archivo no es una imagen (se aceptan JPG, PNG, WebP y AVIF).";

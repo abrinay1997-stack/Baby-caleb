@@ -2,6 +2,7 @@ import { useState } from "react";
 import { pedir } from "../api";
 import { Hoja } from "../armazon/Hoja";
 import { aCentavos, aPuntosBasicos, deCentavos, dePuntosBasicos } from "../dinero";
+import { prepararFoto } from "../imagen";
 // Las mismas piezas que las demás hojas. Una copia por pantalla es cómo se
 // acaba teniendo un campo a 14 px que hace zoom en el teléfono (§7b).
 import { BOTON, Campo, ENTRADA } from "../formulario";
@@ -96,6 +97,8 @@ export function EditarVariante({
    * foto del iPhone sin HEIC— y no serviría de nada escrito donde no se mira.
    */
   const [errorFoto, setErrorFoto] = useState<string | null>(null);
+  /** Qué se le hizo a la foto antes de subirla. Se dice; no se hace a escondidas. */
+  const [notaFoto, setNotaFoto] = useState<string | null>(null);
   const [receta, setReceta] = useState<Ingrediente[] | null>(null);
   const [cargado, setCargado] = useState<string | null>(null);
 
@@ -117,6 +120,7 @@ export function EditarVariante({
     setVeredicto(null);
     setFoto(variante.imagen);
     setErrorFoto(null);
+    setNotaFoto(null);
     setReceta(null);
     if (variante.es_combo === 1) {
       void pedir<Ingrediente[]>(
@@ -149,12 +153,28 @@ export function EditarVariante({
     if (variante === null) return;
     setSubiendo(true);
     setErrorFoto(null);
+    setNotaFoto(null);
     try {
+      // Se encoge y se convierte a WebP aquí, en el teléfono, antes de que
+      // viaje. Una foto de cámara pesa 3 o 4 MB y mide 4 000 píxeles; en la
+      // ficha se ve a 600. Mandar el original es subir siete veces más imagen
+      // de la que nadie va a ver, cobrárselo a la clienta en su dato móvil cada
+      // vez que abre la tienda, y rozar el tope de 5 MB por nada.
+      //
+      // `prepararFoto` NUNCA lanza: si el navegador no puede, devuelve el
+      // archivo tal cual y contesta el servidor, que es quien decide de verdad
+      // y quien tiene el mensaje bueno para cada caso.
+      const lista = await prepararFoto(archivo);
       const r = await pedir<{ imagen: string }>(
         `/api/catalogo/variantes/${encodeURIComponent(variante.codigo)}/foto`,
-        { method: "PUT", body: archivo, headers: { "content-type": archivo.type || "application/octet-stream" } },
+        {
+          method: "PUT",
+          body: lista.cuerpo,
+          headers: { "content-type": lista.cuerpo.type || "application/octet-stream" },
+        },
       );
       setFoto(r.imagen);
+      setNotaFoto(lista.nota);
       alGuardar();
     } catch (e) {
       setErrorFoto((e as Error).message);
@@ -370,7 +390,10 @@ export function EditarVariante({
         </Campo>
       ) : null}
 
-      <Campo etiqueta="Foto" ayuda="JPG, PNG, WebP o AVIF, hasta 5 MB. Se cambia al momento, sin esperar a Guardar.">
+      <Campo
+        etiqueta="Foto"
+        ayuda="Tome la foto con el teléfono y súbala tal cual: se encoge y se convierte sola para que la tienda cargue rápido. Se cambia al momento, sin esperar a Guardar."
+      >
         <div className="flex items-center gap-3">
           {foto === null ? (
             <span className="grid h-16 w-16 shrink-0 place-items-center rounded-[12px] border border-dashed border-line text-[12px] text-muted">
@@ -408,6 +431,9 @@ export function EditarVariante({
           >
             {errorFoto}
           </p>
+        )}
+        {notaFoto === null ? null : (
+          <p className="mt-2 mb-0 text-[13px] text-muted">{notaFoto}</p>
         )}
       </Campo>
 

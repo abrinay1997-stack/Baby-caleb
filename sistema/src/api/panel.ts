@@ -592,10 +592,22 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
       return c.json(fallo("entrada_invalida", "no llegó ninguna imagen"), 400);
     }
     if (cuerpoBruto.byteLength > MAXIMO_BYTES) {
+      // El mensaje dice qué hacer, no solo qué pasó.
+      //
+      // Desde que el panel encoge y convierte la foto en el propio teléfono,
+      // una foto normal llega pesando unos cientos de kilobytes, así que
+      // llegar a 5 MB ya no es «tomó una foto grande»: es que la conversión no
+      // se hizo. Pasa en un navegador viejo, o subiendo un archivo que no es
+      // una foto de cámara. Decirle a la dueña «el tope son 5 MB» la deja
+      // buscando cómo encoger una imagen a mano, que es justo lo que el panel
+      // existe para evitarle.
       return c.json(
         fallo(
           "limite",
-          `La imagen pesa ${Math.round(cuerpoBruto.byteLength / 1024 / 1024)} MB y el tope son 5 MB.`,
+          `Esa imagen pesa ${Math.round(cuerpoBruto.byteLength / 1024 / 1024)} MB y el tope son 5 MB. ` +
+            `Normalmente el panel la encoge solo antes de subirla, así que esto suele querer decir que ` +
+            `se subió desde un navegador que no pudo hacerlo: pruebe desde el teléfono, o tome la foto ` +
+            `de nuevo con la cámara en vez de usar un archivo guardado.`,
         ),
         413,
       );
