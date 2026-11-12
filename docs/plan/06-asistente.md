@@ -75,6 +75,30 @@ el id de la acción).
 | Telegram | El vínculo de la consola del CRM (`OWNER_TELEGRAM_CHAT_ID` o enlace del panel) cruzado con `usuarios.telegram_chat_id` | Voz y fotos ya las entiende la consola |
 | MCP | `/mcp` fuera de Access, con OAuth (`@cloudflare/workers-oauth-provider`) usando el inicio de sesión de Access, o un token personal por usuario | Se decide en F6.4; empieza solo con herramientas de lectura |
 
+**Cómo quedó Telegram al construirlo (2026-11-12).** Lo de arriba dice que en Telegram el bucle
+corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y conviene saber por qué:
+
+- **El bucle corre en el sistema**, no en el CRM: el webhook es `POST /telegram/webhook` de
+  `babycaleb-sistema` (`src/api/telegram-rutas.ts`) y llama a `conversar(...)` con
+  `canal: "telegram"`, igual que el chat del panel. La política, la bitácora y el gasto ya eran
+  del sistema; pasar por el CRM habría añadido un salto de RPC para quedarse en el mismo sitio.
+  La memoria de conversación —lo que el CRM sí tiene— es lo que se perdió: **cada mensaje es un
+  turno suelto**, y `asistente_conversaciones` / `asistente_mensajes` siguen sin que nadie las
+  escriba.
+- **El vínculo lo hace el panel**, no el CRM: `POST /api/usuarios/:id/telegram` entrega un código
+  de un solo uso que la dueña pega en el chat del bot, y el chat que lo canjea queda escrito en
+  `usuarios.telegram_chat_id` (migración 0013, `src/db/telegram.ts`). No hay
+  `OWNER_TELEGRAM_CHAT_ID`: un chat suelto en una variable no dice de quién es.
+- **Voz y fotos no se entienden**: un mensaje que no es texto se contesta diciéndolo. Lo de «ya
+  las entiende la consola» era de la consola del CRM, que no es esta puerta.
+- **El host del webhook está PENDIENTE y no se decide desde el repositorio.** Telegram no tiene
+  sesión de Access, así que el webhook no puede vivir en un host cubierto por Access — y
+  `panel.babycaleb.com` lo está entero, a propósito (`docs/PUERTA-DE-ACCESS.md` deja el *Path*
+  vacío). Hace falta un host sin Access —un subdominio nuevo apuntando al mismo Worker— o una
+  excepción en Zero Trust. Mientras eso no exista, el código está puesto y el bot no recibe nada.
+- Los secretos son `TELEGRAM_BOT_TOKEN` (para hablar) y `TELEGRAM_WEBHOOK_SECRET` (para
+  escuchar), los dos con `wrangler secret put` y ninguno en `wrangler.jsonc`.
+
 ## 5. Herramientas iniciales
 
 | Herramienta | Nivel | Roles |
