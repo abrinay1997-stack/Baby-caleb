@@ -45,6 +45,19 @@ function botDeMentira() {
   return { bot, dicho, avisos, quitados, hacer: (() => bot) as HacerBot };
 }
 
+/** Un bot al que Telegram le dice que no. */
+const botQueRevienta: HacerBot = () => ({
+  async decir() {
+    throw new Error("telegram sendMessage: 403 bot was blocked by the user");
+  },
+  async responderBoton() {
+    throw new Error("telegram answerCallbackQuery: 400");
+  },
+  async quitarBotones() {
+    throw new Error("telegram editMessageReplyMarkup: 400");
+  },
+});
+
 const sinBot: HacerBot = () => null;
 const sinLlave: HacerProveedor = () => null;
 const cerebro =
@@ -354,6 +367,27 @@ describe("un chat vinculado", () => {
     expect(r.estado).toBe(200);
   });
 
+  it("si el turno revienta, contesta 200: un 500 haría que Telegram reintente", async () => {
+    // `cerebro()` sin parlamentos revienta en cuanto se le pide algo, que es
+    // lo que haría el proveedor de verdad si Meta estuviera caída. Un 500 aquí
+    // significa la misma pregunta otra vez, y otra, cada una pagada.
+    const tg = botDeMentira();
+    const r = await entregar(
+      crearPuertaDeTelegram(cerebro(), tg.hacer),
+      texto(CHAT_DUENA, "¿cuánto vendí hoy?"),
+    );
+    expect(r.estado).toBe(200);
+    expect(tg.dicho.at(-1)!.texto).toContain("No pude contestarle");
+  });
+
+  it("y si además Telegram no acepta el mensaje, tampoco sale un 500", async () => {
+    const r = await entregar(
+      crearPuertaDeTelegram(cerebro(), botQueRevienta),
+      texto(CHAT_DUENA, "hola"),
+    );
+    expect(r.estado).toBe(200);
+  });
+
   it("un cuerpo que no se entiende se calla y contesta 200", async () => {
     // Si contestara un error, Telegram reintentaría para siempre algo que
     // nunca vamos a saber leer.
@@ -497,6 +531,20 @@ describe("vincular un chat", () => {
       texto(CHAT_DESCONOCIDO, r.datos.codigo),
     );
     expect(tg.dicho).toHaveLength(1);
+  });
+
+  it("si algo revienta al vincular, sigue siendo 200 y silencio", async () => {
+    // Un 500 haría que Telegram reintentara la misma entrega para siempre, y
+    // además a un desconocido no se le contesta nada: ni un error.
+    const r = await crearCodigoDeVinculo({ db: real.DB, ahora: Date.now() }, OTRA, DUENA);
+    if (!r.ok) throw new Error(r.mensaje);
+
+    const respuesta = await entregar(
+      crearPuertaDeTelegram(cerebro(), botQueRevienta),
+      texto(CHAT_DESCONOCIDO, r.datos.codigo),
+    );
+    expect(respuesta.estado).toBe(200);
+    expect(respuesta.texto).toBe("");
   });
 
   it("un código malo se contesta con el mismo silencio que un desconocido", async () => {

@@ -148,8 +148,23 @@ export function crearPuertaDeTelegram(
 
     if (usuario === null) {
       // Un desconocido. Silencio, salvo que traiga un código bueno.
+      //
+      // El try/catch no es adorno: si esto reventara —la base caída, Telegram
+      // devolviendo un error— la petición saldría con un 500, y un 500 hace
+      // que Telegram reintente la misma entrega una y otra vez. A un
+      // desconocido no se le contesta nada, ni un error, así que el fallo va
+      // al registro y la respuesta sigue siendo 200 y vacía.
       if (bot !== null && entrada.clase === "texto") {
-        await intentarVincular(c, bot, entrada.chatId, entrada.texto, ahora);
+        try {
+          await intentarVincular(c, bot, entrada.chatId, entrada.texto, ahora);
+        } catch (e) {
+          console.warn(
+            JSON.stringify({
+              evento: "telegram_vinculo_fallo",
+              error: e instanceof Error ? e.message : String(e),
+            }),
+          );
+        }
       }
       return callado(c);
     }
