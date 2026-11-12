@@ -25,9 +25,9 @@ const PAGINA = `<!DOCTYPE html><html lang="es"><head>
 
 const SITIO = "https://babycaleb.com";
 
-const pedir = async (camino: string, token?: string) => {
+const pedir = async (camino: string, token?: string, idDelPixel?: string) => {
   const r = new Response(PAGINA, { headers: { "content-type": "text/html; charset=utf-8" } });
-  const salida = reescribirHead(r, new URL(`${SITIO}${camino}`), SITIO, token);
+  const salida = reescribirHead(r, new URL(`${SITIO}${camino}`), SITIO, token, idDelPixel);
   return await salida.text();
 };
 
@@ -127,7 +127,14 @@ describe("la ficha de un producto (F3.7)", () => {
 
   const ficha = async (camino: string, vs = [VARIANTE]) => {
     const r = new Response(PAGINA, { headers: { "content-type": "text/html; charset=utf-8" } });
-    return await reescribirHead(r, new URL(`${SITIO}${camino}`), SITIO, undefined, vs).text();
+    return await reescribirHead(
+      r,
+      new URL(`${SITIO}${camino}`),
+      SITIO,
+      undefined,
+      undefined,
+      vs,
+    ).text();
   };
 
   it("el título y el canónico son los de ESA variante", async () => {
@@ -179,5 +186,53 @@ describe("la ficha de un producto (F3.7)", () => {
     expect(html).not.toContain('"@type":"Product"');
     expect(html).not.toContain("noindex");
     expect(html).toContain("Catálogo");
+  });
+});
+
+/**
+ * El píxel de Meta: el servidor NUNCA manda su script.
+ *
+ * Esta es la mitad servidor de la regla «sin consentimiento no se carga el
+ * píxel». La otra mitad está en `test/consentimiento.test.ts`, que es donde
+ * vive la guarda de verdad.
+ *
+ * Aquí se vigila algo más tonto y más fácil de romper por descuido: que a
+ * nadie se le ocurra inyectar `fbevents.js` desde el Worker «para que cargue
+ * antes». Desde este lado NO SE PUEDE saber qué decidió esta persona —la
+ * decisión vive en su navegador y no viaja— así que un script inyectado aquí
+ * cargaría siempre, para todo el mundo, antes de preguntar.
+ */
+describe("el píxel de Meta", () => {
+  const ID = "1339346164908302";
+
+  it("apagado (sin META_PIXEL_ID) no deja ni rastro en la página", async () => {
+    const html = await pedir("/");
+    expect(html).not.toContain("meta-pixel-id");
+    expect(html).not.toContain("fbevents");
+    expect(html).not.toContain("connect.facebook.net");
+  });
+
+  it("encendido escribe el número, y SOLO el número", async () => {
+    const html = await pedir("/", undefined, ID);
+    expect(html).toContain(`<meta name="meta-pixel-id" content="${ID}">`);
+    // Lo que importa de esta prueba: ni con el píxel encendido sale el script.
+    expect(html).not.toContain("fbevents");
+    expect(html).not.toContain("connect.facebook.net");
+    expect(html).not.toContain("fbq(");
+  });
+
+  it("un identificador que no es un número no se escribe", async () => {
+    // El valor viene de la configuración y acaba dentro de un atributo HTML.
+    // Una comilla ahí rompe el `<head>` y lo que siga se lee como marcado.
+    for (const malo of ['1234" onload="x', "no-soy-un-numero", "123", "1".repeat(21)]) {
+      const html = await pedir("/", undefined, malo);
+      expect(html, `se escribió «${malo}»`).not.toContain("meta-pixel-id");
+    }
+  });
+
+  it("vacío o con espacios cuenta como apagado", async () => {
+    for (const vacio of ["", "   "]) {
+      expect(await pedir("/", undefined, vacio)).not.toContain("meta-pixel-id");
+    }
   });
 });

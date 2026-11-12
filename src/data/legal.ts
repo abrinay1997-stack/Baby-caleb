@@ -109,7 +109,7 @@ export const PRIVACIDAD: DocumentoLegal = {
     "con quién se comparte y cómo puede pedir que los borremos. Escrito según la Ley 81 " +
     "de 2019 de protección de datos personales de Panamá y su reglamento, el Decreto " +
     "Ejecutivo 285 de 2021.",
-  actualizado: "2026-11-11",
+  actualizado: "2026-11-12",
   revisadoPorAbogado: false,
   aviso: AVISO_BORRADOR,
   secciones: [
@@ -349,6 +349,7 @@ export const PRIVACIDAD: DocumentoLegal = {
             "La empresa que presta el modelo de inteligencia artificial. Recibe el texto de los mensajes del chat para poder contestarlos. Está fuera de Panamá.",
             "Google, por la tipografía. La letra de la página se descarga de los servidores de Google, así que su navegador los contacta y Google ve su dirección IP al hacerlo.",
             "WhatsApp e Instagram (Meta), si usted nos escribe por ahí. Esa conversación ocurre dentro de esas aplicaciones y se rige también por las condiciones de Meta, que nosotros no controlamos.",
+            "Meta (Facebook e Instagram), por el píxel de medición, Y SOLO SI USTED LO ACEPTÓ. Mientras no lo acepte, su navegador no contacta a Meta por esta página. El apartado 7 explica qué es y cómo se rechaza.",
           ],
         },
         {
@@ -420,9 +421,9 @@ export const PRIVACIDAD: DocumentoLegal = {
           // Cloudflare, citada en el informe.
           tipo: "p",
           texto:
-            "Esta página no usa cookies propias, ni para publicidad ni para seguirle el rastro. " +
-            "Lo que guarda en su navegador —el número al azar de la conversación del chat y, si " +
-            "lo usa, su lista del carrito— lo guarda en el almacenamiento del sitio, no en " +
+            "Esta página no pone cookies propias. Lo que guarda en su navegador —el número al " +
+            "azar de la conversación del chat, su lista del carrito si lo usa, y su respuesta a " +
+            "la pregunta del punto siguiente— lo guarda en el almacenamiento del sitio, no en " +
             "cookies, y no sale de su teléfono. Puede borrarlo cuando quiera desde los ajustes " +
             "de su navegador, en la opción de borrar los datos del sitio.",
         },
@@ -442,13 +443,74 @@ export const PRIVACIDAD: DocumentoLegal = {
             "ponemos nosotros y no la usamos para nada.",
         },
         {
+          // ---- EL PÍXEL DE META -------------------------------------------
+          // Comprobado contra el código que corre hoy:
+          //   · `META_PIXEL_ID` está VACÍO en wrangler.jsonc, así que
+          //     worker/head.ts no escribe ni la etiqueta con el número;
+          //   · el Worker NUNCA inyecta el script de Meta — hay una prueba en
+          //     worker/head.test.ts que lo vigila;
+          //   · src/consentimiento/pixel.ts solo cuelga el script si la
+          //     decisión guardada es «aceptado» Y hay identificador, y
+          //     test/consentimiento.test.ts comprueba las seis combinaciones;
+          //   · la decisión vive en `bc.consentimiento.v1` del almacenamiento
+          //     del sitio (src/consentimiento/consentimiento.ts) y no viaja al
+          //     servidor;
+          //   · el enlace que vuelve a abrir la pregunta es «Cookies y
+          //     rastreo», en el pie de todas las páginas (S20Footer.tsx).
+          //
+          // Lo que NO se afirma aquí, porque no se sabe: qué cookies pone Meta
+          // exactamente ni cuánto las guarda. Eso es un PENDIENTE, abajo.
+          tipo: "p",
+          texto:
+            "Aparte de eso, el negocio quiere usar el píxel de Meta —la herramienta de " +
+            "medición de Facebook e Instagram— para saber qué anuncios traen visitas a esta " +
+            "página y cuáles no. Es una herramienta de Meta, no nuestra: si se carga, Meta se " +
+            "entera de que usted pasó por aquí, y sí pone cookies y guarda cosas en su " +
+            "navegador.",
+        },
+        {
+          tipo: "p",
+          texto:
+            "Por eso NO se carga solo. La primera vez que usted entra, la página le pregunta, " +
+            "y hasta que usted diga que sí su navegador no contacta a Meta por esta página. Si " +
+            "dice que no, no se carga: ni ese día ni después. Si dice que sí y luego cambia de " +
+            "opinión, abra «Cookies y rastreo» al final de cualquier página y elija «No " +
+            "permitir» — desde ese momento deja de cargarse.",
+        },
+        {
+          tipo: "nota",
+          texto:
+            "Su respuesta se guarda solo en este navegador y no se manda a ningún servidor. " +
+            "Eso significa dos cosas: que no la usamos para identificarle, y que si entra " +
+            "desde otro teléfono o borra los datos del sitio, la página le volverá a " +
+            "preguntar.",
+        },
+        {
           tipo: "pendiente",
           que:
             "Comprobar en el navegador, con la página ya en vivo, si aparece alguna cookie de " +
-            "seguridad de la plataforma y decir aquí su nombre y para qué sirve. Y volver a " +
-            "revisar este apartado el día que la web tenga carrito, pagos en línea o píxel de " +
-            "publicidad: ahí sí hay cookies de verdad y haría falta pedir permiso.",
+            "seguridad de la plataforma y decir aquí su nombre y para qué sirve.",
           quien: "El equipo técnico.",
+        },
+        {
+          tipo: "pendiente",
+          que:
+            "Decir qué cookies pone exactamente el píxel de Meta, cuánto tiempo duran y " +
+            "cuánto conserva Meta esos datos. Hoy el píxel está apagado en la configuración, " +
+            "así que no se puede medir en la página; los nombres y los plazos tienen que salir " +
+            "de la documentación de Meta y no de una suposición.",
+          quien: "El equipo técnico, antes de encenderlo.",
+        },
+        {
+          tipo: "pendiente",
+          que:
+            "Revisar si la Ley 81 de 2019 y su reglamento exigen algo más que esta pregunta " +
+            "para un píxel de un tercero —por ejemplo, un texto concreto, un registro de los " +
+            "consentimientos dados, o nombrar a Meta como encargado en un contrato— y si el " +
+            "aviso tiene que verse antes de poder usar la página. Lo que está escrito arriba " +
+            "describe lo que la página HACE; que eso sea suficiente en derecho panameño no lo " +
+            "puede afirmar quien programa.",
+          quien: "Un abogado.",
         },
       ],
     },

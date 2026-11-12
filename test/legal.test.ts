@@ -151,3 +151,41 @@ describe('la fecha de actualización es una fecha', () => {
     });
   }
 });
+
+/**
+ * El píxel de Meta se declara en la política, y se dice cómo se rechaza.
+ *
+ * Va aquí y no en el archivo del consentimiento porque es una obligación del
+ * DOCUMENTO: la Ley 81 de 2019 pide que la persona pueda saber quién trata sus
+ * datos y para qué ANTES de darlos. Un píxel instalado y no declarado es
+ * justamente lo que no puede pasar, y el error se cometería «limpiando» un
+ * párrafo que parece de relleno — igual que podría pasarle a la declaración de
+ * inteligencia artificial de aquí arriba.
+ */
+describe('el píxel de Meta está declarado en la política de privacidad', () => {
+  const texto = textoDe(PRIVACIDAD).toLowerCase();
+
+  it('dice que hay un píxel de Meta y para qué sirve', () => {
+    expect(texto).toContain('píxel de meta');
+    // Para qué: medir anuncios. Sin el para qué, declararlo no informa de nada.
+    expect(texto).toContain('anuncios');
+  });
+
+  it('dice que no se carga sin permiso', () => {
+    expect(texto).toContain('no se carga');
+  });
+
+  it('dice CÓMO se rechaza y dónde, con el nombre del enlace del pie', () => {
+    // El nombre tiene que coincidir con el del botón de `S20Footer.tsx`: una
+    // instrucción que nombra un enlace que no existe es peor que ninguna.
+    expect(texto).toContain('cookies y rastreo');
+    expect(texto).toContain('no permitir');
+  });
+
+  it('el apartado de cookies sigue existiendo con su ancla', () => {
+    // El banner enlaza a `/privacidad#cookies`. Si el ancla cambia de nombre,
+    // ese enlace lleva al principio del documento y la persona tiene que
+    // buscar a mano justo lo que fue a leer.
+    expect(PRIVACIDAD.secciones.some((s) => s.id === 'cookies')).toBe(true);
+  });
+});
