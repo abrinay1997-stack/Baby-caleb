@@ -139,32 +139,28 @@ interface Sembrado {
  * y que aquí se repite con códigos propios para no contar sobre las filas de
  * nadie.
  *
- * Las otras dos NO son una comodidad de la prueba: son dos datos que el
- * circuito necesita y que **no tienen ninguna puerta** por donde entrar.
+ * Las otras dos —el costo promedio y el motorizado— **antes no tenían ninguna
+ * puerta** y esta prueba las metía con SQL directo, diciéndolo. Ya la tienen,
+ * y por eso ahora entran por donde entraría la dueña:
  *
- *  · **`valor_inventario` (el costo promedio).** Ningún archivo de `src/`
- *    inserta en esa tabla: se lee al entregar, se baja al entregar, se sube al
- *    devolver y se borra con la variante — pero nadie la llena nunca. El
- *    `costoUnitCents` que acepta `POST /existencias/movimientos` acaba en
- *    `movimientos_inventario.costo_unit_cents` y no toca el promedio. Sin esta
- *    fila, `marcarEntregada` contesta `costoDesconocido: true`, se salta el
- *    asiento 3b y el pedido cae en «entregados sin costo» del cierre — que es
- *    el comportamiento correcto (trampa nº 7: un cero afirmaría que la
- *    mercancía no costó nada y pondría el margen en 100 %), pero significa que
- *    HOY, en producción, ninguna entrega podrá tener su costo.
- *  · **El motorizado.** El panel lista los motorizados en `GET /entregas` y
- *    `armarRuta` exige uno, pero no hay ninguna ruta que dé de alta a uno. Sin
- *    esta fila el circuito se corta en «armar la ruta» y no hay forma de
- *    seguir desde ninguna pantalla.
+ *  · **El costo promedio** lo escribe `POST /existencias/movimientos` con el
+ *    costo de la compra. Sin él, `marcarEntregada` contesta
+ *    `costoDesconocido: true`, se salta el asiento 3b y el pedido cae en
+ *    «entregados sin costo» del cierre — que sigue siendo el comportamiento
+ *    correcto cuando de verdad no se sabe (trampa nº 7: un cero afirmaría que
+ *    la mercancía no costó nada y pondría el margen en 100 %).
+ *  · **El motorizado** entra por `POST /motorizados`. Sin él, el circuito se
+ *    cortaba en «armar la ruta» y no había forma de seguir desde ninguna
+ *    pantalla; era el único eslabón de toda la cadena sin puerta.
  *
- * Las dos quedan dichas aquí y en el reporte, no disimuladas.
+ * Que esta prueba no necesite ya ni un `INSERT` a mano para esas dos cosas es,
+ * literalmente, la medida de que el circuito está cerrado.
  */
 async function sembrar(etiqueta: string): Promise<Sembrado> {
   const suf = `${etiqueta}-${Date.now()}-${n++}`;
   const codigo = `CIRC-${suf}`;
   const bodegaId = `bod-circ-${suf}`;
   const bodega = `Bodega del circuito ${suf}`;
-  const motorizadoId = `mot-circ-${suf}`;
   const motorizado = `Fulano de Prueba (inventado) ${suf}`;
   const cajas = 12;
   const costoUnitCents = 900;
@@ -183,22 +179,33 @@ async function sembrar(etiqueta: string): Promise<Sembrado> {
     real.DB.prepare(
       "INSERT INTO existencias (codigo,bodega_id,fisico,reservado,minimo) VALUES (?,?,?,0,NULL)",
     ).bind(codigo, bodegaId, cajas),
-    // El costo de apertura. Sin puerta: ver la nota de arriba.
-    real.DB.prepare(
-      "INSERT INTO valor_inventario (codigo,unidades,valor_cents) VALUES (?,?,?)",
-    ).bind(codigo, cajas, cajas * costoUnitCents),
-    // El motorizado. Sin puerta: ver la nota de arriba.
-    real.DB.prepare(
-      "INSERT INTO motorizados (id,nombre,celular_e164,estado,vehiculo,creado_en) VALUES (?,?,?,'activo','moto',?)",
-    ).bind(motorizadoId, motorizado, `5076${String(400_0000 + n).padStart(7, "0")}`, T),
   ]);
+
+  // El costo, por su ruta. Es una compra de las mismas cajas que ya están en
+  // el estante: no mueve el físico de esta siembra —se registra sobre una
+  // bodega aparte no, sobre la misma— sino que le pone precio a lo que hay.
+  // Con esto `marcarEntregada` deja de contestar `costoDesconocido`.
+  const compra = await postJson(duena, "/existencias/movimientos", {
+    tipo: "compra",
+    motivo: `carga del circuito ${suf}`,
+    lineas: [{ codigo, bodegaId, delta: cajas, costoUnitCents }],
+  });
+  datosDe(compra, "POST /existencias/movimientos", 201);
+
+  // Y el motorizado, por la suya. Esto es lo que antes no existía.
+  const alta = await postJson(duena, "/motorizados", {
+    nombre: motorizado,
+    celular: `6400${String(1000 + n).padStart(4, "0")}`,
+    vehiculo: "moto",
+  });
+  const elMotorizado = datosDe<{ id: string }>(alta, "POST /motorizados", 201);
 
   return {
     suf,
     codigo,
     bodegaId,
     bodega,
-    motorizadoId,
+    motorizadoId: elMotorizado.id,
     motorizado,
     costoUnitCents,
     precioUnitCents,
@@ -747,14 +754,20 @@ describe("el circuito entero, por las rutas", () => {
       reservado: fin.reservado - antes.reservado,
     }).toEqual({ fisico: 0, reservado: 0 });
 
-    // Nada salió del inventario: no hay un solo movimiento de este pedido.
-    const { results: movimientos } = await real.DB.prepare(
-      `SELECT m.id FROM movimientos_inventario m
-        WHERE m.codigo = ? AND m.bodega_id = ?`,
+    // Nada SALIÓ del inventario: ni un solo movimiento de salida.
+    //
+    // Se filtra por el signo y no se pide la lista vacía, porque desde que la
+    // siembra carga el costo por su ruta de verdad hay un movimiento
+    // legítimo: la compra que puso las cajas en el estante. Pedir cero
+    // movimientos probaría que la siembra no hizo nada, no que la cancelación
+    // no sacó nada.
+    const { results: salidas } = await real.DB.prepare(
+      `SELECT m.id, m.tipo, m.delta FROM movimientos_inventario m
+        WHERE m.codigo = ? AND m.bodega_id = ? AND m.delta < 0`,
     )
       .bind(s.codigo, s.bodegaId)
-      .all<{ id: string }>();
-    expect(movimientos, "un pedido cancelado no saca mercancía").toEqual([]);
+      .all<{ id: string; tipo: string; delta: number }>();
+    expect(salidas, "un pedido cancelado no saca mercancía").toEqual([]);
 
     // El pedido está cancelado y el pago NO desaparece: `estado_pago` sigue
     // diciendo «abonado» a propósito, porque ese dinero existe y alguien tiene
