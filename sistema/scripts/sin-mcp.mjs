@@ -35,7 +35,7 @@ import { readFileSync, readdirSync } from "node:fs";
 const COBERTURA = {
   "DELETE /catalogo/variantes/:codigo": "retirar_variante",
   "GET /ajustes": "ver_ajustes",
-  "GET /ajustes/:clave/historial": "PENDIENTE",
+  "GET /ajustes/:clave/historial": "ver_historial_de_ajuste",
   "GET /bodegas": "ver_bodegas",
   "GET /catalogo": "buscar_articulo",
   "GET /catalogo/variantes/:codigo/borrado": "ver_retiro_variante",
@@ -68,16 +68,20 @@ const COBERTURA = {
   "GET /usuarios": "PENDIENTE",
   "GET /yo": "solo_panel: quién soy lo decide Access, no una herramienta",
   "GET /zonas": "ver_zonas",
-  "PATCH /bodegas/:id": "PENDIENTE",
+  "PATCH /bodegas/:id": "renombrar_bodega + cambiar_uso_de_bodega",
   "PATCH /catalogo/variantes/:codigo": "cambiar_precio (el precio) + editar_variante (el resto)",
-  "PATCH /clientes/:id": "PENDIENTE",
+  // La ficha de una clienta SÍ se corrige por MCP, menos la facturación de
+  // una dirección: para tocarla hay que decir CUÁL, y el id de una dirección
+  // solo se conoce abriendo la ficha, que es justo lo que D-20 no deja salir
+  // hacia el modelo. Una excepción razonada vale; una silenciosa no.
+  "PATCH /clientes/:id": "corregir_ficha_de_clienta (la dirección se toca solo en el panel)",
   "PATCH /motorizados/:id": "corregir_motorizado",
   "PATCH /usuarios/:id": "PENDIENTE",
-  "PATCH /zonas/:id": "PENDIENTE",
+  "PATCH /zonas/:id": "cambiar_zona",
   "POST /ajustes/:clave": "cambiar_ajuste",
   "POST /asistente": "solo_panel: es la puerta del propio asistente",
   "POST /asistente/acciones/:id": "solo_panel: es la puerta del propio asistente",
-  "POST /bodegas": "PENDIENTE",
+  "POST /bodegas": "crear_bodega",
   "POST /bodegas/traslados": "trasladar_stock",
   "POST /catalogo/altas": "dar_de_alta_producto",
   "POST /catalogo/productos": "crear_producto",
@@ -122,7 +126,7 @@ const COBERTURA = {
   "POST /usuarios": "PENDIENTE",
   "POST /usuarios/:id/telegram":
     "solo_panel: entrega un código de un solo uso que se lee en pantalla. Por una\n     herramienta pasaría por el modelo, y el modelo es un Contributor con el que Meta\n     entrena (D-20): una llave no se le enseña ni una vez",
-  "POST /zonas": "PENDIENTE"
+  "POST /zonas": "crear_zona"
 };
 
 const fuentes = ["src/api/panel.ts", "src/api/asistente-rutas.ts"];

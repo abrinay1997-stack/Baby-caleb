@@ -139,17 +139,20 @@ corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y convie
 | `dar_de_alta_producto` (producto + primera presentación, de una vez) | construcción | dueña |
 | `editar_variante` (nombre, talla, unidades, ITBMS, publicar) | sensible | dueña |
 | `retirar_variante` (se borra si no tiene historia; si la tiene, se oculta) | sensible | dueña |
-
 | `ver_pasarelas` (encendida, modo y qué le falta; **ninguna credencial**) | lectura | dueña |
 | `encender_pasarela` · `apagar_pasarela` | sensible | dueña |
 | `cambiar_modo_de_pasarela` (prueba ↔ real; no con la pasarela encendida) | sensible | dueña |
 | `registrar_reembolso` (es el `reembolsar` de arriba: anota el que YA se hizo, asiento 14) | sensible | dueña |
 | `registrar_contracargo` (lo decide el banco; asiento 15) | sensible | dueña |
-
 | `devolver_parada(pedido, motivo)` — la parada volvió sin entregarse | sensible | dueña |
 | `cancelar_ruta(motorizado, fecha?, motivo)` — deshace una ruta que no salió | sensible | dueña |
 | `cerrar_ruta(motorizado, fecha?)` — cierra el día y cuenta lo cobrado | sensible | dueña |
 | `devolver_pedido(pedido, motivo)` — la clienta devuelve lo ya entregado (asiento 13) | sensible | dueña |
+| `ver_historial_de_ajuste(ajuste?)` — quién cambió una cifra, cuándo y por qué | lectura | dueña |
+| `crear_bodega` · `renombrar_bodega` | construcción | dueña |
+| `cambiar_uso_de_bodega` (dejar de surtir desde ahí; una bodega no se borra) | sensible | dueña |
+| `crear_zona` · `cambiar_zona` (la tarifa es dinero; `null` = se cotiza a mano) | sensible | dueña |
+| `corregir_ficha_de_clienta` (por su referencia; no devuelve ningún dato de ella) | construcción | dueña, asistente |
 
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
 

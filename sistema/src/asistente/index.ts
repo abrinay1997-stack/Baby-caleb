@@ -23,8 +23,10 @@
  *                      portada del negocio, `pasarelas.ts` son las pasarelas de
  *                      cobro y el dinero que vuelve —un reembolso, un
  *                      contracargo— sin una sola credencial, y
- *                      `devoluciones.ts` deshace y cierra lo que ya pasó
- *                      en la calle, y `contabilidad.ts` son los libros.
+ *                      `devoluciones.ts` deshace y cierra lo que ya pasó en
+ *                      la calle, `maestros.ts` administra bodegas, zonas de
+ *                      envío y la ficha de una clienta, y `contabilidad.ts`
+ *                      son los libros.
  *
  * Lo que el asistente NUNCA hace no se comprueba: no existe. No hay forma de
  * declarar una herramienta que borre un asiento, cambie un permiso, lea un
@@ -47,6 +49,7 @@ import { HERRAMIENTAS_DE_CHECKOUT } from "./herramientas/checkout";
 import { HERRAMIENTAS_DE_COTIZACIONES } from "./herramientas/cotizaciones";
 import { HERRAMIENTAS_DE_PASARELAS } from "./herramientas/pasarelas";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
+import { HERRAMIENTAS_DE_MAESTROS } from "./herramientas/maestros";
 import { HERRAMIENTAS_DE_MOTORIZADOS } from "./herramientas/motorizados";
 import { HERRAMIENTAS_DE_PEDIDOS } from "./herramientas/pedidos";
 import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
@@ -74,6 +77,7 @@ export function catalogo(): Registro {
     ...HERRAMIENTAS_DE_COTIZACIONES,
     ...HERRAMIENTAS_DE_INVENTARIO,
     ...HERRAMIENTAS_DE_PEDIDOS,
+    ...HERRAMIENTAS_DE_MAESTROS,
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
     ...HERRAMIENTAS_DE_AJUSTES,
     ...HERRAMIENTAS_DE_ENTREGAS,
@@ -97,6 +101,7 @@ export {
   HERRAMIENTAS_DE_DINERO,
   HERRAMIENTAS_DE_ENTREGAS,
   HERRAMIENTAS_DE_INVENTARIO,
+  HERRAMIENTAS_DE_MAESTROS,
   HERRAMIENTAS_DE_MOTORIZADOS,
   HERRAMIENTAS_DE_PASARELAS,
   HERRAMIENTAS_DE_PEDIDOS,
