@@ -36,6 +36,8 @@ export interface VarianteEditable {
   version: number;
   imagen: string | null;
   es_combo: number;
+  /** `null` = «lo que diga Ajustes». Ver `migrations/0013`. */
+  pedir_por_whatsapp: number | null;
 }
 
 interface Ingrediente {
@@ -67,6 +69,16 @@ export function EditarVariante({
   const [precio, setPrecio] = useState("");
   const [itbms, setItbms] = useState("");
   const [publicado, setPublicado] = useState(false);
+  /**
+   * El botón de WhatsApp, en TRES estados y guardado como texto.
+   *
+   * `""` es «lo que diga Ajustes» (la columna en nulo), que es el valor de
+   * todos los artículos hasta que alguien decida uno. Un desplegable de tres
+   * opciones y no una casilla: con una casilla, «heredado» y «apagado» se
+   * dibujan igual, y entonces apagar Ajustes parecería no hacer nada en los
+   * artículos que estaban heredando.
+   */
+  const [botonWhatsapp, setBotonWhatsapp] = useState("");
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -86,6 +98,9 @@ export function EditarVariante({
     setPrecio(deCentavos(variante.precio_cents));
     setItbms(variante.tasa_itbms_bp === null ? "" : dePuntosBasicos(variante.tasa_itbms_bp));
     setPublicado(variante.publicado === 1);
+    setBotonWhatsapp(
+      variante.pedir_por_whatsapp === null ? "" : variante.pedir_por_whatsapp === 1 ? "si" : "no",
+    );
     setMotivo("");
     setError(null);
     setVeredicto(null);
@@ -167,6 +182,10 @@ export function EditarVariante({
           precioCents: centavos,
           tasaItbmsBp: bp,
           publicado,
+          // `null` y no `undefined`: el servidor distingue «vuelve a heredar
+          // de Ajustes» de «no toques este campo», y aquí siempre se está
+          // diciendo lo que la pantalla enseña.
+          pedirPorWhatsapp: botonWhatsapp === "" ? null : botonWhatsapp === "si",
           ...(motivo.trim() === "" ? {} : { motivo: motivo.trim() }),
           version: variante.version,
         }),
@@ -422,6 +441,21 @@ export function EditarVariante({
           />
         </Campo>
       ) : null}
+
+      <Campo
+        etiqueta="Botón de «Pedir por WhatsApp»"
+        ayuda="Lo de Ajustes manda: si allí está apagado, este botón no sale en ningún producto aunque aquí diga que sí."
+      >
+        <select
+          className={ENTRADA}
+          value={botonWhatsapp}
+          onChange={(e) => setBotonWhatsapp(e.target.value)}
+        >
+          <option value="">Lo que diga Ajustes</option>
+          <option value="si">Sí, enseñarlo en este producto</option>
+          <option value="no">No, en este no</option>
+        </select>
+      </Campo>
 
       <label className="tactil mb-2 flex items-center gap-3">
         <input

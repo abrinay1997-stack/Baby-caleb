@@ -31,7 +31,23 @@ const SEGUNDOS = 60;
 
 export interface SistemaWebBinding {
   catalogo(): Promise<
-    | { ok: true; datos: { version: number; generadoEn: number; variantes: unknown[] } }
+    | {
+        ok: true;
+        datos: {
+          version: number;
+          generadoEn: number;
+          variantes: unknown[];
+          /**
+           * El celular al que van los pedidos por WhatsApp, del ajuste
+           * `whatsapp_numero`. `null` = no hay ninguno y el botón no sale.
+           *
+           * Pasa tal cual al navegador: es el celular del NEGOCIO, el mismo
+           * que ya está en `content.json` y en el botón de la barra de
+           * navegación. Nada de ninguna clienta sale por aquí.
+           */
+          whatsapp?: { numero: string | null };
+        };
+      }
     | { ok: false; codigo: string; mensaje: string }
   >;
   /**

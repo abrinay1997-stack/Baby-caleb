@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { editarVariante } from "../../db/catalogo-admin";
 import { aplicar, bodegaPorNombre, trasladar } from "../../db/inventario";
 import { ulid } from "../../ids";
 import { definir } from "../registro";
@@ -226,9 +227,79 @@ export const registrarMerma = definir({
   },
 });
 
+export const cambiarBotonWhatsapp = definir({
+  nombre: "cambiar_boton_whatsapp",
+  descripcion:
+    "Decide si la web enseña el botón «Pedir por WhatsApp» en UN artículo. «heredar» lo deja como diga Ajustes, que es lo normal; «si» y «no» lo deciden solo para ese artículo. Para apagarlo en TODA la tienda se usa cambiar_ajuste con «whatsapp_pedidos_activo». Ejemplo: cambiar_boton_whatsapp con codigo «BC-COMBO-1» y mostrar «no» quita el botón de ese combo y lo deja solo con el carrito.",
+  parametros: z.object({
+    codigo,
+    mostrar: z
+      .enum(["si", "no", "heredar"])
+      .describe(
+        "«heredar» = lo que diga Ajustes (es el valor de fábrica de todos los artículos).",
+      ),
+    motivo,
+  }),
+  nivel: "sensible",
+  categoria: "catalogo",
+  roles: ["duena"],
+
+  async ejecutar(ctx, args) {
+    const antes = await ctx.db
+      .prepare("SELECT pedir_por_whatsapp, version FROM variantes WHERE codigo = ?")
+      .bind(args.codigo)
+      .first<{ pedir_por_whatsapp: number | null; version: number }>();
+
+    if (antes === null) throw new Error(`no existe el artículo ${args.codigo}`);
+
+    const quiere = args.mostrar === "heredar" ? null : args.mostrar === "si" ? 1 : 0;
+    // `antes.pedir_por_whatsapp` puede ser null, y `null === null` es true en
+    // JavaScript: aquí sí se pueden comparar directo. En SQL no, y por eso el
+    // control de abajo usa `IS`.
+    if (antes.pedir_por_whatsapp === quiere) {
+      throw new Error(`${args.codigo} ya estaba así`);
+    }
+
+    // Va por el MISMO camino que el panel —`editarVariante`— y no con un
+    // UPDATE propio: ahí viven el control contra la actualización perdida y la
+    // comparación con `IS` que hace falta para una columna que puede ser nula.
+    // Un segundo camino hacia la misma columna es un segundo sitio donde esas
+    // dos cosas se olvidan (es la lección de `trasladar_stock`, aquí arriba).
+    const r = await editarVariante(
+      { db: ctx.db, actor: ctx.usuario.id, ahora: ctx.ahora },
+      args.codigo,
+      {
+        pedirPorWhatsapp: quiere === null ? null : quiere === 1,
+        motivo: args.motivo,
+      },
+      antes.version,
+    );
+    if (!r.ok) throw new Error(r.mensaje);
+
+    return {
+      codigo: args.codigo,
+      antes:
+        antes.pedir_por_whatsapp === null
+          ? "heredar"
+          : antes.pedir_por_whatsapp === 1
+            ? "si"
+            : "no",
+      ahora: args.mostrar,
+      // Lo que de verdad va a ver la clienta depende TAMBIÉN del ajuste
+      // global, así que se dice aquí: un «sí» en el artículo con el ajuste
+      // apagado no enseña ningún botón, y quien lo pidió tiene que saberlo
+      // ahora y no cuando mire la web.
+      aviso:
+        "Lo que la web enseña sale de esto Y del ajuste «whatsapp_pedidos_activo». Si ese está apagado, o no hay número puesto en «whatsapp_numero», el botón no sale en ningún artículo.",
+      version: r.datos.version,
+    };
+  },
+});
+
 export const HERRAMIENTAS_DE_PRECIOS_Y_STOCK = [
   cambiarPrecio,
   ajustarStock,
   trasladarStock,
   registrarMerma,
+  cambiarBotonWhatsapp,
 ] as const;

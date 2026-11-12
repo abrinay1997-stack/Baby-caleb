@@ -67,10 +67,23 @@ describe("SistemaWeb · lo que llega a un navegador", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
-    // El sobre solo lleva la versión y el sello de tiempo. Se fija aquí la
-    // lista de sus campos: si alguien le cuelga uno nuevo, esta prueba se pone
-    // roja y hay que mirar a mano si eso puede salir a un navegador.
-    expect(Object.keys(r.datos).sort()).toEqual(["generadoEn", "variantes", "version"]);
+    // El sobre lleva la versión, el sello de tiempo y el celular de los
+    // pedidos. Se fija aquí la lista de sus campos: si alguien le cuelga uno
+    // nuevo, esta prueba se pone roja y hay que mirar a mano si eso puede
+    // salir a un navegador.
+    //
+    // `whatsapp` entró con el botón de «Pedir por WhatsApp», y la revisión a
+    // mano dice que sí puede salir: es el celular del NEGOCIO, el mismo que ya
+    // está en `content.json` y en el botón de WhatsApp de la barra de
+    // navegación desde el primer día. El navegador lo necesita para armar el
+    // enlace `wa.me`. No lleva nada de ninguna clienta, ni el costo, ni
+    // existencias.
+    expect(Object.keys(r.datos).sort()).toEqual([
+      "generadoEn",
+      "variantes",
+      "version",
+      "whatsapp",
+    ]);
 
     // Y lo que se revisa letra por letra son las variantes, NO el sobre: el
     // sello de tiempo es un número de 13 dígitos y a ciertas horas del día

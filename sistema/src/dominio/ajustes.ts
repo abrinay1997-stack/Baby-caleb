@@ -158,6 +158,7 @@ export type Tipo =
   | "dinero_usd"
   | "booleano"
   | "texto"
+  | "telefono"
   | "opcion"
   | "lista_de_opciones"
   | "ventanas"
@@ -237,6 +238,27 @@ export const ESQUEMAS = {
     titulo: "Pagar desde la web",
     explica:
       "Apagado, la web enseña el catálogo pero nadie puede pagar ahí: el pedido sigue haciéndose por WhatsApp. Es el interruptor que se apaga si algo va mal.",
+    admitePendiente: false,
+  },
+
+  whatsapp_pedidos_activo: {
+    tipo: "booleano",
+    titulo: "Dejar pedir por WhatsApp",
+    explica:
+      "Encendido, la web enseña el botón «Pedir por WhatsApp» en los productos. Apagado desaparece de todos a la vez, aunque alguno lo tenga encendido en su ficha. Es el interruptor que se apaga si el celular se pierde o se cambia.",
+    admitePendiente: false,
+  },
+
+  whatsapp_numero: {
+    tipo: "telefono",
+    titulo: "El celular al que llegan los pedidos",
+    explica:
+      "El número de WhatsApp que abre el botón de los productos. Para dejar de recibir pedidos por WhatsApp no se borra el número: se apaga «Dejar pedir por WhatsApp».",
+    // NO admite quedarse sin decidir, y por eso tiene valor de fábrica: el
+    // número ya se sabe —es el que la web ya usa (content.json → `nap.phone`)—
+    // así que dejarlo en PENDIENTE sería fingir que falta un dato que está. Y
+    // «no quiero pedidos por WhatsApp» ya tiene su interruptor propio aquí
+    // arriba; dos formas de decir lo mismo acaban diciendo cosas distintas.
     admitePendiente: false,
   },
 
@@ -406,6 +428,23 @@ const normalizarHora = (hhmm: string): string => {
  */
 const ID_DE_MODELO = /^[A-Za-z0-9][A-Za-z0-9._:\-/]{0,119}$/;
 
+/**
+ * Un celular en formato internacional, SIN el `+` y sin nada más.
+ *
+ * Así lo quiere `wa.me/<numero>` —que es a donde va a parar este valor— y así
+ * está escrito ya en `content.json` y en `src/data/contacto.ts` de la web:
+ * `50767575065`. Se guarda normalizado (sin espacios, sin guiones, sin `+`, sin
+ * paréntesis) para que «+507 6757-5065» y «50767575065» guarden lo mismo y el
+ * historial no enseñe un cambio que no hubo.
+ *
+ * De 8 a 15 cifras: 15 es el máximo de la norma E.164 y 8 es el largo de un
+ * número local corto. NO se comprueba que empiece por 507: la dueña puede
+ * querer un número de otro país el día que venda fuera, y rechazarlo sería
+ * inventarle la regla. Tampoco se comprueba que ese WhatsApp exista — eso solo
+ * lo sabe WhatsApp, y adivinarlo con una expresión regular es la trampa §2.
+ */
+const CELULAR = /^[0-9]{8,15}$/;
+
 /** El código de una ventana: minúsculas ASCII. Lo exige `envios.ventana`. */
 const ID_DE_VENTANA = /^[a-z][a-z0-9_]{0,23}$/;
 
@@ -468,6 +507,8 @@ export function validar(clave: string, valor: unknown): Resultado<Valor> {
         : fallo("entrada_invalida", `«${e.titulo}» solo puede estar encendido o apagado.`);
     case "texto":
       return texto(e, valor);
+    case "telefono":
+      return telefono(e, valor);
     case "opcion":
       return opcion(e, valor);
     case "lista_de_opciones":
@@ -525,6 +566,34 @@ function texto(e: Esquema, valor: unknown): Resultado<Valor> {
     return fallo(
       "entrada_invalida",
       `«${e.titulo}» es el nombre técnico de un modelo, como muse-spark-1.3-contributor: letras, números, puntos y guiones, sin espacios.`,
+    );
+  }
+  return ok(limpio);
+}
+
+/**
+ * Un celular, normalizado a lo que quiere `wa.me`.
+ *
+ * Se quitan los adornos con los que cualquiera escribe un número —espacios,
+ * guiones, puntos, paréntesis y el `+` de delante— en vez de rechazarlos: la
+ * dueña va a copiar y pegar «+507 6757-5065» de su propio teléfono, y
+ * devolverle un error por eso sería culparla de escribir un número bien.
+ */
+function telefono(e: Esquema, valor: unknown): Resultado<Valor> {
+  if (typeof valor !== "string") {
+    return fallo("entrada_invalida", `«${e.titulo}» se escribe como texto.`);
+  }
+  const limpio = valor.trim().replace(/^\+/, "").replace(/[\s.()-]/g, "");
+  if (limpio === "") {
+    return fallo(
+      "entrada_invalida",
+      `«${e.titulo}» no puede quedar vacío. Si todavía no hay número, déjelo sin decidir en vez de en blanco: así el botón no sale y se ve que falta.`,
+    );
+  }
+  if (!CELULAR.test(limpio)) {
+    return fallo(
+      "entrada_invalida",
+      `«${e.titulo}» se escribe con el código del país y sin el signo de más: 50767575065 para un celular panameño. Solo números.`,
     );
   }
   return ok(limpio);

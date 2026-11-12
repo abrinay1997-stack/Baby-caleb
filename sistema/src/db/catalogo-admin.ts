@@ -325,6 +325,19 @@ export interface CambiosEnVariante {
   readonly precioCents?: number;
   readonly tasaItbmsBp?: number | null;
   readonly publicado?: boolean;
+  /**
+   * El botón de «Pedir por WhatsApp» en ESTE artículo.
+   *
+   * Tres estados y los tres significan algo distinto:
+   *   `undefined` → no se toca (es como se dice «no cambies este campo»).
+   *   `null`      → vuelve a «lo que diga Ajustes».
+   *   `true/false`→ encendido o apagado en este artículo.
+   *
+   * Un `true` NO se salta el ajuste global: la regla de combinarlos vive en
+   * `seEnseniaElBoton` (src/rpc/catalogo.ts) y el porqué en
+   * `migrations/0013_whatsapp_por_variante.sql`.
+   */
+  readonly pedirPorWhatsapp?: boolean | null;
   readonly motivo?: string;
 }
 
@@ -397,6 +410,15 @@ export async function editarVariante(
   if (cambios.precioCents !== undefined) poner("precio_cents", cambios.precioCents);
   if (cambios.tasaItbmsBp !== undefined) poner("tasa_itbms_bp", cambios.tasaItbmsBp);
   if (cambios.publicado !== undefined) poner("publicado", cambios.publicado ? 1 : 0);
+  if (cambios.pedirPorWhatsapp !== undefined) {
+    // `null` se escribe como NULL y no como 0: son dos cosas distintas en esa
+    // columna —«lo que diga Ajustes» y «no, en este no»— y por eso el control
+    // de abajo compara con `IS` y no con `=`.
+    poner(
+      "pedir_por_whatsapp",
+      cambios.pedirPorWhatsapp === null ? null : cambios.pedirPorWhatsapp ? 1 : 0,
+    );
+  }
 
   if (campos.length === 0) return ok({ version: actual.version });
 

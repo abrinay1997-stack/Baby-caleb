@@ -47,6 +47,12 @@ if (!Array.isArray(datos.variantes) || datos.variantes.length === 0) {
 }
 
 const anterior = JSON.parse(readFileSync(DESTINO, "utf8"));
+// `whatsapp` NO se copia aquí, y es una decisión: el celular de los pedidos
+// sale del ajuste `whatsapp_numero`, que la dueña puede cambiar o apagar
+// cualquier día. Congelado en el paquete del sitio, un día con el sistema caído
+// la web ofrecería «Pedir por WhatsApp» a un número que ya no contesta. Sin él,
+// el botón no sale mientras el sistema no conteste — que es lo honesto: si no
+// se puede preguntar, no se promete el canal.
 const salida = {
   _comentario: anterior._comentario,
   version: datos.version,

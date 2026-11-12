@@ -97,12 +97,28 @@ el id de la acción).
 | `asignar_motorizado` · `programar_entrega` | construcción | dueña, asistente |
 | `confirmar_abono` · `registrar_cobro` | sensible | dueña |
 | `cambiar_precio` · `ajustar_stock` · `registrar_merma` · `trasladar_stock` | sensible | dueña |
+| `cambiar_boton_whatsapp(codigo, mostrar)` — el botón «Pedir por WhatsApp» de UN artículo | sensible | dueña |
 | `recibir_compra` | sensible | dueña |
 | `anular_pedido` · `reembolsar` | sensible | dueña |
 | `cerrar_mes` (guiado con la lista de chequeo) | sensible | dueña |
 | `cambiar_ajuste` (abono mínimo, pasarela activa…) | sensible | dueña |
+| `ver_ajustes(clave?)` — cuánto vale cada regla, de dónde sale y cuáles faltan | lectura | dueña |
 
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
+
+`ver_ajustes` y `cambiar_ajuste` son la otra puerta de la pantalla de Ajustes, y entraron
+con los dos ajustes de WhatsApp (`whatsapp_pedidos_activo`, `whatsapp_numero`) porque la
+regla del `CLAUDE.md` es que un ajuste nuevo no está terminado hasta que se puede usar
+también por MCP, en el mismo cambio (`docs/TRAMPAS.md` §13). `cambiar_ajuste` vale para
+las diecisiete claves: la forma de cada valor la decide `validar` de
+`src/dominio/ajustes.ts`, que es la MISMA copia que usa la ruta del panel.
+
+Una cosa que `ver_ajustes` no hace: devolver entero el celular de `whatsapp_numero`. Sale
+con las cuatro últimas cifras (`•••• 5065`). No es un dato de ninguna clienta —es el del
+negocio y está publicado en la web— pero la guarda de D-20 señala cualquier cosa con forma
+de celular en lo que una herramienta devuelve, y abrirle una excepción a «este teléfono es
+nuestro» sería el primer agujero de una guarda que ya ha cazado fugas de verdad. El número
+entero se ve en el panel, donde lo lee una persona.
 
 ## 6. Modelo, costo y caché
 

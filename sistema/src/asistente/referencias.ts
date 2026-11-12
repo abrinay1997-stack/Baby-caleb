@@ -156,7 +156,7 @@ export function revisar(valor: unknown, nombresConocidos: readonly string[] = []
   const nombres = nombresConocidos
     .map((n) => n.trim())
     .filter((n) => n.length >= 3)
-    .map((n) => n.toLowerCase());
+    .map(comoPalabra);
 
   const mirar = (v: unknown, camino: string): void => {
     if (typeof v === "string") {
@@ -167,9 +167,8 @@ export function revisar(valor: unknown, nombresConocidos: readonly string[] = []
         encontradas.push({ camino, que: "celular", muestra: recorte(v) });
       }
 
-      const enMinuscula = v.toLowerCase();
       for (const n of nombres) {
-        if (enMinuscula.includes(n)) {
+        if (n.test(v)) {
           encontradas.push({ camino, que: "nombre_de_clienta", muestra: recorte(v) });
           break;
         }
@@ -204,6 +203,29 @@ export function revisar(valor: unknown, nombresConocidos: readonly string[] = []
   mirar(valor, "");
   return encontradas;
 }
+
+/**
+ * El nombre de una clienta, buscado COMO PALABRA y no como trozo de otra.
+ *
+ * Antes se buscaba con `includes` sobre el texto en minúsculas, y con una
+ * clienta llamada «Ana» eso daba positivo con «ventanas de entrega», «mañana» y
+ * «manga». Es el mismo fallo que ya tuvo el patrón del celular —ocho cifras
+ * seguidas cualesquiera, que gritaba con «BC-20261109»— y la misma lección,
+ * escrita quince líneas más arriba: una guarda que grita con cosas inocentes
+ * acaba apagada, y entonces no guarda nada.
+ *
+ * Lo encontró la prueba que barre TODAS las herramientas, al añadir una que
+ * devuelve los nombres de los ajustes.
+ *
+ * Qué se pierde y qué no: un nombre pegado dentro de otra palabra
+ * («ventanas») deja de cazarse, y un nombre con cualquier signo al lado
+ * —«cliente:Ana», «(Ana)», «ANA GÓMEZ», «de Ana.»— se sigue cazando, que es
+ * como un nombre aparece de verdad cuando se filtra. Los límites se miran con
+ * letras Unicode, no con `\b`: `\b` trata la tilde de «Ánalia» como frontera
+ * y volvería a dar positivo.
+ */
+const comoPalabra = (nombre: string): RegExp =>
+  new RegExp(`(?<!\\p{L})${nombre.replace(/[.*+?^$|{}()[\]\\]/g, "\\$&")}(?!\\p{L})`, "iu");
 
 function queEs(clave: string): Filtracion["que"] {
   if (clave.includes("correo") || clave.includes("email")) return "correo";

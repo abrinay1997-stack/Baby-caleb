@@ -104,6 +104,10 @@ export function comoSeLee(clave: Clave, valor: unknown): string {
       return valor === true ? "Encendido" : "Apagado";
     case "texto":
       return typeof valor === "string" ? valor : "—";
+    case "telefono":
+      // Con el `+` delante, que es como se lee un número internacional. Se
+      // GUARDA sin él porque es lo que quiere `wa.me`; esto es solo la lectura.
+      return typeof valor === "string" ? `+${valor}` : "—";
     case "opcion":
       return typeof valor === "string" ? comoSeLeeOpcion(valor) : "—";
     case "lista_de_opciones":
@@ -257,6 +261,12 @@ export function valorDelBorrador(
     case "texto":
       return { valor: b.texto.trim() };
 
+    case "telefono":
+      // Sin limpiar aquí: el `+`, los espacios y los guiones los quita
+      // `validar` en el servidor, que es la única copia que cuenta. Dos sitios
+      // normalizando el mismo número acabarían discrepando en uno.
+      return { valor: b.texto.trim() };
+
     case "opcion":
       if (b.texto === "") return { error: "Elija una de las opciones." };
       return { valor: b.texto };
@@ -355,6 +365,24 @@ function Editor({
             value={borrador.texto}
             onChange={(ev) => cambiar({ texto: ev.target.value })}
             placeholder="muse-spark-1.2-contributor"
+          />
+        </Campo>
+      );
+
+    case "telefono":
+      return (
+        <Campo
+          etiqueta="El número, con el código del país"
+          ayuda="Se puede pegar tal cual sale del teléfono: 507 6757-5065 o +50767575065. Se guarda solo con los números."
+        >
+          <input
+            className={ENTRADA}
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={borrador.texto}
+            onChange={(ev) => cambiar({ texto: ev.target.value })}
+            placeholder="+507 6757-5065"
           />
         </Campo>
       );

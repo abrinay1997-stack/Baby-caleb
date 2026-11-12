@@ -27,7 +27,34 @@ export interface VariantePublica {
   readonly unidadesPorCaja: number;
   readonly precioCents: number;
   readonly disponibilidad: 'disponible' | 'pocas' | 'agotado';
+  /**
+   * Si la web enseña el botón «Pedir por WhatsApp» en este artículo.
+   *
+   * Llega YA RESUELTO del sistema: junta el ajuste global
+   * `whatsapp_pedidos_activo`, el celular de `whatsapp_numero` y la columna
+   * `pedir_por_whatsapp` de la variante. El navegador no combina nada — si lo
+   * hiciera, cambiar la regla exigiría desplegar la web y una pestaña abierta
+   * desde ayer la combinaría a su manera.
+   *
+   * Opcional porque la copia del build (`catalogo.respaldo.json`) se generó
+   * antes de que este campo existiera. Ausente cuenta como `false`: con el
+   * sistema caído no se promete un canal de pedidos que nadie va a leer.
+   */
+  readonly pedirPorWhatsapp?: boolean;
 }
+
+/**
+ * A qué celular van los pedidos por WhatsApp. `null` = no hay ninguno.
+ *
+ * Es un ajuste del negocio y NO una constante del código: cambia cuando la
+ * dueña cambia de celular, desde el panel, sin desplegar nada. `contacto.ts`
+ * sigue teniendo el número para los enlaces de la barra y del pie, que son
+ * «escríbenos» y no «pide este producto»; el día que esos también salgan de
+ * aquí, ese archivo se queda sin razón de ser.
+ */
+let numeroDeWhatsapp: string | null = null;
+
+export const whatsappDePedidos = (): string | null => numeroDeWhatsapp;
 
 export type Catalogo = ReadonlyMap<string, VariantePublica>;
 
@@ -46,7 +73,13 @@ let yaLlego = false;
 function pedirUnaVez(): Promise<Catalogo> {
   enVuelo ??= fetch('/api/catalogo')
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((d: { variantes?: VariantePublica[] }) => porCodigo(d.variantes ?? []))
+    .then((d: { variantes?: VariantePublica[]; whatsapp?: { numero: string | null } }) => {
+      // El celular se guarda al llegar, con el catálogo: viene en el mismo
+      // sobre y por la misma petición. Un segundo viaje para un dato que ya
+      // está en la respuesta sería una consulta de más en cada visita.
+      numeroDeWhatsapp = d.whatsapp?.numero ?? null;
+      return porCodigo(d.variantes ?? []);
+    })
     .catch(() => {
       // Sin catálogo del sistema nos quedamos con la copia del build. No se
       // vacía la promesa: reintentar en cada componente que se monte sería

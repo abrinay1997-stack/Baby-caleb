@@ -34,6 +34,10 @@ const UN_VALOR_MALO: Record<Clave, unknown> = {
   stock_bajo: -1,
   ferguson_pago_total: "si",
   checkout_activo: 1,
+  whatsapp_pedidos_activo: "si",
+  // Un número con letras. No se usa un vacío porque el vacío tiene su propio
+  // mensaje («déjelo sin decidir»), y así se barre el del formato.
+  whatsapp_numero: "no-es-un-numero",
   pasarelas_activas: ["banco_nacional"],
   metodos_para_abono: ["cheque"],
   reserva_minutos_pago_en_linea: 0,
@@ -525,5 +529,39 @@ describe("las comisiones", () => {
   it("ni una tabla que no sea un objeto", () => {
     expect(mal("comisiones", [completa])).toContain("pasarela");
     expect(mal("comisiones", 350)).toContain("pasarela");
+  });
+});
+
+describe("el celular de los pedidos", () => {
+  /**
+   * El valor acaba en una URL `wa.me/<numero>`, así que se guarda tal como lo
+   * quiere WhatsApp: solo cifras, sin el `+`.
+   *
+   * Se NORMALIZA en vez de rechazar los adornos porque lo que la dueña va a
+   * pegar es lo que su propio teléfono le enseña: «+507 6757-5065». Devolverle
+   * un error por escribir bien un número sería culparla de acertar.
+   */
+  it("acepta el número como lo pega del teléfono, y lo guarda limpio", () => {
+    for (const escrito of ["50767575065", "+50767575065", "+507 6757-5065", " 507 6757 5065 "]) {
+      expect(bien("whatsapp_numero", escrito), escrito).toBe("50767575065");
+    }
+  });
+
+  it("rechaza lo que no es un número, diciendo qué se esperaba", () => {
+    for (const malo of ["", "   ", "6757-5065 (el de la casa)", "llámame", "507675750650000000"]) {
+      expect(mal("whatsapp_numero", malo).length, malo).toBeGreaterThan(20);
+    }
+  });
+
+  it("no exige que sea de Panamá", () => {
+    // Rechazar un número de otro país sería inventarle la regla a la dueña: el
+    // día que venda fuera, el celular del negocio puede no empezar por 507.
+    expect(bien("whatsapp_numero", "+1 305 555 0123")).toBe("13055550123");
+  });
+
+  it("y no se puede dejar sin decidir, porque el número ya se sabe", () => {
+    // Para dejar de recibir pedidos por WhatsApp está su propio interruptor.
+    // Dos formas de decir lo mismo acaban diciendo cosas distintas.
+    expect(mal("whatsapp_numero", PENDIENTE)).toContain("sin decidir");
   });
 });
