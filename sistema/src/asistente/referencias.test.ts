@@ -290,21 +290,46 @@ describe("la guarda, aplicada a TODAS las herramientas", () => {
       {},
       { pedido: codigo },
       { clienta: codigo },
+      // `clave` entra por la puerta que dejó escapar el fallo DOS VECES.
+      //
+      // `ver_ajustes` tiene todos sus parámetros opcionales, así que `{}`
+      // encaja — y como abajo solo se probaba LA PRIMERA forma que encajara,
+      // era la única que se probaba nunca. La rama de `clave`, que devuelve
+      // además el historial de versiones, no la recorría nadie: ahí seguía el
+      // correo saliendo por un `...v` después de que se quitara de la lista, y
+      // la herramienta siguió muerta en producción un día más.
+      //
+      // `stock_bajo` es justo el ajuste que siembra este barrido con un correo
+      // en `cambiado_por`, así que esta forma lo recorre con datos de verdad.
+      { clave: "stock_bajo" },
     ];
     const probadas: string[] = [];
 
     for (const h of todas) {
-      const args = formas
+      // TODAS las formas que encajen, no la primera.
+      //
+      // Antes era `.find(...)`, y eso dejaba sin vigilar cada camino opcional
+      // de cada herramienta: una con parámetros todos opcionales se probaba
+      // vacía y nada más. Un barrido que prueba una forma por herramienta no
+      // cubre las herramientas, cubre una llamada de cada una — y los dos
+      // fallos de privacidad de esta semana vivían justo en la llamada que no
+      // se hacía.
+      const encajan = formas
         .map((f) => h.parametros.safeParse(f))
-        .find((r) => r.success);
+        .filter((r) => r.success);
       // Las que escriben piden motivo y números, así que ninguna forma les
       // vale: no se ejecutan aquí a propósito —esta prueba no cambia nada.
-      if (args === undefined) continue;
+      if (encajan.length === 0) continue;
 
       probadas.push(h.nombre);
-      const salida: unknown = await h.ejecutar(ctx, args.data as never);
-      const filtra = revisar(salida, nombres);
-      expect(filtra, `«${h.nombre}» filtra: ${JSON.stringify(filtra)}`).toEqual([]);
+      for (const args of encajan) {
+        const salida: unknown = await h.ejecutar(ctx, args.data as never);
+        const filtra = revisar(salida, nombres);
+        expect(
+          filtra,
+          `«${h.nombre}» filtra con ${JSON.stringify(args.data)}: ${JSON.stringify(filtra)}`,
+        ).toEqual([]);
+      }
     }
 
     // Y se exige que se hayan probado TODAS las de lectura: si una se queda

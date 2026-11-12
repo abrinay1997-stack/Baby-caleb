@@ -13,7 +13,7 @@
 # Mientras no estén, las pruebas corren igual: solo los despliegues necesitan
 # la cuenta.
 #
-# NOTA SOBRE ACCESS: la comprobación de `/salud` after de desplegar necesita que
+# NOTA SOBRE ACCESS: la comprobación de `/salud` después de desplegar necesita
 # esa ruta quede FUERA de la aplicación de Cloudflare Access. No lleva ningún
 # dato del negocio —versión, migración y una consulta de humo— y por eso el
 # código no le exige token. Si se deja dentro de Access, el paso de salud
@@ -238,15 +238,36 @@ jobs:
       # Producción no pasa por aquí: ahí la salud se mide en
       # `ruta.babycaleb.com`, que es la superficie del motorizado y no tiene
       # Access delante.
+      # `secrets` NO existe dentro de un `if:`. GitHub no avisa en el paso: le
+      # tumba el flujo ENTERO en la validación, antes de arrancar un solo job,
+      # y en la pestaña Actions sale un run rojo con cero jobs y ningún log que
+      # explique nada. Pasó aquí exactamente así.
+      #
+      # El camino que sí vale: leer el secreto como variable de entorno —ahí sí
+      # llega— y dejar escrito en una salida si lo hay. Después el `if` mira esa
+      # salida, que es contexto normal. El valor nunca se imprime: solo se
+      # pregunta si está vacío.
+      - name: ¿Hay Service Token de Access?
+        id: credencial
+        env:
+          ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
+        run: |
+          if [ -n "$ACCESS_CLIENT_ID" ] && [ -n "$ACCESS_CLIENT_SECRET" ]; then
+            echo "hay=si" >> "$GITHUB_OUTPUT"
+          else
+            echo "hay=no" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Comprobar /salud
-        if: ${{ secrets.ACCESS_CLIENT_ID != '' && secrets.ACCESS_CLIENT_SECRET != '' }}
+        if: steps.credencial.outputs.hay == 'si'
         run: ../.github/scripts/salud.sh "${{ steps.desplegar.outputs.url }}" "$GITHUB_SHA"
         env:
           ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
           ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
 
       - name: Sin credencial, sin comprobación (y se dice)
-        if: ${{ secrets.ACCESS_CLIENT_ID == '' || secrets.ACCESS_CLIENT_SECRET == '' }}
+        if: steps.credencial.outputs.hay == 'no'
         run: |
           {
             echo "### Staging desplegado, pero SIN comprobar"

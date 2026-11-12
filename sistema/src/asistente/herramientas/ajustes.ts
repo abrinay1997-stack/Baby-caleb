@@ -192,9 +192,28 @@ export const verAjustes = definir({
 
     return {
       ajuste: uno,
+      // Campo por campo, y NO con `...v`.
+      //
+      // El arreglo anterior quitó `cambiado_por` de la lista de arriba y dejó
+      // esta rama intacta, porque aquí el correo no se nombra: lo arrastraba el
+      // `...v`. Resultado: `ver_ajustes` sin argumentos funcionaba y
+      // `ver_ajustes` con una `clave` que la dueña hubiera tocado seguía
+      // MUERTA, con el mismo mensaje hablando de una clienta que no existe. Lo
+      // volvió a destapar pedirla en vivo por MCP, un día después.
+      //
+      // Un `...` reparte lo que haya hoy y también lo que alguien añada mañana
+      // al tipo de la fila. Enumerar cuesta cuatro líneas y no puede filtrar
+      // un campo nuevo sin que alguien lo escriba aquí a propósito.
+      //
+      // El QUIÉN no sale, igual que en la lista: para eso está
+      // `ver_historial_de_ajuste`, que es la herramienta de esa pregunta.
       versiones: versiones.datos.versiones.map((v) => ({
-        ...v,
+        version: v.version,
         valor: v.valor === null ? null : valorQuePuedeSalir(args.clave as Clave, v.valor),
+        vigente_desde: v.vigente_desde,
+        motivo: v.motivo,
+        vigente: v.vigente,
+        futura: v.futura,
       })),
       aviso: uno?.sinDecidir === true ? `«${uno.titulo}» está sin decidir.` : null,
     };

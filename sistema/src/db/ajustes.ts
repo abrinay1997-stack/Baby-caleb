@@ -146,7 +146,19 @@ export async function leerVigentes(
     } catch {
       return {
         ...deFabrica(),
-        aviso: `La versión ${fila.version} que guardó ${fila.cambiado_por} no se puede leer, así que vale el valor de arranque. Avísele a Juan.`,
+        // El aviso NO nombra a quien la guardó.
+        //
+        // Llevaba el correo crudo metido en el texto, así que seguía saliendo
+        // por la rama de lista de `ver_ajustes` —la que se creyó saneada al
+        // quitar el campo— y el día que un valor guardado no se pudiera leer,
+        // la guarda de D-20 habría tumbado la herramienta entera. Estaba
+        // dormido solo porque hoy ningún valor está corrupto: un fallo que
+        // espera su turno, no un fallo que no existe.
+        //
+        // Y tampoco dice «avísele a Juan»: un nombre propio dentro de un
+        // mensaje de producción deja de ser verdad el día que Juan no esté. El
+        // quién está en `ver_historial_de_ajuste`.
+        aviso: `La versión ${fila.version} que está guardada no se puede leer, así que vale el valor de arranque. Hay que avisar a quien lleva el sistema.`,
       };
     }
 
@@ -157,7 +169,7 @@ export async function leerVigentes(
       // dice por qué.
       return {
         ...deFabrica(),
-        aviso: `La versión ${fila.version} que guardó ${fila.cambiado_por} no se puede usar (${revisado.mensaje}), así que vale el valor de arranque.`,
+        aviso: `La versión ${fila.version} que está guardada no se puede usar (${revisado.mensaje}), así que vale el valor de arranque.`,
       };
     }
 
