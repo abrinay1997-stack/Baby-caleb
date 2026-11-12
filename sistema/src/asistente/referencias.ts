@@ -205,27 +205,41 @@ export function revisar(valor: unknown, nombresConocidos: readonly string[] = []
 }
 
 /**
- * El nombre de una clienta, buscado COMO PALABRA y no como trozo de otra.
+ * El nombre de una clienta, como PALABRA y no como trozo de palabra.
  *
- * Antes se buscaba con `includes` sobre el texto en minúsculas, y con una
- * clienta llamada «Ana» eso daba positivo con «ventanas de entrega», «mañana» y
- * «manga». Es el mismo fallo que ya tuvo el patrón del celular —ocho cifras
- * seguidas cualesquiera, que gritaba con «BC-20261109»— y la misma lección,
- * escrita quince líneas más arriba: una guarda que grita con cosas inocentes
- * acaba apagada, y entonces no guarda nada.
+ * Antes se buscaba con `includes`, que da positivo con cualquier palabra que
+ * lleve el nombre dentro. El caso que lo delató no es raro: una clienta llamada
+ * **Ana** y la palabra **Panamá** —«p-ana-má»—, así que `ver_bodegas`, cuyas
+ * bodegas se llaman «Bodega Ciudad de Panamá», se descartaba ENTERA. Y no era
+ * cosa de una herramienta nueva: `ver_stock` sin código ya devolvía esos mismos
+ * nombres de bodega, y las zonas de envío de fábrica incluyen «Panamá Oeste» y
+ * «Juan Díaz».
  *
- * Lo encontró la prueba que barre TODAS las herramientas, al añadir una que
- * devuelve los nombres de los ajustes.
+ * El efecto no se parece a un fallo. La guarda no recorta ni tacha: DESCARTA el
+ * resultado entero y le dice al modelo que traía datos de una clienta. O sea
+ * que el asistente habría contestado «no pude averiguarlo» para siempre por una
+ * clienta llamada Ana, y nadie habría sabido por qué. Es el mismo problema que
+ * ya tuvo el patrón de los celulares, y su lección está escrita más arriba en
+ * este archivo: una guarda que grita con cosas inocentes acaba apagada, y
+ * entonces no guarda nada.
  *
- * Qué se pierde y qué no: un nombre pegado dentro de otra palabra
- * («ventanas») deja de cazarse, y un nombre con cualquier signo al lado
- * —«cliente:Ana», «(Ana)», «ANA GÓMEZ», «de Ana.»— se sigue cazando, que es
- * como un nombre aparece de verdad cuando se filtra. Los límites se miran con
- * letras Unicode, no con `\b`: `\b` trata la tilde de «Ánalia» como frontera
- * y volvería a dar positivo.
+ * Los bordes NO son `\b`. `\b` cuenta como letra solo lo que cabe en ASCII, y
+ * con eso `\bjosé\b` no casa con «josé pidió»: después de la «é» no hay
+ * frontera, porque ni la «é» ni el espacio son letras para `\b`. Media
+ * clientela quedaría sin vigilar por llevar acento. Las miras de abajo
+ * preguntan por `\p{L}` y `\p{N}`, que sí saben de acentos, y el nombre se
+ * escapa antes porque un nombre puede traer cualquier carácter dentro.
+ *
+ * Lo que se pierde a cambio: un nombre metido dentro de otro más largo —«Rosa»
+ * dentro de «Rosalinda»— ya no se caza. Y los dígitos cuentan como frontera
+ * a propósito: sin eso, un código como «BC-ANA01» seguiría dando positivo, y
+ * este sistema está lleno de códigos. Eso era casualidad, no vigilancia: a
+ * quien hay que cazar es a Rosa, y a Rosa se la sigue cazando.
  */
-const comoPalabra = (nombre: string): RegExp =>
-  new RegExp(`(?<!\\p{L})${nombre.replace(/[.*+?^$|{}()[\]\\]/g, "\\$&")}(?!\\p{L})`, "iu");
+function comoPalabra(nombre: string): RegExp {
+  const escapado = nombre.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapado}(?![\\p{L}\\p{N}])`, "iu");
+}
 
 function queEs(clave: string): Filtracion["que"] {
   if (clave.includes("correo") || clave.includes("email")) return "correo";
