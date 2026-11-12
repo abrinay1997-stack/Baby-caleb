@@ -517,6 +517,19 @@ const FECHA_DE_ENTREGA = `date(COALESCE(
   p.actualizado_en) / 1000, 'unixepoch', '-5 hours')`;
 
 /**
+ * La fecha contable de una devolución, en SQL.
+ *
+ * Sale de la bitácora —el evento que pasó el pedido a `devuelto`— y no de
+ * `actualizado_en`, que cambia cada vez que alguien toca el pedido después: con
+ * `actualizado_en`, una devolución de marzo se mudaría al mes en que se le
+ * cambió una nota, y desaparecería de la casilla de marzo sin que nadie la
+ * hubiera arreglado.
+ */
+const FECHA_DE_DEVOLUCION = `date(COALESCE(
+  (SELECT MAX(ev.creado_en) FROM pedido_eventos ev WHERE ev.pedido_id = p.id AND ev.a = 'devuelto'),
+  p.actualizado_en) / 1000, 'unixepoch', '-5 hours')`;
+
+/**
  * Pedidos entregados en el periodo a los que les falta el costo.
  *
  * Es el número que hace que la tarjeta de ganancia no muestre un margen del
@@ -940,6 +953,9 @@ export async function huecosAbiertos(ctx: ContextoDeLectura): Promise<HuecoConEs
   const comisiones = ajustes.ok
     ? ajustes.datos.ajustes.find((a) => a.clave === "comisiones")
     : undefined;
+  const cancelacion = ajustes.ok
+    ? ajustes.datos.ajustes.find((a) => a.clave === "cancelacion_con_abono")
+    : undefined;
   const comisionesFaltan =
     comisiones === undefined ||
     comisiones.pendiente ||
@@ -960,6 +976,14 @@ export async function huecosAbiertos(ctx: ContextoDeLectura): Promise<HuecoConEs
     comisiones: comisionesFaltan
       ? { estado: "abierto", nota: "falta el contrato de alguna pasarela" }
       : { estado: "resuelto", nota: "las tres pasarelas tienen su comisión" },
+    // Este sí se puede medir, y desde que la devolución de una parada lo exige
+    // conviene que se vea: mientras esté abierto, un pedido con abono no se
+    // puede devolver, y quien lo intente merece encontrarlo aquí antes de
+    // chocarse con el aviso.
+    cancelacion_con_abono:
+      cancelacion === undefined || cancelacion.pendiente
+        ? { estado: "abierto", nota: "sin decidir: una devolución con abono no se puede registrar" }
+        : { estado: "resuelto", nota: `el abono queda como ${String(cancelacion.valor)}` },
   };
 
   return HUECOS.map((h) => {
@@ -1023,6 +1047,7 @@ export async function revisionDeCierre(
     sinCuadre,
     sinVenta,
     sinAsiento,
+    devolucionSinAsiento,
   ] = await Promise.all([
       ctx.db
         .prepare("SELECT estado FROM periodos WHERE mes = ?")
@@ -1109,6 +1134,23 @@ export async function revisionDeCierre(
               AND date(p.confirmado_en / 1000, 'unixepoch', '-5 hours') BETWEEN ?1 AND ?2
               AND NOT EXISTS (SELECT 1 FROM asientos a
                                WHERE a.referencia_tipo = 'pago' AND a.referencia_id = p.id)`,
+        )
+        .bind(desde, hasta)
+        .first<{ n: number }>(),
+      // Devoluciones sin su asiento 13: mercancía que REAPARECIÓ en el
+      // inventario y una venta que sigue contada como si se hubiera quedado
+      // vendida. Es la gemela de «entregas sin asiento de venta», por el otro
+      // lado del ciclo, y hace falta por lo mismo: el pedido dice «devuelto»,
+      // el stock subió, y nada en la pantalla delata que los libros no se
+      // enteraron. Aparece al cierre, un mes después.
+      ctx.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM pedidos p
+            WHERE p.estado = 'devuelto'
+              AND ${FECHA_DE_DEVOLUCION} BETWEEN ?1 AND ?2
+              AND NOT EXISTS (SELECT 1 FROM asientos a
+                               WHERE a.referencia_tipo = 'pedido'
+                                 AND a.referencia_id = p.id AND a.hecho = '13')`,
         )
         .bind(desde, hasta)
         .first<{ n: number }>(),
@@ -1199,6 +1241,15 @@ export async function revisionDeCierre(
         (sinVenta?.n ?? 0) === 0
           ? "Todas."
           : `${sinVenta?.n ?? 0} pedidos entregados sin asiento de venta: salió mercancía del inventario que los libros no explican. Avísele a Juan.`,
+    },
+    {
+      clave: "devolucion_sin_asiento",
+      titulo: "Todas las devoluciones del mes tienen su asiento",
+      estado: (devolucionSinAsiento?.n ?? 0) === 0 ? "ok" : "falta",
+      detalle:
+        (devolucionSinAsiento?.n ?? 0) === 0
+          ? "Todas."
+          : `${devolucionSinAsiento?.n ?? 0} pedidos devueltos sin su asiento: volvió mercancía al inventario y los libros siguen contando esa venta. Avísele a Juan.`,
     },
     {
       clave: "pago_sin_asiento",

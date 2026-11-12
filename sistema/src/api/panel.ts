@@ -31,6 +31,8 @@ import {
   confirmarPago,
   esMetodoManual,
   registrarComprobante,
+  registrarContracargo,
+  registrarReembolso,
   rechazarPago,
 } from "../db/pagos";
 import {
@@ -57,11 +59,27 @@ import {
   estado as estadoDePasarelas,
   quitarCredencial,
 } from "../db/pasarelas";
-import { registrar as registrarMovimientos } from "../db/inventario";
+import {
+  registrar as registrarMovimientos,
+  trasladar as trasladarExistencias,
+} from "../db/inventario";
+import {
+  cambiarUso as cambiarUsoDeBodega,
+  crear as crearBodega,
+  renombrar as renombrarBodega,
+} from "../db/bodegas";
+import { crear as crearZona, editar as editarZona, type CambiosEnZona } from "../db/zonas-admin";
+import {
+  alta as altaDeUsuario,
+  cambiarAcceso as cambiarAccesoDeUsuario,
+} from "../db/usuarios";
 import {
   buscar as buscarClientas,
+  editar as editarClienta,
   encontrarOCrear as encontrarOCrearClienta,
+  leerFicha as leerFichaDeClienta,
 } from "../db/clientes";
+import type { CambiosEnClienta, CambiosEnDireccion } from "../db/clientes";
 import { crearPedido } from "../db/pedidos";
 import { agendar as agendarPedido, cancelar as cancelarPedido } from "../db/transiciones";
 import {
@@ -71,6 +89,7 @@ import {
   crearEnvio,
   despacharRuta,
   devolverParada,
+  devolverPedidoEntregado,
   entregasDelDia,
   fechaDePanama,
   guardarPrueba,
@@ -228,6 +247,17 @@ async function cuerpo(c: { req: { json: () => Promise<unknown> } }): Promise<Rec
 const texto = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
 /**
+ * Un campo que la pantalla puede mandar escrito, vacío, o no mandar.
+ *
+ * Los tres significan cosas distintas y por eso no se aplanan: `undefined` es
+ * «no lo toques», `null` y `""` son «déjalo en blanco». Si `null` se tradujera
+ * a «no lo toques», borrar un dato desde la pantalla sería imposible y no
+ * fallaría nada: el campo volvería a aparecer lleno al recargar.
+ */
+const nuloOTexto = (v: unknown): string | null | undefined =>
+  v === null ? null : typeof v === "string" ? v : undefined;
+
+/**
  * El código del contrato decide el HTTP, no al revés.
  *
  * Los doce códigos son contrato con el CRM y quien llama actúa según el código,
@@ -315,6 +345,37 @@ const enteroDeTexto = (v: unknown): number | undefined => {
   const n = Number(v);
   return Number.isSafeInteger(n) ? n : undefined;
 };
+
+/**
+ * El cuerpo de una zona, pasando SOLO las claves que de verdad vinieron.
+ *
+ * Es lo que hace posible distinguir las tres cosas que puede querer decir una
+ * tarifa: un número, `null` («se cotiza a mano») y que no venga («déjala como
+ * estaba»). Si se copiaran todas las claves con `??`, un `null` se volvería
+ * «sin cambio» y la dueña vería que su cambio no pasó sin que nada fallara —y
+ * una zona que debía cotizarse a mano seguiría cobrando una tarifa vieja.
+ *
+ * Los valores van tal cual: quien los valida es `src/db/zonas-admin.ts`, y un
+ * segundo sitio que los interpretara acabaría discrepando del primero.
+ */
+const CAMPOS_DE_ZONA = [
+  "nombre",
+  "alias",
+  "region",
+  "metodo",
+  "tarifaCents",
+  "requierePagoTotal",
+  "bodegaPreferidaId",
+  "activa",
+] as const;
+
+function cambiosDeZona(b: Record<string, unknown>): CambiosEnZona {
+  const cambios: Record<string, unknown> = {};
+  for (const campo of CAMPOS_DE_ZONA) {
+    if (campo in b) cambios[campo] = b[campo];
+  }
+  return cambios as CambiosEnZona;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -674,10 +735,90 @@ function registrarRutas(panel: Hono<Entorno>): void {
     return c.json(ok({ bodegas: results }));
   });
 
+  /**
+   * Una bodega nueva.
+   *
+   * `precios_y_stock` y no `ajustes`: una bodega es donde vive el inventario,
+   * y quien puede mover el stock es quien decide dónde se guarda. Hoy los dos
+   * permisos acaban en la misma persona, pero el que dice la verdad sobre lo
+   * que se está tocando es este.
+   */
+  panel.post("/bodegas", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await crearBodega({ db: c.env.DB, ahora: Date.now() }, b["nombre"]);
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Renombrar una bodega o dejar de usarla.
+   *
+   * **No hay `DELETE` y no es un olvido.** Una bodega aparece en cada
+   * movimiento de inventario que pasó por ella, y los movimientos no se borran
+   * —hay un trigger que lo impide—: borrarla dejaría el libro apuntando a un
+   * sitio que no existe. Lo que se puede es dejar de usarla, y entonces nada
+   * nuevo sale ni entra ahí.
+   *
+   * Las dos cosas en la misma ruta porque son la misma fila; cada una va a su
+   * función, que lleva su propia fila de control.
+   */
+  panel.patch("/bodegas/:id", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const ctx = { db: c.env.DB, ahora: Date.now() };
+    const id = c.req.param("id");
+
+    if ("nombre" in b) {
+      const r = await renombrarBodega(ctx, id, b["nombre"]);
+      if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+    }
+    if ("activa" in b) {
+      const r = await cambiarUsoDeBodega(ctx, id, b["activa"] === true);
+      if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+    }
+    if (!("nombre" in b) && !("activa" in b)) {
+      return c.json(fallo("entrada_invalida", "no hay nada que cambiar"), 400);
+    }
+
+    return c.json(ok({ id }));
+  });
+
+  /**
+   * Trasladar mercancía de una bodega a otra.
+   *
+   * Los dos movimientos van en el mismo batch dentro de `trasladar`: o sale de
+   * una y entra en la otra, o no pasa nada. Es el MISMO camino que usa la
+   * herramienta `trasladar_stock` del asistente — un segundo camino hacia el
+   * inventario sería un segundo sitio donde olvidarse de la fila de control.
+   */
+  panel.post("/bodegas/traslados", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const motivo = texto(b["motivo"])?.trim();
+    const r = await trasladarExistencias(
+      { db: c.env.DB, actor: c.get("usuario").id, ahora: Date.now() },
+      {
+        codigo: texto(b["codigo"]) ?? "",
+        desdeId: texto(b["desdeId"]) ?? "",
+        haciaId: texto(b["haciaId"]) ?? "",
+        cantidad: entero(b["cantidad"]) ?? 0,
+        ...(motivo === undefined || motivo === "" ? {} : { motivo }),
+      },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
   panel.get("/zonas", exige("pedidos"), async (c) => {
     const { results } = await c.env.DB.prepare(
+      // `bodega_preferida_id` además del nombre: el nombre es para leer y el
+      // id es lo que la hoja de editar necesita para dejar marcada la bodega
+      // que ya estaba. Sin él, abrir y guardar una zona le borraría la bodega.
       `SELECT z.id, z.nombre, z.alias_json, z.region, z.metodo, z.tarifa_cents,
-              z.requiere_pago_total, z.activa, b.nombre AS bodega_preferida
+              z.requiere_pago_total, z.activa, z.bodega_preferida_id,
+              b.nombre AS bodega_preferida
        FROM zonas_envio z
        LEFT JOIN bodegas b ON b.id = z.bodega_preferida_id
        ORDER BY z.region, z.nombre`,
@@ -699,6 +840,39 @@ function registrarRutas(panel: Hono<Entorno>): void {
     return c.json(ok({ zonas }));
   });
 
+  /**
+   * Crear y cambiar zonas de envío.
+   *
+   * `ajustes` y no `precios_y_stock`: una zona no es mercancía, es una regla
+   * con cifras del negocio —lo que se le cobra a la clienta por llevarle el
+   * pedido—, y esas las cambia quien cambia los ajustes. La asistente toma
+   * pedidos, así que NECESITA ver las zonas (la lectura va con `pedidos`),
+   * pero no le toca mover una tarifa.
+   *
+   * Lo que viaja en `tarifaCents` son tres cosas distintas y las tres
+   * importan: un número (la tarifa), `null` (se cotiza a mano) y que el campo
+   * no venga (déjala como estaba). Por eso la ruta pasa el cuerpo tal cual y
+   * es `editar` quien mira si la clave está, con `in`.
+   */
+  panel.post("/zonas", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await crearZona({ db: c.env.DB, ahora: Date.now() }, cambiosDeZona(b));
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  panel.patch("/zonas/:id", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await editarZona(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      cambiosDeZona(b),
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
 
 
 
@@ -1008,6 +1182,85 @@ function registrarRutas(panel: Hono<Entorno>): void {
   });
 
   /**
+   * La ficha de una clienta: sus datos, sus direcciones y sus pedidos.
+   *
+   * Va con `pedidos` y no con un permiso propio: quien toma pedidos es quien
+   * necesita saber a quién se los está tomando. El dinero de esos pedidos lo
+   * recorta la consulta según el rol, igual que en el listado — la contadora
+   * ve la ficha, la asistente ve la ficha, y el total solo lo ve quien tiene
+   * `cobros`.
+   */
+  panel.get("/clientes/:id", exige("pedidos"), async (c) => {
+    const r = await leerFichaDeClienta(c.env.DB, quienMira(c), c.req.param("id"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Corregir la ficha de una clienta.
+   *
+   * Lo que entra aquí es lo que hace falta para COBRAR CON TARJETA y para
+   * FACTURAR: el apellido separado del nombre, la cédula o el RUC con su tipo,
+   * y los datos de facturación de una de sus direcciones. Nada de eso llega
+   * solo — la pasarela no devuelve la cédula y el chat no la pregunta.
+   *
+   * Un campo que no viene NO SE TOCA; uno que viene vacío o en `null` se
+   * guarda en blanco. Son dos cosas distintas y la pantalla depende de que lo
+   * sigan siendo: sin eso, borrar un dato mal escrito no se podría.
+   */
+  panel.patch("/clientes/:id", exigeEditar("pedidos"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const cambios: { -readonly [K in keyof CambiosEnClienta]: CambiosEnClienta[K] } = {};
+    const nombre = texto(b["nombre"]);
+    if (nombre !== undefined) cambios.nombre = nombre;
+    const celular = texto(b["celular"]);
+    if (celular !== undefined) cambios.celular = celular;
+    const apellido = nuloOTexto(b["apellido"]);
+    if (apellido !== undefined) cambios.apellido = apellido;
+    const correo = nuloOTexto(b["correo"]);
+    if (correo !== undefined) cambios.correo = correo;
+    const identificacion = nuloOTexto(b["identificacion"]);
+    if (identificacion !== undefined) cambios.identificacion = identificacion;
+    const tipo = nuloOTexto(b["identificacionTipo"]);
+    if (tipo !== undefined) cambios.identificacionTipo = tipo;
+    const notas = nuloOTexto(b["notas"]);
+    if (notas !== undefined) cambios.notas = notas;
+
+    const cruda = b["direccion"];
+    if (typeof cruda === "object" && cruda !== null && !Array.isArray(cruda)) {
+      const d = cruda as Record<string, unknown>;
+      const idDireccion = (texto(d["id"]) ?? "").trim();
+      // Sin id no hay a qué dirección aplicarlo, y adivinar «la activa» sería
+      // escribir en una fila que quien guarda no eligió.
+      if (idDireccion === "") {
+        return c.json(fallo("entrada_invalida", "falta decir en qué dirección"), 400);
+      }
+      const direccion: { -readonly [K in keyof CambiosEnDireccion]: CambiosEnDireccion[K] } = {
+        id: idDireccion,
+      };
+      const ciudad = nuloOTexto(d["ciudad"]);
+      if (ciudad !== undefined) direccion.ciudad = ciudad;
+      const provincia = nuloOTexto(d["provinciaIso"]);
+      if (provincia !== undefined) direccion.provinciaIso = provincia;
+      const postal = nuloOTexto(d["codigoPostal"]);
+      if (postal !== undefined) direccion.codigoPostal = postal;
+      const pais = nuloOTexto(d["pais"]);
+      if (pais !== undefined) direccion.pais = pais;
+      cambios.direccion = direccion;
+    }
+
+    const r = await editarClienta(contextoCatalogo(c), c.req.param("id"), cambios);
+    if (!r.ok) return c.json(r, codigoHttp(r.codigo));
+
+    // Se devuelve la ficha RECIÉN LEÍDA y no un «listo»: la pantalla la usa
+    // para repintar «qué falta» sin pedirla otra vez, y así lo que se ve
+    // después de guardar es lo que de verdad quedó en la base.
+    const ficha = await leerFichaDeClienta(c.env.DB, quienMira(c), c.req.param("id"));
+    return c.json(ficha, ficha.ok ? 200 : codigoHttp(ficha.codigo));
+  });
+
+  /**
    * Las reglas que `crearPedido` exige RESUELTAS.
    *
    * Esa función se niega a inventar ninguna —«aquí no se inventa ninguno»,
@@ -1140,6 +1393,32 @@ function registrarRutas(panel: Hono<Entorno>): void {
       return c.json(fallo("entrada_invalida", "diga por qué se cancela: queda en la bitácora"), 400);
     }
     const r = await cancelarPedido(contextoCatalogo(c), c.req.param("id"), motivo);
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * La clienta devuelve lo que ya se le entregó (asiento 13).
+   *
+   * La mercancía vuelve al inventario con el costo con el que salió, la venta
+   * se deshace y lo que se le devuelve queda donde corresponde: descontado de
+   * lo que debía, o anotado como dinero suyo que está aquí. Todo en un batch:
+   * mercancía sin asiento es un descuadre que no se ve hasta el cierre.
+   *
+   * Pide `cobros` en «editar» y no `pedidos`: esto decide dinero —una venta
+   * menos y un saldo a favor de la clienta— y en la matriz de hoy eso es la
+   * dueña. Devolver una PARADA que no se llegó a entregar es otra cosa y va
+   * con `pedidos`: ahí no hay venta que deshacer.
+   */
+  panel.post("/pedidos/:id/devolucion", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const motivo = (texto(b["motivo"]) ?? "").trim();
+    if (motivo === "") {
+      return c.json(
+        fallo("entrada_invalida", "diga por qué se devuelve: queda en la bitácora"),
+        400,
+      );
+    }
+    const r = await devolverPedidoEntregado(contextoEntrega(c), c.req.param("id"), motivo);
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
@@ -1276,6 +1555,82 @@ function registrarRutas(panel: Hono<Entorno>): void {
         "content-disposition": "inline",
       },
     });
+  });
+
+  /**
+   * Se le devuelve dinero a una clienta (asiento 14).
+   *
+   * Anota un reembolso QUE YA SE HIZO: la transferencia de vuelta, el efectivo
+   * entregado, o la devolución hecha en el portal de la pasarela. El sistema no
+   * mueve dinero —no tiene con qué— así que esto no ordena nada: registra el
+   * hecho y su asiento, juntos.
+   *
+   * Pide el permiso de `cobros` en «editar», que hoy solo tiene la dueña:
+   * quien despacha mira los pedidos y no saca dinero de ninguna cuenta.
+   */
+  panel.post("/cobros/:pagoId/reembolso", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const montoCents = entero(b["montoCents"]);
+    const motivo = texto(b["motivo"]);
+    const proveedorRef = texto(b["proveedorRef"]);
+
+    if (montoCents === undefined) {
+      // El monto NO se deduce del pago: un reembolso puede ser parcial, y
+      // suponer «el pago entero» es decidir por quien lo está registrando.
+      return c.json(fallo("entrada_invalida", "diga cuánto se le devolvió, en centavos"), 400);
+    }
+    if (motivo === undefined || motivo.trim() === "") {
+      return c.json(
+        fallo("entrada_invalida", "diga por qué se le devolvió: queda en la bitácora"),
+        400,
+      );
+    }
+
+    const r = await registrarReembolso(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      {
+        pagoId: c.req.param("pagoId"),
+        montoCents,
+        motivo,
+        ...(proveedorRef === undefined ? {} : { proveedorRef }),
+      },
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * La pasarela revierte un cobro (asiento 15).
+   *
+   * Lo registra una persona porque hoy ninguna pasarela está encendida y el
+   * aviso de PayPal todavía no llega a ningún sitio; el día que llegue, el
+   * webhook llamará a la misma función con los mismos datos.
+   */
+  panel.post("/cobros/:pagoId/contracargo", exigeEditar("cobros"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const montoCents = entero(b["montoCents"]);
+    const motivo = texto(b["motivo"]);
+    const proveedorRef = texto(b["proveedorRef"]);
+
+    if (montoCents === undefined) {
+      return c.json(fallo("entrada_invalida", "diga cuánto se llevaron, en centavos"), 400);
+    }
+    if (motivo === undefined || motivo.trim() === "") {
+      return c.json(
+        fallo("entrada_invalida", "diga qué dijo la pasarela: queda en la bitácora"),
+        400,
+      );
+    }
+
+    const r = await registrarContracargo(
+      { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
+      {
+        pagoId: c.req.param("pagoId"),
+        montoCents,
+        motivo,
+        ...(proveedorRef === undefined ? {} : { proveedorRef }),
+      },
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   /** Y dice que no. No se borra: queda el rechazo y su motivo. */
@@ -1532,6 +1887,53 @@ function registrarRutas(panel: Hono<Entorno>): void {
       "SELECT id, correo, nombre, rol, telegram_chat_id, activo, creado_en FROM usuarios ORDER BY nombre",
     ).all();
     return c.json(ok({ usuarios: results }));
+  });
+
+  /**
+   * Dar de alta a alguien en el panel.
+   *
+   * Entrar son DOS cosas: Cloudflare Access comprueba que la persona es quien
+   * dice ser, y esta tabla dice si además trabaja aquí. Esta ruta hace la
+   * segunda. La primera sigue siendo de Access: alguien dado de alta aquí y
+   * fuera de la aplicación de Access no entra, y hay que decirlo en la
+   * pantalla para que nadie dé por hecho que con esto basta.
+   */
+  panel.post("/usuarios", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    const r = await altaDeUsuario(
+      { db: c.env.DB, ahora: Date.now() },
+      { correo: b["correo"], nombre: b["nombre"], rol: b["rol"] },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Quitarle o devolverle el acceso a alguien.
+   *
+   * No se borra la fila: `usuarios.id` queda escrito en los pedidos que esa
+   * persona tomó y en los movimientos que registró. Lo que se apaga es el
+   * acceso, y tiene efecto en su siguiente petición.
+   *
+   * Quien no puede quedarse fuera es la ÚLTIMA DUEÑA ACTIVA: sin ella nadie
+   * tendría el permiso de `ajustes`, o sea que nadie podría volver a dar de
+   * alta a nadie, ni a sí mismo. Eso lo impide la fila de control dentro de
+   * `cambiarAcceso`, mirando cuántas quedaron después del cambio.
+   */
+  panel.patch("/usuarios/:id", exigeEditar("ajustes"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+    if (typeof b["activo"] !== "boolean") {
+      return c.json(fallo("entrada_invalida", "diga si la persona entra o no entra"), 400);
+    }
+
+    const r = await cambiarAccesoDeUsuario(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      b["activo"],
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   /**

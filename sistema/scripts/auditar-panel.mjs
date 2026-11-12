@@ -38,6 +38,11 @@ const PANTALLAS = [
   ["pedidos", "/pedidos"],
   ["entregas", "/entregas"],
   ["pasarelas", "/pasarelas"],
+  // Clientas sale DOS veces: aquí vacía —que es lo primero que ve la dueña al
+  // entrar, porque la lista no se enseña sin buscar— y más abajo con
+  // resultados y con la hoja abierta. Medir solo una de las dos diría que la
+  // pantalla está bien habiendo mirado la mitad.
+  ["clientas", "/clientas"],
   ["catalogo", "/catalogo"],
   ["existencias", "/existencias"],
   ["bodegas", "/bodegas"],
@@ -355,7 +360,100 @@ for (const [nombreVista, tamano] of VISTAS) {
         await pagina.waitForTimeout(150);
       }
 
+      /**
+       * Las hojas de bodegas, zonas y usuarios.
+       *
+       * Son las tres pantallas que hasta hace poco solo leían, así que sus
+       * hojas son lo más nuevo del panel — y lo más nuevo es lo que nadie ha
+       * mirado todavía en un teléfono. Las cuatro tienen campos, y una hoja
+       * con un campo a 14 px es una hoja en la que el teléfono hace zoom al
+       * escribir (§7b).
+       *
+       * Van en una tabla y no copiadas cuatro veces: lo único que cambia entre
+       * ellas es dónde se toca para abrirlas.
+       */
+      const HOJAS = [
+        // La de la bodega se abre y además se marca «Dejar de usarla», porque
+        // el aviso de las unidades que quedan dentro solo existe entonces — y
+        // es justo lo que hay que mirar en la captura.
+        {
+          nombre: "hoja-bodega",
+          ruta: "/bodegas",
+          abrir: /Principal/,
+          despues: async (p) => {
+            // El radio DENTRO de la hoja, por su papel. Buscarlo por texto
+            // encontraba el párrafo de la tarjeta de arriba —que explica lo
+            // mismo con las mismas palabras— y el clic se quedaba esperando
+            // detrás del diálogo para siempre.
+            const apagar = p
+              .locator("dialog.hoja[open]")
+              .getByRole("radio", { name: /Dejar de usarla/ });
+            if ((await apagar.count()) > 0) await apagar.check();
+          },
+        },
+        {
+          // Se elige el origen a propósito: el desplegable de «qué se mueve»
+          // no existe hasta entonces, y una hoja medida vacía deja sin medir
+          // justo el campo con el que se trabaja.
+          nombre: "hoja-traslado",
+          ruta: "/bodegas",
+          abrir: /Trasladar mercancía/,
+          despues: async (p) => {
+            await p.locator("dialog.hoja[open] select").first().selectOption({ index: 1 });
+          },
+        },
+        // La zona del interior: es la que viene «se cotiza a mano», o sea la
+        // que enseña las dos formas de cobrar y no solo la del número.
+        { nombre: "hoja-zona", ruta: "/zonas", abrir: /^Interior/ },
+        // El alta, que es la hoja de usuarios con campos; la de quitar el
+        // acceso se mide después.
+        { nombre: "hoja-usuario-alta", ruta: "/usuarios", abrir: /Dar de alta/ },
+        { nombre: "hoja-usuario", ruta: "/usuarios", abrir: /Yarielis/ },
+      ];
+
+      for (const hoja of HOJAS) {
+        await pagina.goto(`${BASE}${hoja.ruta}`, { waitUntil: "networkidle" });
+        const disparador = pagina.getByRole("button", { name: hoja.abrir }).first();
+        // Se ESPERA a que aparezca, no se cuenta y ya. `count()` contesta al
+        // instante, y el panel pinta después de contestar `/api/yo` y la
+        // consulta de la pantalla: en una máquina ocupada, contar sin esperar
+        // da cero sobre una pantalla que está perfecta. Pasó aquí —cinco
+        // hojas «sin forma de abrirlas» justo después de correr la suite— y
+        // el fallo era del guion, no del panel.
+        const aparecio = await disparador
+          .waitFor({ state: "visible", timeout: 10_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!aparecio) {
+          // Una hoja que no se puede abrir NO se da por buena en silencio: una
+          // pantalla que la auditoría no mide no dice «está bien», no dice
+          // nada. Se cuenta como falla para que se vea.
+          todas.push({
+            vista: nombreVista,
+            pantalla: hoja.nombre,
+            regla: "la hoja se puede abrir",
+            detalle: `no encontré con qué abrirla en ${hoja.ruta}`,
+          });
+          continue;
+        }
+        await disparador.click();
+        await pagina.waitForTimeout(300);
+        if (hoja.despues) await hoja.despues(pagina);
+        await pagina.waitForTimeout(150);
+
+        const suyas = await pagina.evaluate(medir);
+        revisadas += 1;
+        for (const f of suyas) todas.push({ vista: nombreVista, pantalla: hoja.nombre, ...f });
+
+        if (!soloMedir) {
+          await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-${hoja.nombre}.png` });
+        }
+        await pagina.keyboard.press("Escape");
+        await pagina.waitForTimeout(150);
+      }
+
       // Y la de agendar/cancelar, que es donde se toca un pedido de verdad.
+      await pagina.goto(`${BASE}/pedidos`, { waitUntil: "networkidle" });
       const unPedido = pagina.getByRole("button", { name: /BC-1041/ }).first();
       if ((await unPedido.count()) > 0) {
         await unPedido.click();
@@ -410,6 +508,51 @@ for (const [nombreVista, tamano] of VISTAS) {
       await pagina.keyboard.press("Escape");
       void abridor;
     }
+
+    // Clientas con resultados y con la ficha abierta. La lista no sale hasta
+    // que se escribe algo —es a propósito: nombres y teléfonos de personas no
+    // se listan solos— así que aquí se escribe, igual que haría la dueña.
+    //
+    // La hoja de la ficha es la que TIENE los campos: el apellido, la cédula y
+    // la dirección de facturación. Medirla a ojo es dejar que el teléfono haga
+    // zoom al escribir una cédula.
+    await pagina.goto(`${BASE}/clientas`, { waitUntil: "networkidle" });
+    const buscador = pagina.getByPlaceholder(/Celular o nombre/i).first();
+    if ((await buscador.count()) > 0) {
+      await buscador.fill("muestra");
+      await pagina.waitForTimeout(400);
+      const conResultados = await pagina.evaluate(medir);
+      revisadas += 1;
+      for (const f of conResultados) {
+        todas.push({ vista: nombreVista, pantalla: "clientas-buscada", ...f });
+      }
+      if (!soloMedir) {
+        await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-clientas-buscada.png`, fullPage: true });
+      }
+
+      const unaClienta = pagina.getByRole("button", { name: /Clienta De Muestra Villarreal/ }).first();
+      if ((await unaClienta.count()) > 0) {
+        await unaClienta.click();
+        await pagina.waitForTimeout(400);
+        const deLaFicha = await pagina.evaluate(medir);
+        revisadas += 1;
+        for (const f of deLaFicha) {
+          todas.push({ vista: nombreVista, pantalla: "hoja-ficha-clienta", ...f });
+        }
+        if (!soloMedir) {
+          await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-ficha-clienta.png` });
+        }
+        await pagina.keyboard.press("Escape");
+        await pagina.waitForTimeout(150);
+      }
+    }
+
+    // El cajón otra vez, que es lo que miden las comprobaciones de abajo: las
+    // pantallas de arriba lo dejaron cerrado.
+    await pagina.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    await pagina.waitForSelector("h1");
+    await pagina.getByRole("button", { name: /men/i }).first().click();
+    await pagina.waitForTimeout(300);
 
     if (aria.titulos < 2) {
       todas.push({

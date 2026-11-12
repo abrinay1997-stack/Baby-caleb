@@ -205,4 +205,82 @@ describe("/entregas", () => {
     expect(ids).toContain(activo);
     expect(ids).not.toContain(inactivo);
   });
+
+  /**
+   * La devolución de un pedido entregado, por su ruta.
+   *
+   * El módulo tiene sus pruebas en `db/entregas.test.ts`. Lo que se vigila aquí
+   * es que la puerta exista y pida lo que tiene que pedir: sin ruta, una
+   * devolución habría que escribirla a mano en la base, y eso es exactamente lo
+   * que este repositorio ya pagó tres veces.
+   */
+  describe("/pedidos/:id/devolucion", () => {
+    const pedidoDelEnvio = async (envioId: string) =>
+      (
+        await real.DB.prepare("SELECT pedido_id FROM envios WHERE id = ?")
+          .bind(envioId)
+          .first<{ pedido_id: string }>()
+      )?.pedido_id ?? "";
+
+    const existenciasDe = (envioId: string) =>
+      real.DB.prepare(
+        `SELECT fisico, reservado FROM existencias
+          WHERE codigo = 'NAT-M' AND bodega_id = (SELECT bodega_id FROM envios WHERE id = ?)`,
+      )
+        .bind(envioId)
+        .first<{ fisico: number; reservado: number }>();
+
+    /** Un pedido entregado de verdad, por la ruta de entregas. */
+    async function entregado() {
+      const envioId = await unEnvio(0);
+      const pedidoId = await pedidoDelEnvio(envioId);
+      const r = await postJson(entrandoComo("duena"), `/entregas/${envioId}/entregada`, {
+        idempotencia: `idem-dev-${envioId}`,
+      });
+      expect(r.estado, JSON.stringify(r.cuerpo)).toBe(200);
+      return { envioId, pedidoId };
+    }
+
+    it("quien despacha no la registra: una devolución decide dinero", async () => {
+      const { pedidoId } = await entregado();
+      const r = await postJson(entrandoComo("asistente"), `/pedidos/${pedidoId}/devolucion`, {
+        motivo: "le quedó chica",
+      });
+      expect(r.estado).toBe(403);
+      const p = await real.DB.prepare("SELECT estado FROM pedidos WHERE id = ?")
+        .bind(pedidoId)
+        .first<{ estado: string }>();
+      expect(p?.estado).toBe("entregado");
+    });
+
+    it("sin motivo no entra", async () => {
+      const { pedidoId } = await entregado();
+      const r = await postJson(entrandoComo("duena"), `/pedidos/${pedidoId}/devolucion`, {});
+      expect(r.estado).toBe(400);
+    });
+
+    it("la dueña la registra: la caja vuelve a la bodega y queda su asiento", async () => {
+      const { envioId, pedidoId } = await entregado();
+      // Entregada: la caja salió de la bodega y dejó de estar apartada.
+      expect(await existenciasDe(envioId)).toEqual({ fisico: 4, reservado: 0 });
+
+      const r = await postJson(entrandoComo("duena"), `/pedidos/${pedidoId}/devolucion`, {
+        motivo: "le quedó chica",
+      });
+      expect(r.estado, JSON.stringify(r.cuerpo)).toBe(200);
+
+      expect(await existenciasDe(envioId)).toEqual({ fisico: 5, reservado: 0 });
+      const p = await real.DB.prepare("SELECT estado FROM pedidos WHERE id = ?")
+        .bind(pedidoId)
+        .first<{ estado: string }>();
+      expect(p?.estado).toBe("devuelto");
+
+      const a = await real.DB.prepare(
+        "SELECT hecho FROM asientos WHERE referencia_tipo = 'pedido' AND referencia_id = ? AND hecho = '13'",
+      )
+        .bind(pedidoId)
+        .first<{ hecho: string }>();
+      expect(a?.hecho, "falta el asiento 13").toBe("13");
+    });
+  });
 });

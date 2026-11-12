@@ -74,6 +74,15 @@ export interface Filtro {
   readonly estado?: string;
   /** Texto del número o del nombre de la clienta. */
   readonly busca?: string;
+  /**
+   * Los de UNA clienta, para su ficha.
+   *
+   * Va aquí y no en una consulta propia de `clientes.ts` porque el recorte del
+   * dinero por rol vive en esta función: dos sitios decidiendo quién ve un
+   * total acaban discrepando, y el que se equivoca del lado flojo es el que
+   * nadie revisa.
+   */
+  readonly clienteId?: string;
   readonly limite?: number;
 }
 
@@ -128,10 +137,11 @@ export async function listarPedidos(
         WHERE (?1 IS NULL OR p.estado = ?1)
           AND (?2 = '' OR p.numero LIKE '%' || ?2 || '%'
                        OR c.nombre LIKE '%' || ?2 || '%')
+          AND (?4 IS NULL OR p.cliente_id = ?4)
         ORDER BY p.creado_en DESC
         LIMIT ?3`,
     )
-    .bind(filtro.estado ?? null, busca, limite + 1)
+    .bind(filtro.estado ?? null, busca, limite + 1, filtro.clienteId ?? null)
     .all<{
       id: string;
       numero: string;

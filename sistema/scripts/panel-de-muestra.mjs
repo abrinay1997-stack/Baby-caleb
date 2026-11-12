@@ -240,6 +240,151 @@ const asiento = (id, fecha, descripcion, origen, hecho, totalCents, lineas, extr
   ...extra,
 });
 
+/**
+ * Las clientas de muestra, con los TRES estados que la pantalla pinta
+ * distinto: una a la que le falta casi todo, una que ya está lista para
+ * cobrarle con tarjeta, y una sin dirección ni pedidos.
+ *
+ * Gente inventada y que se nota: nombres «de muestra», correos en `.test`
+ * —que es un dominio reservado, no le llega a nadie— y cédulas de ceros.
+ * Datos de clientas de verdad no entran en el repositorio, y menos en un
+ * guion que existe para hacer capturas.
+ *
+ * El nombre largo es a propósito: una caja se rompe con el nombre largo, no
+ * con «Ana».
+ */
+const CLIENTAS_DE_MUESTRA = [
+  {
+    id: "cli-muestra-1",
+    nombre: "Clienta De Muestra Villarreal Quintero",
+    celular_e164: "50760000101",
+    pedidos: 3,
+    ultimo_pedido: Date.now() - 2 * dia,
+  },
+  {
+    id: "cli-muestra-2",
+    nombre: "Clienta De Muestra Dos",
+    celular_e164: "50760000102",
+    pedidos: 1,
+    ultimo_pedido: Date.now() - 20 * dia,
+  },
+  {
+    id: "cli-muestra-3",
+    nombre: "Clienta De Muestra Tres",
+    celular_e164: "50760000103",
+    pedidos: 0,
+    ultimo_pedido: null,
+  },
+];
+
+/**
+ * La ficha de cada una, con la forma EXACTA de `leerFicha`.
+ *
+ * `falta` lo calcula el servidor de verdad; aquí se escribe a mano porque esto
+ * no ejecuta el Worker. Si las dos listas se separaran, la auditoría estaría
+ * mirando una pantalla que no existe — por eso cada una dice lo que de verdad
+ * le falta a SUS datos, campo por campo.
+ */
+const FICHAS_DE_MUESTRA = {
+  "cli-muestra-1": {
+    clienta: {
+      id: "cli-muestra-1",
+      nombre: "Clienta De Muestra Villarreal Quintero",
+      apellido: null,
+      celular_e164: "50760000101",
+      correo: null,
+      identificacion: null,
+      identificacion_tipo: null,
+      notas: null,
+      creado_en: Date.now() - 200 * dia,
+      actualizado_en: Date.now() - 2 * dia,
+      fusionado_en_id: null,
+      anonimizado_en: null,
+    },
+    direcciones: [
+      {
+        id: "dir-muestra-1",
+        zona: "Tocumen",
+        texto: "Calle de muestra, casa 101, planta baja",
+        referencia: "frente al parque de muestra",
+        ciudad: null,
+        provincia_iso: null,
+        codigo_postal: null,
+        pais: null,
+        activa: 1,
+      },
+    ],
+    pedidos: [
+      { id: "ped-m-1", numero: "BC-1041", estado: "entregado", estado_pago: "pagado",
+        creado_en: Date.now() - 2 * dia, lineas: 3, total_cents: 18_750, saldo_cents: 0 },
+      { id: "ped-m-2", numero: "BC-1032", estado: "entregado", estado_pago: "pagado",
+        creado_en: Date.now() - 40 * dia, lineas: 1, total_cents: 4_500, saldo_cents: 0 },
+      { id: "ped-m-3", numero: "BC-1020", estado: "cancelado", estado_pago: "sin_pago",
+        creado_en: Date.now() - 90 * dia, lineas: 2, total_cents: 9_900, saldo_cents: 9_900 },
+    ],
+    falta: {
+      paraTarjeta: ["el apellido", "el correo", "la ciudad", "la provincia", "el código postal", "el país"],
+      paraFactura: ["el apellido", "la cédula o el RUC"],
+    },
+  },
+  "cli-muestra-2": {
+    clienta: {
+      id: "cli-muestra-2",
+      nombre: "Clienta De Muestra",
+      apellido: "Dos",
+      celular_e164: "50760000102",
+      correo: "clienta.dos@ejemplo.test",
+      identificacion: "0-000-0000",
+      identificacion_tipo: "cedula",
+      notas: "Ficha de muestra, completa a propósito.",
+      creado_en: Date.now() - 60 * dia,
+      actualizado_en: Date.now() - dia,
+      fusionado_en_id: null,
+      anonimizado_en: null,
+    },
+    direcciones: [
+      {
+        id: "dir-muestra-2",
+        zona: "San Francisco",
+        texto: "Edificio de muestra, piso 2, apto 2B",
+        referencia: null,
+        ciudad: "Ciudad de muestra",
+        provincia_iso: "PA-8",
+        codigo_postal: "0000",
+        pais: "PA",
+        activa: 1,
+      },
+    ],
+    pedidos: [
+      { id: "ped-m-4", numero: "BC-1042", estado: "agendado", estado_pago: "abonado",
+        creado_en: Date.now() - 20 * dia, lineas: 2, total_cents: 7_200, saldo_cents: 3_200 },
+    ],
+    falta: { paraTarjeta: [], paraFactura: [] },
+  },
+  "cli-muestra-3": {
+    clienta: {
+      id: "cli-muestra-3",
+      nombre: "Clienta De Muestra Tres",
+      apellido: null,
+      celular_e164: "50760000103",
+      correo: null,
+      identificacion: null,
+      identificacion_tipo: null,
+      notas: null,
+      creado_en: Date.now() - 3 * dia,
+      actualizado_en: Date.now() - 3 * dia,
+      fusionado_en_id: null,
+      anonimizado_en: null,
+    },
+    direcciones: [],
+    pedidos: [],
+    falta: {
+      paraTarjeta: ["el apellido", "el correo", "una dirección"],
+      paraFactura: ["el apellido", "la cédula o el RUC"],
+    },
+  },
+};
+
 const RESPUESTAS = {
   "/api/yo": ok({
     usuario: {
@@ -612,11 +757,27 @@ const RESPUESTAS = {
         detalle: "Activos = pasivos + patrimonio + el resultado del periodo." },
       { clave: "venta_sin_asiento", titulo: "Todas las entregas del mes tienen su asiento de venta",
         estado: "ok", detalle: "Todas." },
+      { clave: "devolucion_sin_asiento", titulo: "Todas las devoluciones del mes tienen su asiento",
+        estado: "ok", detalle: "Todas." },
       { clave: "pago_sin_asiento", titulo: "Todo el dinero que entró tiene su asiento",
         estado: "ok", detalle: "Todo." },
       { clave: "cuadre", titulo: "Todos los asientos del mes tienen su cuadre", estado: "ok", detalle: "Todos." },
     ],
   }),
+
+  /**
+   * `/clientes`: el buscador de la pantalla de Clientas.
+   *
+   * Gente inventada, y que se note. La forma es la de `ClientaEnLista`
+   * (src/db/clientes.ts). Con la búsqueda vacía no devuelve a nadie, igual que
+   * la ruta de verdad: una lista completa de personas con su teléfono no sale
+   * de un panel sin que alguien la haya pedido, y la muestra tiene que
+   * enseñar ESA pantalla, no una más cómoda.
+   */
+  "/api/clientes": (url) =>
+    ok({
+      clientas: (url.searchParams.get("buscar") ?? "").trim() === "" ? [] : CLIENTAS_DE_MUESTRA,
+    }),
 
   // `/catalogo`: las columnas del SELECT, con costo porque el rol es dueña.
   "/api/catalogo": ok({
@@ -674,26 +835,52 @@ const RESPUESTAS = {
   }),
 
   // `/zonas`: ya con `alias` como lista (el Worker desarma `alias_json`).
+  //
+  // `region` y `metodo` son los del CHECK de `zonas_envio` —'ciudad' /
+  // 'interior' y 'motorizado' / 'ferguson' / 'otro'— y no los que suenan bien.
+  // Antes decían «Panamá Oeste» y «encomienda», que no existen: la pantalla
+  // los pintaba igual porque solo los mostraba, pero la hoja de editar elige
+  // entre las opciones de verdad y con un valor inventado no quedaría ninguna
+  // marcada. Una muestra que miente sobre los valores aprueba una pantalla que
+  // en producción sale distinta.
+  //
+  // `bodega_preferida_id` además del nombre: es lo que la hoja necesita para
+  // dejar marcada la bodega que ya estaba.
   "/api/zonas": ok({
     zonas: [
-      { id: "z1", nombre: "Ciudad de Panamá — centro", region: "Panamá", metodo: "motorizado",
-        tarifa_cents: 350, requiere_pago_total: 0, activa: 1, bodega_preferida: "Principal",
+      { id: "z1", nombre: "Ciudad de Panamá — centro", region: "ciudad", metodo: "motorizado",
+        tarifa_cents: 350, requiere_pago_total: 0, activa: 1,
+        bodega_preferida: "Principal", bodega_preferida_id: "b1",
         alias: ["San Francisco", "Obarrio", "Bella Vista", "El Cangrejo"] },
-      { id: "z2", nombre: "Panamá Oeste", region: "Panamá Oeste", metodo: "motorizado",
-        tarifa_cents: 600, requiere_pago_total: 0, activa: 1, bodega_preferida: "Principal",
+      { id: "z2", nombre: "Panamá Oeste", region: "ciudad", metodo: "motorizado",
+        tarifa_cents: 600, requiere_pago_total: 0, activa: 1,
+        bodega_preferida: "Principal", bodega_preferida_id: "b1",
         alias: ["Arraiján", "La Chorrera", "Vista Alegre"] },
-      { id: "z3", nombre: "Interior", region: "Interior", metodo: "encomienda",
-        tarifa_cents: 900, requiere_pago_total: 1, activa: 1, bodega_preferida: null,
+      // Tarifa nula: «se cotiza a mano». Es el caso que la pantalla tiene que
+      // enseñar con palabras y no con un hueco, y sin una fila así no se mira
+      // nunca.
+      { id: "z3", nombre: "Interior", region: "interior", metodo: "ferguson",
+        tarifa_cents: null, requiere_pago_total: 1, activa: 1,
+        bodega_preferida: null, bodega_preferida_id: null,
         alias: ["Chitré", "David", "Santiago", "Las Tablas"] },
-      // Sin alias: la celda tiene que decir algo, no quedarse vacía.
-      { id: "z4", nombre: "Retiro en tienda", region: "Panamá", metodo: "retiro",
-        tarifa_cents: 0, requiere_pago_total: 0, activa: 1, bodega_preferida: "Principal", alias: [] },
+      // Sin alias, y con tarifa CERO: el envío no se cobra. Al lado de la de
+      // arriba se ve la diferencia entre «gratis» y «todavía no se sabe».
+      { id: "z4", nombre: "Retiro en tienda", region: "ciudad", metodo: "otro",
+        tarifa_cents: 0, requiere_pago_total: 0, activa: 1,
+        bodega_preferida: "Principal", bodega_preferida_id: "b1", alias: [] },
+      // Pausada: el otro estado de la pastilla.
+      { id: "z5", nombre: "Colón", region: "interior", metodo: "otro",
+        tarifa_cents: null, requiere_pago_total: 1, activa: 0,
+        bodega_preferida: null, bodega_preferida_id: null, alias: ["Colon"] },
     ],
   }),
 
+  // `/usuarios`: el `id` de Yarielis es el MISMO que devuelve `/api/yo`. La
+  // hoja compara los dos para avisar «es su propia cuenta», y con ids
+  // distintos ese aviso no se ve nunca en la auditoría.
   "/api/usuarios": ok({
     usuarios: [
-      { id: "u1", correo: "duena@babycaleb.com", nombre: "Yarielis", rol: "duena",
+      { id: "01JBCX7K2M0000000000000000", correo: "duena@babycaleb.com", nombre: "Yarielis", rol: "duena",
         telegram_chat_id: "123456", activo: 1, creado_en: Date.now() - 60 * dia },
       { id: "u2", correo: "tienda@babycaleb.com", nombre: "Asistente de tienda", rol: "asistente",
         telegram_chat_id: null, activo: 1, creado_en: Date.now() - 20 * dia },
@@ -778,6 +965,22 @@ const servidor = createServer(async (pet, res) => {
   // esto, la parte que contesta «¿quién cambió esto y cuándo?» no la mira nunca
   // nadie. Se contesta con versiones para `abono_minimo_cents` y vacío para el
   // resto, que son los dos estados que la hoja enseña distinto.
+  // La ficha de una clienta. Sin esto, la hoja donde se escribe la cédula —que
+  // es la razón de existir de la pantalla de Clientas— no la mira nunca nadie.
+  const ficha = /^\/api\/clientes\/([^/]+)$/.exec(ruta);
+  if (ficha !== null) {
+    const id = decodeURIComponent(ficha[1]);
+    const suya = FICHAS_DE_MUESTRA[id];
+    if (suya === undefined) {
+      res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, codigo: "no_encontrado", mensaje: "no existe esa clienta" }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    res.end(ok(suya));
+    return;
+  }
+
   const hist = /^\/api\/ajustes\/([^/]+)\/historial$/.exec(ruta);
   if (hist !== null) {
     const clave = decodeURIComponent(hist[1]);

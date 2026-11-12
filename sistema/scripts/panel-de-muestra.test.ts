@@ -45,7 +45,10 @@ describe("el panel de muestra", () => {
     // Las siete pantallas más `/yo`. Si se añade una pantalla y no su muestra,
     // la auditoría la vería como un 404 y no como una pantalla.
     for (const r of ["/api/yo", "/api/resumen", "/api/catalogo", "/api/existencias",
-                     "/api/bodegas", "/api/zonas", "/api/ajustes", "/api/usuarios"]) {
+                     "/api/bodegas", "/api/zonas", "/api/ajustes", "/api/usuarios",
+                     // Clientas: sin su muestra, la auditoría mediría un 404
+                     // en la pantalla donde se escribe la cédula.
+                     "/api/clientes"]) {
       expect(rutas, `falta la muestra de ${r}`).toContain(r);
     }
   });

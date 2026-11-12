@@ -231,3 +231,111 @@ describe("/cobros", () => {
     expect(malo.estado).toBe(400);
   });
 });
+
+/**
+ * El dinero que vuelve, por la puerta por la que lo va a pedir la dueña.
+ *
+ * Las funciones tienen sus pruebas en `test/pagos-manuales.test.ts`. Esto
+ * vigila otra cosa, y es la que faltó tres veces en este repositorio: que
+ * exista una RUTA. Un reembolso que solo se puede hacer escribiendo SQL a mano
+ * no es un reembolso que el negocio pueda hacer.
+ */
+describe("el dinero que vuelve, desde el panel", () => {
+  /** Un pedido con un abono ya confirmado, por las rutas de verdad. */
+  async function conAbonoConfirmado(montoCents: number) {
+    const { pedidoId, numero } = await unPedido();
+    const puesto = await postJson(entrandoComo("duena"), "/cobros", {
+      pedidoId,
+      montoCents,
+      metodo: "yappy",
+      tipo: "abono",
+      idempotencia: `comp-${pedidoId}`,
+    });
+    expect(puesto.estado, JSON.stringify(puesto.cuerpo)).toBe(200);
+    const pagoId = (puesto.cuerpo["datos"] as { pagoId: string }).pagoId;
+
+    const conf = await postJson(entrandoComo("duena"), `/cobros/${pagoId}/confirmar`, {});
+    expect(conf.estado, JSON.stringify(conf.cuerpo)).toBe(200);
+    return { pedidoId, numero, pagoId };
+  }
+
+  const pedidoDe = (pedidoId: string) =>
+    real.DB.prepare("SELECT pagado_cents, estado_pago FROM pedidos WHERE id = ?")
+      .bind(pedidoId)
+      .first<{ pagado_cents: number; estado_pago: string }>();
+
+  it("quien despacha no saca dinero de ninguna cuenta", async () => {
+    const r = await postJson(entrandoComo("asistente"), "/cobros/lo-que-sea/reembolso", {
+      montoCents: 1000,
+      motivo: "da igual",
+    });
+    expect(r.estado).toBe(403);
+  });
+
+  it("sin monto no se registra: el reembolso puede ser parcial y no se supone", async () => {
+    const { pedidoId, pagoId } = await conAbonoConfirmado(3000);
+    const r = await postJson(entrandoComo("duena"), `/cobros/${pagoId}/reembolso`, {
+      motivo: "se arrepintió",
+    });
+    expect(r.estado).toBe(400);
+    expect((await pedidoDe(pedidoId))?.pagado_cents, "no salió ni un peso").toBe(3000);
+  });
+
+  it("sin motivo tampoco", async () => {
+    const { pagoId } = await conAbonoConfirmado(3000);
+    const r = await postJson(entrandoComo("duena"), `/cobros/${pagoId}/reembolso`, {
+      montoCents: 3000,
+    });
+    expect(r.estado).toBe(400);
+  });
+
+  it("la dueña lo registra y el pedido deja de tener ese dinero", async () => {
+    const { pedidoId, pagoId } = await conAbonoConfirmado(3000);
+
+    const r = await postJson(entrandoComo("duena"), `/cobros/${pagoId}/reembolso`, {
+      montoCents: 3000,
+      motivo: "se arrepintió y no había salido",
+    });
+    expect(r.estado, JSON.stringify(r.cuerpo)).toBe(200);
+
+    const p = await pedidoDe(pedidoId);
+    expect(p?.pagado_cents).toBe(0);
+    expect(p?.estado_pago).toBe("reembolsado");
+
+    // Y con su asiento: un reembolso sin asiento es dinero que sale y los
+    // libros no explican, que es lo que no se descubre hasta el cierre.
+    const a = await real.DB.prepare(
+      "SELECT hecho FROM asientos WHERE referencia_tipo = 'pago' AND referencia_id = ? AND hecho = '14'",
+    )
+      .bind(pagoId)
+      .first<{ hecho: string }>();
+    expect(a?.hecho, "falta el asiento 14").toBe("14");
+  });
+
+  it("un contracargo también entra por su ruta, y tampoco lo registra quien despacha", async () => {
+    const no = await postJson(entrandoComo("asistente"), "/cobros/lo-que-sea/contracargo", {
+      montoCents: 1000,
+      motivo: "da igual",
+    });
+    expect(no.estado).toBe(403);
+
+    // Se prueba con un cobro por Yappy porque es el único proveedor encendido
+    // hoy; cuando Tilopay y PayPal estén, llegará por el mismo sitio. La
+    // cuenta sale del pago, así que la ruta no tiene que saber cuál es.
+    const { pedidoId, pagoId } = await conAbonoConfirmado(2500);
+    const r = await postJson(entrandoComo("duena"), `/cobros/${pagoId}/contracargo`, {
+      montoCents: 2500,
+      motivo: "la clienta desconoció el cargo",
+      proveedorRef: "DISPUTA-9",
+    });
+    expect(r.estado, JSON.stringify(r.cuerpo)).toBe(200);
+
+    expect((await pedidoDe(pedidoId))?.pagado_cents).toBe(0);
+    const a = await real.DB.prepare(
+      "SELECT hecho FROM asientos WHERE referencia_tipo = 'pago' AND referencia_id = ? AND hecho = '15'",
+    )
+      .bind(pagoId)
+      .first<{ hecho: string }>();
+    expect(a?.hecho, "falta el asiento 15").toBe("15");
+  });
+});
