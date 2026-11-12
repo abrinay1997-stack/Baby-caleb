@@ -11,8 +11,11 @@
  *  - `proveedor.ts`    el cerebro, detrás de una interfaz (guion fijo y Meta).
  *  - `herramientas/`   las herramientas de verdad: `catalogo.ts` es lo que se
  *                      le puede contestar a una clienta (precio, talla, peso y
- *                      la etiqueta de si hay) e `inventario.ts` es para ir a la
- *                      bodega (el número exacto, por bodega).
+ *                      la etiqueta de si hay), `inventario.ts` es para ir a la
+ *                      bodega (el número exacto, por bodega) y
+ *                      `catalogo-escritura.ts` es administrar el catálogo
+ *                      —crear, editar y retirar— por la misma puerta que el
+ *                      panel.
  *
  * Lo que el asistente NUNCA hace no se comprueba: no existe. No hay forma de
  * declarar una herramienta que borre un asiento, cambie un permiso, lea un
@@ -25,6 +28,7 @@ export * from "./referencias";
 export * from "./proveedor";
 
 import { HERRAMIENTAS_DE_CATALOGO } from "./herramientas/catalogo";
+import { HERRAMIENTAS_DE_CATALOGO_ESCRITURA } from "./herramientas/catalogo-escritura";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
 import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
 import { Registro } from "./registro";
@@ -39,6 +43,7 @@ export function catalogo(): Registro {
   const r = new Registro();
   for (const h of [
     ...HERRAMIENTAS_DE_CATALOGO,
+    ...HERRAMIENTAS_DE_CATALOGO_ESCRITURA,
     ...HERRAMIENTAS_DE_INVENTARIO,
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
   ]) {
@@ -49,4 +54,9 @@ export function catalogo(): Registro {
 
 export * from "./ejecutar";
 export * from "./conversar";
-export { HERRAMIENTAS_DE_CATALOGO, HERRAMIENTAS_DE_INVENTARIO, HERRAMIENTAS_DE_PRECIOS_Y_STOCK };
+export {
+  HERRAMIENTAS_DE_CATALOGO,
+  HERRAMIENTAS_DE_CATALOGO_ESCRITURA,
+  HERRAMIENTAS_DE_INVENTARIO,
+  HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
+};
