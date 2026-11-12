@@ -11,6 +11,21 @@ import type { Estado } from "./api";
  * se rompe en una de ellas sin que nadie lo note.
  */
 
+/**
+ * Quita el punto final de una fecha ya formateada.
+ *
+ * En español de Panamá, `Intl` escribe la hora como «10:38 p. m.» —con punto
+ * al final, porque es una abreviatura—, así que cualquier frase que termine
+ * con una fecha sale con DOS puntos seguidos: «…el 12 nov 2026, 1:24 p. m.».
+ * Se ve en la captura, no razonándolo.
+ *
+ * Vive aquí, con lo que comparten todas las pantallas, y no copiada en cada
+ * una: estaba escrita solo en el Resumen y las otras cuatro frases del panel
+ * que terminan en fecha salían con el punto doble. Una regla que hay que
+ * acordarse de volver a escribir se olvida en el cuarto sitio.
+ */
+export const sinPuntoFinal = (texto: string): string => texto.replace(/\.$/, "");
+
 /** Tarjeta: el envoltorio de casi todo. */
 export function Tarjeta({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (

@@ -1,7 +1,17 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { dinero, fecha as comoFecha, useCarga } from "../api";
-import { Carga, Cifra, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
+import {
+  Carga,
+  Cifra,
+  Celda,
+  Fila,
+  Pastilla,
+  Rejilla,
+  Tarjeta,
+  Vacio,
+  sinPuntoFinal,
+} from "../componentes";
 import {
   type Comparacion,
   type Escala,
@@ -146,15 +156,6 @@ function diaCorto(fechaISO: string): string {
     timeZone: "UTC",
   }).format(new Date(`${fechaISO}T00:00:00Z`));
 }
-
-/**
- * Quita el punto final de una fecha ya formateada.
- *
- * En español de Panamá, Intl escribe «10:38 p. m.» con punto al final, así que
- * una frase que termina con la hora sale con dos puntos seguidos. Se vio en la
- * captura, no razonándolo.
- */
-const sinPuntoFinal = (texto: string): string => texto.replace(/\.$/, "");
 
 /** Cómo se llama el periodo y con qué se compara, en palabras de la dueña. */
 const PALABRAS: Record<NombrePeriodo, { titulo: string; contra: string }> = {

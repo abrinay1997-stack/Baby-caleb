@@ -1,7 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { type Yo, dinero, fecha as comoFecha, pedir, useCarga } from "../api";
-import { Carga, Celda, Fila, Pastilla, Rejilla, Tarjeta, Vacio } from "../componentes";
+import {
+  Carga,
+  Celda,
+  Fila,
+  Pastilla,
+  Rejilla,
+  Tarjeta,
+  Vacio,
+  sinPuntoFinal,
+} from "../componentes";
 import { Hoja } from "../armazon/Hoja";
 import { ETIQUETAS_ENVIO, type EstadoEnvio } from "../../../src/dominio/estado-envio";
 
@@ -129,6 +138,61 @@ function Campo({
   );
 }
 
+/**
+ * El nombre de una ventana de entrega, a partir de su código.
+ *
+ * `envios.ventana` guarda el CÓDIGO (`manana`), que no cambia nunca porque es
+ * lo que queda escrito en cada envío; el nombre que lee una persona
+ * («Mañana») vive en el ajuste `ventanas_entrega`, que la dueña puede cambiar
+ * cuando quiera. La hoja de la parada enseñaba el código: «BC-1044 · Ciudad
+ * de Panamá — centro · manana», sin ñ, porque nunca fue una palabra.
+ *
+ * Si el código no está en la lista, se enseña el código TAL CUAL. Inventarle
+ * un nombre bonito a un código que ya nadie reconoce sería peor: diría que la
+ * ventana existe cuando lo que pasa es que se borró o se renombró.
+ */
+export function nombreDeVentana(
+  codigo: string | null,
+  ventanas: readonly { id: string; etiqueta: string }[],
+): string | null {
+  if (codigo === null) return null;
+  return ventanas.find((v) => v.id === codigo)?.etiqueta ?? codigo;
+}
+
+/**
+ * Las ventanas con su nombre, leídas de su único dueño: el ajuste.
+ *
+ * Va aparte de `/api/entregas` porque el día solo trae los códigos. Y va con
+ * `pedir` y no con `useCarga` a propósito: es un adorno, no la pantalla. Si
+ * quien abre Entregas no puede leer los ajustes —el reparto no los lee— o la
+ * consulta falla, la hoja enseña el código y no se rompe nada.
+ */
+function useVentanas(puedeVerAjustes: boolean): { id: string; etiqueta: string }[] {
+  const [ventanas, setVentanas] = useState<{ id: string; etiqueta: string }[]>([]);
+  useEffect(() => {
+    if (!puedeVerAjustes) return;
+    let vivo = true;
+    pedir<{ ajustes: { clave: string; valor: unknown; pendiente: boolean }[] }>("/api/ajustes")
+      .then((d) => {
+        if (!vivo) return;
+        const a = d.ajustes.find((x) => x.clave === "ventanas_entrega");
+        if (a === undefined || a.pendiente || !Array.isArray(a.valor)) return;
+        setVentanas(
+          (a.valor as { id?: unknown; etiqueta?: unknown }[])
+            .filter((v) => typeof v.id === "string" && typeof v.etiqueta === "string")
+            .map((v) => ({ id: v.id as string, etiqueta: v.etiqueta as string })),
+        );
+      })
+      .catch(() => {
+        // En silencio: la hoja enseña el código, que es verdad.
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [puedeVerAjustes]);
+  return ventanas;
+}
+
 export function Entregas() {
   const yo = useOutletContext<Yo>();
   const [dia, setDia] = useState(() => hoyEnPanama());
@@ -143,6 +207,8 @@ export function Entregas() {
   const [motivoRuta, setMotivoRuta] = useState("");
 
   const estado = useCarga<Datos>(`/api/entregas?fecha=${dia}`, [dia, recarga]);
+
+  const ventanas = useVentanas(yo.permisos["ajustes"] !== "no");
 
   const puedeDespachar = yo.permisos["pedidos"] === "editar";
   const puedeCobrar = yo.permisos["cobros"] === "editar";
@@ -419,6 +485,7 @@ export function Entregas() {
           {mirando === null ? null : (
             <HojaDeParada
               parada={mirando}
+              ventanas={ventanas}
               puedeCobrar={puedeCobrar}
               puedeDespachar={puedeDespachar}
               alCerrar={() => setMirando(null)}
@@ -690,12 +757,14 @@ function ArmarRuta({
  */
 function HojaDeParada({
   parada,
+  ventanas,
   puedeCobrar,
   puedeDespachar,
   alCerrar,
   alHecho,
 }: {
   parada: Parada;
+  ventanas: readonly { id: string; etiqueta: string }[];
   puedeCobrar: boolean;
   puedeDespachar: boolean;
   alCerrar: () => void;
@@ -747,7 +816,7 @@ function HojaDeParada({
       <p className="m-0 mb-4 text-muted">
         {parada.pedido}
         {parada.zona === null ? "" : ` · ${parada.zona}`}
-        {parada.ventana === null ? "" : ` · ${parada.ventana}`}
+        {parada.ventana === null ? "" : ` · ${nombreDeVentana(parada.ventana, ventanas)}`}
         <br />
         {parada.direccion ?? "Sin dirección escrita: hay que llamar."}
         {parada.referencia === null ? "" : ` (${parada.referencia})`}
@@ -767,7 +836,8 @@ function HojaDeParada({
 
       {parada.estado === "entregado" ? (
         <p className="m-0 text-muted">
-          Entregada {parada.entregadoEn === null ? "" : comoFecha(parada.entregadoEn)}.{" "}
+          Entregada{" "}
+          {parada.entregadoEn === null ? "" : sinPuntoFinal(comoFecha(parada.entregadoEn))}.{" "}
           {parada.cobradoCents > 0
             ? `Se cobraron ${dinero(parada.cobradoCents)} en ${parada.cobroMetodo ?? "—"}.`
             : "No se cobró nada en la puerta."}

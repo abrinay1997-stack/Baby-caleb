@@ -129,6 +129,34 @@ select {
    hueco. Puesta a mano (`bottom-20` y un alto que salía del relleno), las dos
    medidas se separaron y la burbuja se sentó encima de los botones del dinero.
    --------------------------------------------------------------------------- */
+/* Con una hoja abierta, la burbuja se quita de en medio.
+ *
+ * El hueco que `.contenido` reserva protege la lista de abajo, y no puede
+ * proteger una hoja: una hoja es un `<dialog>` modal, vive fuera de ese
+ * contenedor y se dibuja encima de todo. Así que con una hoja abierta la
+ * burbuja se sentaba sobre sus botones — sobre «Confirmar: pasar a pedido» y
+ * sobre «Sí, descartar», que son decisiones, no adornos. Trece casos medidos.
+ *
+ * Esconderla es además lo correcto por sí solo: `showModal()` deja el resto de
+ * la página inerte, así que la burbuja ya no respondía al toque. Lo único que
+ * hacía era tapar.
+ *
+ * El cajón del menú es el otro caso y va por el mismo camino: no es un
+ * `<dialog>` sino un panel con `aria-modal`, y vive SIEMPRE en el árbol —se
+ * desliza con una transformación— así que no vale preguntar si existe. Lo que
+ * dice si está abierto es el `inert` que ya se le pone al cerrarlo, justo para
+ * que el tabulador no entre en un cajón que no se ve. Se reutiliza eso en vez
+ * de añadir una marca nueva: dos señales para el mismo hecho acaban
+ * discrepando.
+ *
+ * Una regla de CSS y no una bandera en React: así vale para cualquier hoja,
+ * incluidas las que alguien añada mañana, sin que nadie tenga que acordarse.
+ */
+body:has(dialog[open]) .burbuja-caleb,
+body:has([aria-modal="true"]:not([inert])) .burbuja-caleb {
+  display: none;
+}
+
 .burbuja-caleb {
   position: fixed;
   right: 16px;

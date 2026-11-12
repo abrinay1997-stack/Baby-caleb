@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  comoCobra,
   comoSeLeeLaLinea,
+  fraseDeCobro,
   firmaDe,
   peticionDeAccion,
   tituloDeAccion,
@@ -226,5 +228,58 @@ describe("lo que se lee", () => {
     });
     expect(deModo).toContain(CONECTORES.yappy.titulo);
     expect(deModo).not.toContain("Clave secreta");
+  });
+});
+
+/**
+ * «Está cobrando» de una pasarela que no cobra nada.
+ *
+ * La tarjeta lo decía de CUALQUIER pasarela encendida, sin mirar el modo. Con
+ * Yappy encendida en prueba eso afirma que le está cobrando a las clientas
+ * cuando no les cobra nada — y la pantalla contradecía al dominio en lo único
+ * que existe para contestar.
+ *
+ * Lo que se comprueba aquí es que el veredicto sale de `dominio/checkout.ts`
+ * y dice el modo. Validada por mutación: volver a «Está cobrando.» para toda
+ * encendida pone roja la segunda.
+ */
+describe("qué dice la tarjeta de una pasarela", () => {
+  const completa = [
+    { modo: "prueba" as Modo, esElActual: true, credenciales: [], faltan: [], completo: true },
+    { modo: "real" as Modo, esElActual: false, credenciales: [], faltan: [], completo: true },
+  ];
+
+  it("en modo real y encendida: cobra dinero de verdad", () => {
+    const p = unaPasarela({
+      encendida: true,
+      modo: "real",
+      puede_encenderse: true,
+      modos: completa.map((m) => ({ ...m, esElActual: m.modo === "real" })),
+    });
+    expect(comoCobra(p)).toBe("real");
+    expect(fraseDeCobro(p)).toMatch(/de verdad/);
+  });
+
+  it("en modo de prueba y encendida: NO le cobra nada a nadie, y lo dice", () => {
+    const p = unaPasarela({ encendida: true, modo: "prueba", puede_encenderse: true, modos: completa });
+    expect(comoCobra(p)).toBe("prueba");
+    const frase = fraseDeCobro(p);
+    expect(frase).toMatch(/prueba/i);
+    expect(frase).not.toMatch(/Está cobrando dinero de verdad/);
+  });
+
+  it("apagada: ni cobra ni dice que cobra", () => {
+    const p = unaPasarela({ encendida: false, modo: "real", puede_encenderse: true, modos: completa });
+    expect(comoCobra(p)).toBe("no");
+    expect(fraseDeCobro(p)).toBe("Lista para encender.");
+  });
+
+  it("encendida con las credenciales incompletas tampoco cobra", () => {
+    const p = unaPasarela({
+      encendida: true,
+      modo: "real",
+      modos: completa.map((m) => ({ ...m, completo: false, faltan: ["Clave secreta"] })),
+    });
+    expect(comoCobra(p)).toBe("no");
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { buscarProductos } from "./buscar-productos";
 import { dinero, fecha, pedir, useCarga } from "../api";
 import { Hoja } from "../armazon/Hoja";
+import { sinPuntoFinal } from "../componentes";
 
 /**
  * Tomar un pedido desde el panel — o hacer una cotización.
@@ -361,7 +362,7 @@ export function NuevoPedido({
               confirme, y entonces pasa a ser un pedido.
               {hecho.venceEn === null
                 ? " No caduca: todavía no está decidido cuántos días vale una cotización."
-                : ` Vale hasta el ${fecha(hecho.venceEn)}.`}
+                : ` Vale hasta el ${sinPuntoFinal(fecha(hecho.venceEn))}.`}
             </p>
           )}
         </div>

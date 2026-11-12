@@ -54,6 +54,19 @@ interface Veredicto {
   razones: string[];
 }
 
+/**
+ * Qué dice la ayuda de «Mostrarlo en la web», según cómo esté la casilla.
+ *
+ * Vive fuera del componente para poder probarla: lo que hay que fijar aquí no
+ * es cómo se pinta, es que el texto NO pueda volver a decir lo contrario de la
+ * casilla que tiene al lado.
+ */
+export function textoDePublicado(publicado: boolean): string {
+  return publicado
+    ? "Encendido: sale en la tienda y el bot lo ofrece."
+    : "Apagado: no lo ve nadie y el bot no lo ofrece.";
+}
+
 export function EditarVariante({
   variante,
   alCerrar,
@@ -514,9 +527,20 @@ export function EditarVariante({
         />
         <span>
           <span className="block font-bold">Mostrarlo en la web</span>
-          <span className="block text-[12px] text-muted">
-            Apagado, nadie lo ve y el bot no lo ofrece.
-          </span>
+          {/*
+            El texto DEPENDE de la casilla. Era fijo —«Apagado, nadie lo ve»—
+            así que con la casilla MARCADA la pantalla decía que el producto
+            estaba apagado, mientras la lista de al lado le ponía la pastilla
+            verde «En la web». Dos pantallas del mismo panel diciendo lo
+            contrario sobre si un producto se está vendiendo, y la forma
+            natural de «arreglarlo» es quitar la marca — que es justo lo que
+            apaga el producto de verdad.
+
+            Dice lo que pasa AHORA, no lo que pasaría al cambiarlo: una ayuda
+            que describe el otro estado obliga a leerla dos veces para saber
+            en cuál se está.
+          */}
+          <span className="block text-[12px] text-muted">{textoDePublicado(publicado)}</span>
         </span>
       </label>
     </Hoja>
