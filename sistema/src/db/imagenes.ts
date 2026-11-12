@@ -46,6 +46,48 @@ export function tipoDeImagen(datos: ArrayBuffer): TipoDeImagen | null {
 }
 
 /**
+ * ¿Es una foto de iPhone sin convertir?
+ *
+ * Un iPhone guarda en HEIC desde hace años, y es lo que sale al elegir una
+ * foto del carrete. No se acepta —ningún navegador la pinta, así que subirla
+ * sería guardar una imagen que la tienda no puede enseñar— pero reconocerla
+ * cambia por completo lo que se le dice a la persona.
+ *
+ * Sin esto, la dueña sube la foto de un pañal desde su teléfono y lee «Ese
+ * archivo no es una imagen». Es verdad para el servidor y es absurdo para
+ * ella, que está mirando la foto. Con esto lee qué hacer.
+ *
+ * HEIC comparte contenedor con AVIF (los dos son ISO-BMFF), así que la marca
+ * va en el mismo sitio y solo cambia el nombre: `heic`, `heix`, `hevc`,
+ * `mif1`, `msf1`.
+ */
+export function esFotoDeIphone(datos: ArrayBuffer): boolean {
+  const b = new Uint8Array(datos);
+  if (b.length < 12) return false;
+  if (!dice(b, "ftyp", 4)) return false;
+  return ["heic", "heix", "hevc", "hevx", "mif1", "msf1"].some((m) => dice(b, m, 8));
+}
+
+/**
+ * Qué decirle a quien subió algo que no se puede publicar.
+ *
+ * Dos mensajes y no uno, porque son dos problemas distintos: uno tiene
+ * arreglo en el teléfono de la persona y el otro no.
+ */
+export function porQueNoSirveLaImagen(datos: ArrayBuffer): string {
+  if (esFotoDeIphone(datos)) {
+    return (
+      "Esa foto está en formato HEIC, que es como las guarda el iPhone y ningún navegador " +
+      "la puede enseñar. Arréglelo así en su teléfono: Ajustes › Cámara › Formatos › " +
+      "«Más compatible», y vuelva a tomarla. Para una foto que ya tiene: ábrala en Fotos, " +
+      "toque Compartir › Opciones, y active «Todos los datos de la foto» en formato JPEG. " +
+      "También sirve mandársela por WhatsApp a usted misma y descargarla: llega en JPG."
+    );
+  }
+  return "Ese archivo no es una imagen (se aceptan JPG, PNG, WebP y AVIF).";
+}
+
+/**
  * Lo más grande que se acepta: 5 MB.
  *
  * Una foto de teléfono moderno pesa entre 2 y 4 MB sin tocar, y pedirle a

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EXTENSIONES, MAXIMO_BYTES, TIPOS_DE_IMAGEN, tipoDeImagen } from "./imagenes";
+import { EXTENSIONES, MAXIMO_BYTES, TIPOS_DE_IMAGEN, esFotoDeIphone, porQueNoSirveLaImagen, tipoDeImagen } from "./imagenes";
 
 /**
  * Qué es un archivo de verdad.
@@ -86,5 +86,48 @@ describe("coherencia", () => {
 
   it("el tope son 5 MB, que es una foto de teléfono sin encoger", () => {
     expect(MAXIMO_BYTES).toBe(5 * 1024 * 1024);
+  });
+});
+
+describe("la foto de un iPhone", () => {
+  /** Los doce primeros bytes de un HEIC: tamaño de caja, «ftyp» y la marca. */
+  const heic = (marca: string): ArrayBuffer => {
+    const b = new Uint8Array(32);
+    b.set([0, 0, 0, 0x20], 0);
+    b.set([..."ftyp"].map((c) => c.charCodeAt(0)), 4);
+    b.set([...marca].map((c) => c.charCodeAt(0)), 8);
+    return b.buffer;
+  };
+
+  it("no se acepta, porque ningún navegador la puede enseñar", () => {
+    for (const marca of ["heic", "heix", "mif1", "msf1"]) {
+      expect(tipoDeImagen(heic(marca)), marca).toBeNull();
+    }
+  });
+
+  it("pero se RECONOCE, y eso cambia lo que se le dice a la persona", () => {
+    // Sin esto, la dueña sube la foto de un pañal desde su teléfono y lee
+    // «Ese archivo no es una imagen», mirando la foto. El mensaje tiene que
+    // decirle qué tocar en su iPhone.
+    const mensaje = porQueNoSirveLaImagen(heic("heic"));
+    expect(mensaje).toContain("HEIC");
+    expect(mensaje).toContain("Más compatible");
+    expect(mensaje).not.toContain("no es una imagen");
+  });
+
+  it("y lo que de verdad no es una imagen sigue diciéndolo claro", () => {
+    const basura = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]).buffer;
+    expect(porQueNoSirveLaImagen(basura)).toContain("no es una imagen");
+  });
+
+  it("y un AVIF de verdad, que comparte contenedor con HEIC, no se confunde", () => {
+    // Los dos son ISO-BMFF y la marca va en el mismo sitio. Si la detección
+    // mirara solo «ftyp», un AVIF bueno se rechazaría como foto de iPhone.
+    const b = new Uint8Array(32);
+    b.set([0, 0, 0, 0x20], 0);
+    b.set([..."ftyp"].map((c) => c.charCodeAt(0)), 4);
+    b.set([..."avif"].map((c) => c.charCodeAt(0)), 8);
+    expect(tipoDeImagen(b.buffer)).toBe("image/avif");
+    expect(esFotoDeIphone(b.buffer)).toBe(false);
   });
 });

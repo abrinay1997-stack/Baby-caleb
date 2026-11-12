@@ -223,16 +223,44 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # El despliegue de staging terminaba SIEMPRE en rojo, y no porque algo
+      # estuviera roto: el Worker subía bien y la base migraba bien. Lo que no
+      # podía pasar nunca era esta comprobación, porque la dirección de staging
+      # está detrás de Cloudflare Access —en workers.dev Access cubre el Worker
+      # ENTERO, ese dominio no es nuestro y no hay recorte por ruta— y Access
+      # contesta un 302 de login antes de que el Worker corra.
+      #
+      # Un control que no puede pasar nunca es peor que ninguno: enseña a
+      # ignorar el rojo, y el día que staging se rompa de verdad nadie lo va a
+      # mirar. Así que la comprobación se hace si HAY con qué hacerla, y si no
+      # se dice en el resumen en vez de tumbar un despliegue que salió bien.
+      #
+      # Producción no pasa por aquí: ahí la salud se mide en
+      # `ruta.babycaleb.com`, que es la superficie del motorizado y no tiene
+      # Access delante.
       - name: Comprobar /salud
+        if: ${{ secrets.ACCESS_CLIENT_ID != '' && secrets.ACCESS_CLIENT_SECRET != '' }}
         run: ../.github/scripts/salud.sh "${{ steps.desplegar.outputs.url }}" "$GITHUB_SHA"
         env:
-          # Credencial de servicio para pasar Cloudflare Access. En workers.dev
-          # Access cubre el Worker ENTERO —ese dominio no es nuestro, así que no
-          # hay recorte por ruta—, de modo que /salud no se puede dejar pública
-          # y el despliegue tiene que entrar con credencial propia. Si los
-          # secretos no están, el guion no manda cabeceras y lo dice.
           ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
           ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
+
+      - name: Sin credencial, sin comprobación (y se dice)
+        if: ${{ secrets.ACCESS_CLIENT_ID == '' || secrets.ACCESS_CLIENT_SECRET == '' }}
+        run: |
+          {
+            echo "### Staging desplegado, pero SIN comprobar"
+            echo
+            echo "El Worker subió y la base migró. Lo que no se pudo hacer es preguntarle"
+            echo "si está sano: \`${{ steps.desplegar.outputs.url }}/salud\` está detrás de"
+            echo "Cloudflare Access y contesta un login antes de que el Worker corra."
+            echo
+            echo "Para cerrarlo, una vez: cree un **Service Token** en Zero Trust, añádale"
+            echo "a esa aplicación de Access una política *Service Auth* que lo acepte, y"
+            echo "guarde \`ACCESS_CLIENT_ID\` y \`ACCESS_CLIENT_SECRET\` en los secretos"
+            echo "del repositorio. Desde entonces este paso corre solo."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Staging sin comprobar::Falta el Service Token de Access; el despliegue salió bien pero nadie le preguntó si está sano."
 
   produccion:
     name: Desplegar a producción
