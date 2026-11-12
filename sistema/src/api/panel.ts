@@ -73,6 +73,7 @@ import {
   alta as altaDeUsuario,
   cambiarAcceso as cambiarAccesoDeUsuario,
 } from "../db/usuarios";
+import { MINUTOS_VINCULO, crearCodigoDeVinculo } from "../db/telegram";
 import {
   buscar as buscarClientas,
   editar as editarClienta,
@@ -1944,6 +1945,43 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
       b["activo"],
     );
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Un código para vincular el Telegram de alguien.
+   *
+   * La puerta de Telegram autentica cruzando el `chat_id` con
+   * `usuarios.telegram_chat_id`, y esa columna existe desde la primera
+   * migración sin que nada la escribiera: la única forma de poner un chat ahí
+   * era un UPDATE a mano en la consola de D1, y la dueña de este sistema no
+   * usa la terminal. Una puerta cuya llave se fabrica por SQL es una puerta
+   * cerrada.
+   *
+   * El código se devuelve UNA vez y no se guarda en ningún sitio: en la tabla
+   * queda su hash. Vale para un solo uso, vence a los `MINUTOS_VINCULO`
+   * minutos y pedir otro anula el anterior.
+   *
+   * **Lo que la pantalla tiene que decir**, porque es el precio de la regla
+   * del silencio: si el código se pega mal, el bot no contesta NADA —a un chat
+   * sin vincular no se le contesta ni un error, para no confirmar que detrás
+   * hay un sistema del negocio—. Así que «no pasó nada» significa «genere
+   * otro», y si eso no está escrito en la pantalla, nadie lo va a adivinar.
+   *
+   * Lleva `exigeEditar("ajustes")` —o sea, solo la dueña— porque este código
+   * es una llave: con él, un chat cualquiera queda hablando con Caleb con los
+   * permisos de la persona que se vincula.
+   */
+  panel.post("/usuarios/:id/telegram", exigeEditar("ajustes"), async (c) => {
+    const usuario = c.get("usuario");
+    const r = await crearCodigoDeVinculo(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      usuario.id,
+    );
+    return c.json(
+      r.ok ? ok({ ...r.datos, minutos: MINUTOS_VINCULO }) : r,
+      r.ok ? 201 : codigoHttp(r.codigo),
+    );
   });
 
   /**

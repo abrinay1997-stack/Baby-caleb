@@ -14,6 +14,12 @@
  * se olvide. Las que están en el mapa como «PENDIENTE» son deuda conocida y
  * salen contadas, no escondidas.
  *
+ * Lo que se decide aquí son CAPACIDADES, no puertas. El webhook de Telegram
+ * (`src/api/telegram-rutas.ts`) no sale en esta lista porque no añade nada que
+ * hacer: es otra puerta a las mismas herramientas, igual que MCP. Lo que sí
+ * sale es la ruta del panel que fabrica el código para vincular un chat, porque
+ * eso es una capacidad nueva.
+ *
  *   node scripts/sin-mcp.mjs            el resumen
  *   node scripts/sin-mcp.mjs --lista    además, qué falta exactamente
  */
@@ -95,6 +101,8 @@ const COBERTURA = {
   "POST /pedidos/:id/cancelar": "PENDIENTE",
   "POST /pedidos/:id/devolucion": "PENDIENTE",
   "POST /usuarios": "PENDIENTE",
+  "POST /usuarios/:id/telegram":
+    "solo_panel: entrega un código de un solo uso que se lee en pantalla. Por una\n     herramienta pasaría por el modelo, y el modelo es un Contributor con el que Meta\n     entrena (D-20): una llave no se le enseña ni una vez",
   "POST /zonas": "PENDIENTE"
 };
 
