@@ -937,6 +937,61 @@ const RESPUESTAS = {
     ],
   }),
 
+  // `/motorizados`: con los tres estados y con uno sin vehículo.
+  //
+  // Los tres estados a propósito: la pastilla se pinta distinta para «activo»
+  // y la hoja de editar deja marcada la opción que ya estaba, así que una
+  // muestra con solo activos aprobaría media pantalla. Y uno con el vehículo
+  // en null porque la columna lo permite —no siempre se sabe en qué anda— y
+  // esa celda tiene su propio texto.
+  //
+  // `entregas_hoy` con un número de verdad en el que está activo: es lo que
+  // hace salir el aviso de «hoy lleva N entregas» al ponerlo en pausa, que es
+  // la única parte de esta pantalla que avisa de algo.
+  // Y RESPETA `?todos=1`, como el Worker: por defecto el inactivo no sale.
+  // Una muestra que los devuelve siempre aprobaría un botón de «ver también a
+  // los que ya no trabajan» que no se nota que hace nada.
+  // Y RESPETA `?todos=1`, como el Worker: por defecto el inactivo no sale.
+  // Una muestra que los devolviera siempre aprobaría un botón de «ver también
+  // a los que ya no trabajan» sin que se note que hace algo.
+  "/api/motorizados": (url) => {
+    const todos = [
+      {
+        id: "m1",
+        nombre: "Luis Pérez",
+        celular_e164: "50760000001",
+        estado: "activo",
+        vehiculo: "moto",
+        tiene_pin: false,
+        entregas_hoy: 4,
+      },
+      {
+        id: "m2",
+        nombre: "Ana Gómez",
+        celular_e164: "50760000002",
+        estado: "pausa",
+        vehiculo: null,
+        tiene_pin: false,
+        entregas_hoy: 0,
+      },
+      {
+        id: "m3",
+        nombre: "Carlos Mendoza",
+        celular_e164: "50760000003",
+        estado: "inactivo",
+        vehiculo: "auto",
+        tiene_pin: false,
+        entregas_hoy: 0,
+      },
+    ];
+    return ok({
+      motorizados:
+        url.searchParams.get("todos") === "1"
+          ? todos
+          : todos.filter((m) => m.estado !== "inactivo"),
+    });
+  },
+
   "/api/bodegas": ok({
     bodegas: [
       { id: "b1", nombre: "Principal", activa: 1, variantes: 96, unidades: 412 },

@@ -39,6 +39,7 @@ import { HERRAMIENTAS_DE_ENTREGAS } from "./herramientas/entregas";
 import { HERRAMIENTAS_DE_CHECKOUT } from "./herramientas/checkout";
 import { HERRAMIENTAS_DE_COTIZACIONES } from "./herramientas/cotizaciones";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
+import { HERRAMIENTAS_DE_MOTORIZADOS } from "./herramientas/motorizados";
 import { HERRAMIENTAS_DE_PEDIDOS } from "./herramientas/pedidos";
 import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
 import { Registro } from "./registro";
@@ -66,6 +67,7 @@ export function catalogo(): Registro {
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
     ...HERRAMIENTAS_DE_AJUSTES,
     ...HERRAMIENTAS_DE_ENTREGAS,
+    ...HERRAMIENTAS_DE_MOTORIZADOS,
     ...HERRAMIENTAS_DE_CONTABILIDAD,
   ]) {
     r.registrar(h as never);
@@ -82,6 +84,7 @@ export {
   HERRAMIENTAS_DE_DINERO,
   HERRAMIENTAS_DE_ENTREGAS,
   HERRAMIENTAS_DE_INVENTARIO,
+  HERRAMIENTAS_DE_MOTORIZADOS,
   HERRAMIENTAS_DE_PEDIDOS,
   HERRAMIENTAS_DE_CHECKOUT,
   HERRAMIENTAS_DE_COTIZACIONES,

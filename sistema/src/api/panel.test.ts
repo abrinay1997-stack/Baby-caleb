@@ -776,3 +776,82 @@ describe("la foto de un producto", () => {
     expect(r.estado).toBe(404);
   });
 });
+
+describe("/motorizados: el eslabón que faltaba", () => {
+  beforeEach(async () => {
+    await real.DB.prepare(
+      "DELETE FROM rutas WHERE motorizado_id IN (SELECT id FROM motorizados WHERE celular_e164 LIKE '5078%')",
+    ).run();
+    await real.DB.prepare("DELETE FROM motorizados WHERE celular_e164 LIKE '5078%'").run();
+  });
+
+  /**
+   * Antes de esto, la cadena entera de entregas pedía un `motorizadoId` y
+   * ninguna ruta del sistema podía crear uno: se metía con SQL a mano o no se
+   * metía. Esta prueba es la que dice que el circuito ya se cierra desde el
+   * panel.
+   */
+  it("la dueña puede dar de alta a quien reparte", async () => {
+    const r = await postJson(entrandoComo("duena"), "/motorizados", {
+      nombre: "Luis Pérez",
+      celular: "6800-0001",
+      vehiculo: "moto",
+    });
+    expect(r.estado).toBe(201);
+    expect((r.cuerpo["datos"] as Record<string, unknown>)["celular_e164"]).toBe("50768000001");
+
+    const lista = await pedir(entrandoComo("duena"), "/motorizados");
+    expect(lista.estado).toBe(200);
+    const motorizados = (lista.cuerpo["datos"] as Record<string, unknown>)[
+      "motorizados"
+    ] as Record<string, unknown>[];
+    expect(motorizados.some((m) => m["nombre"] === "Luis Pérez")).toBe(true);
+  });
+
+  /**
+   * Dar de alta va con el permiso de ajustes y no con el de pedidos, a
+   * propósito: quien atiende necesita SABER a quién asignarle una ruta, pero
+   * meter a alguien en la lista de quien entra a la casa de las clientas con
+   * la mercancía es decisión de la dueña.
+   */
+  it("la asistente los ve pero no los da de alta", async () => {
+    const ve = await pedir(entrandoComo("asistente"), "/motorizados");
+    expect(ve.estado).toBe(200);
+
+    const mete = await postJson(entrandoComo("asistente"), "/motorizados", {
+      nombre: "Quien sea",
+      celular: "6800-0002",
+    });
+    expect(mete.estado).toBe(403);
+  });
+
+  it("el mismo celular no entra dos veces", async () => {
+    const app = entrandoComo("duena");
+    await postJson(app, "/motorizados", { nombre: "Ana Gómez", celular: "6800-0010" });
+    const otra = await postJson(app, "/motorizados", { nombre: "Ana G.", celular: "68000010" });
+    expect(otra.estado).toBe(409);
+    expect(String(otra.cuerpo["mensaje"])).toContain("Ana Gómez");
+  });
+
+  it("se le puede cambiar el estado, y dice cuántas rutas lleva sin cerrar", async () => {
+    const app = entrandoComo("duena");
+    const alta = await postJson(app, "/motorizados", {
+      nombre: "Ana Gómez",
+      celular: "6800-0020",
+    });
+    const id = (alta.cuerpo["datos"] as Record<string, unknown>)["id"] as string;
+
+    const r = await postJson(app, `/motorizados/${id}/estado`, { estado: "pausa" });
+    expect(r.estado).toBe(200);
+    const datos = r.cuerpo["datos"] as Record<string, unknown>;
+    expect(datos["estado"]).toBe("pausa");
+    expect(datos["rutasAbiertas"]).toBe(0);
+  });
+
+  it("un id que no existe no contesta que se hizo", async () => {
+    const r = await postJson(entrandoComo("duena"), "/motorizados/no-existe/estado", {
+      estado: "pausa",
+    });
+    expect(r.estado).toBe(404);
+  });
+});

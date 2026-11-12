@@ -83,6 +83,12 @@ import {
 import type { CambiosEnClienta, CambiosEnDireccion } from "../db/clientes";
 import { type HacerProveedor, registrarRutasDelAsistente } from "./asistente-rutas";
 import { codigoHttp } from "./estados";
+import {
+  cambiarEstado as cambiarEstadoMotorizado,
+  crear as crearMotorizado,
+  editar as editarMotorizado,
+  listar as listarMotorizados,
+} from "../db/motorizados";
 import { verCheckout } from "../db/checkout";
 import { crearPedido, reglasDelPedido as reglasDeUnPedidoNuevo } from "../db/pedidos";
 import {
@@ -1738,6 +1744,73 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
       { db: c.env.DB, ahora: Date.now(), actor: c.get("usuario").correo },
       c.req.param("pagoId"),
       motivo,
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Motorizados
+  //
+  // Esto destapa el circuito, no lo amplía. Toda la cadena de entregas pedía un
+  // `motorizadoId` y nada en el sistema podía crear uno: `armarRuta`,
+  // `despacharRuta` y `sugerirMotorizado` estaban escritos, probados y
+  // esperando una fila que solo se metía con SQL a mano.
+  //
+  // Leer va con `pedidos` y escribir con `ajustes`, que es más estrecho a
+  // propósito: quien atiende necesita SABER a quién asignarle una ruta, pero
+  // dar de alta a alguien que va a entrar a la casa de las clientas con la
+  // mercancía del negocio es decisión de la dueña, no de quien toma pedidos.
+  // ---------------------------------------------------------------------------
+
+  /** Quiénes hay, en qué andan y cuánto llevan hoy. */
+  panel.get("/motorizados", exige("pedidos"), async (c) => {
+    const todos = texto(c.req.query("todos")) === "1";
+    const r = await listarMotorizados(c.env.DB, {
+      incluirInactivos: todos,
+      hoy: fechaDePanama(Date.now()),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /** Uno nuevo. Nace activo: se da de alta el día que empieza a trabajar. */
+  panel.post("/motorizados", exigeEditar("ajustes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await crearMotorizado(
+      { db: c.env.DB, ahora: Date.now() },
+      { nombre: b["nombre"], celular: b["celular"], vehiculo: b["vehiculo"] },
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /** Corregirle el nombre, el celular o en qué anda. */
+  panel.patch("/motorizados/:id", exigeEditar("ajustes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const cambios: { nombre?: unknown; celular?: unknown; vehiculo?: unknown } = {};
+    if ("nombre" in b) cambios.nombre = b["nombre"];
+    if ("celular" in b) cambios.celular = b["celular"];
+    if ("vehiculo" in b) cambios.vehiculo = b["vehiculo"];
+    const r = await editarMotorizado(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      cambios,
+    );
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Activo, en pausa o fuera.
+   *
+   * Ruta aparte de la de arriba porque esto cambia lo que el sistema LE DEJA
+   * hacer —solo un `activo` recibe ruta— y eso no es lo mismo que arreglarle
+   * una tilde al nombre. Devuelve cuántas rutas tiene sin cerrar para que la
+   * pantalla lo pueda decir antes de que se descubra mañana.
+   */
+  panel.post("/motorizados/:id/estado", exigeEditar("ajustes"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const r = await cambiarEstadoMotorizado(
+      { db: c.env.DB, ahora: Date.now() },
+      c.req.param("id"),
+      b["estado"],
     );
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });

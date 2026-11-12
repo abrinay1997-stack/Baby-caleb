@@ -37,6 +37,7 @@ const PANTALLAS = [
   // cubre una pantalla no dice «está bien»: no dice nada, y se lee igual.
   ["pedidos", "/pedidos"],
   ["entregas", "/entregas"],
+  ["motorizados", "/motorizados"],
   ["pasarelas", "/pasarelas"],
   // Clientas sale DOS veces: aquí vacía —que es lo primero que ve la dueña al
   // entrar, porque la lista no se enseña sin buscar— y más abajo con
