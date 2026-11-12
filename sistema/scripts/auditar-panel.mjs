@@ -199,6 +199,34 @@ for (const [nombreVista, tamano] of VISTAS) {
     }
   }
 
+  // Las llaves de MCP: la pantalla y la hoja de crear.
+  //
+  // Lo que más riesgo tiene aquí es el bloque del token recién creado: es un
+  // texto largo sin espacios, que es exactamente lo que desborda en un
+  // teléfono. Por eso se mide la pantalla con la hoja abierta.
+  {
+    await pagina.goto(`${BASE}/llaves`, { waitUntil: "networkidle" });
+    await pagina.waitForSelector("h1");
+    const deLlaves = await pagina.evaluate(medir);
+    revisadas += 1;
+    for (const f of deLlaves) todas.push({ vista: nombreVista, pantalla: "llaves", ...f });
+    if (!soloMedir) await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-llaves.png` });
+
+    const crear = pagina.getByRole("button", { name: /Crear una llave/ }).first();
+    if ((await crear.count()) > 0) {
+      await crear.click();
+      await pagina.waitForTimeout(300);
+      const deHoja = await pagina.evaluate(medir);
+      revisadas += 1;
+      for (const f of deHoja) todas.push({ vista: nombreVista, pantalla: "hoja-crear-llave", ...f });
+      if (!soloMedir) {
+        await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-crear-llave.png` });
+      }
+      await pagina.keyboard.press("Escape");
+      await pagina.waitForTimeout(150);
+    }
+  }
+
   // Caleb: el botón flotante y su hoja.
   //
   // Va en TODAS las pantallas, así que una falla suya se multiplica por doce.

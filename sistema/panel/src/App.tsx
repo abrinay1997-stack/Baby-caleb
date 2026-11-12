@@ -16,6 +16,7 @@ import { Pasarelas } from "./pantallas/Pasarelas";
 import { Resumen } from "./pantallas/Resumen";
 import { Usuarios } from "./pantallas/Usuarios";
 import { Zonas } from "./pantallas/Zonas";
+import { Llaves } from "./pantallas/Llaves";
 
 /**
  * El panel.
@@ -76,6 +77,7 @@ export function App() {
             <Route path="pasarelas" element={<Pasarelas />} />
             <Route path="contabilidad" element={<Contabilidad />} />
             <Route path="usuarios" element={<Usuarios />} />
+            <Route path="llaves" element={<Llaves />} />
             {/* Una ruta que no existe lleva al resumen en vez de a una página en
                 blanco: en un teléfono no hay barra de direcciones que arreglar.
 
