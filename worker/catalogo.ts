@@ -61,6 +61,21 @@ export interface SistemaWebBinding {
     | { ok: true; datos: { bytes: ArrayBuffer; mime: string } | null }
     | { ok: false; codigo: string; mensaje: string }
   >;
+  /**
+   * ¿Contesta el sistema, y está sano?
+   *
+   * Estaba en el entrypoint de allá desde el principio y aquí no se declaraba,
+   * así que `/api/salud` de la web no podía llamarlo ni aunque quisiera — y de
+   * hecho no lo llamaba: miraba si el binding existía. El binding existe
+   * siempre, está escrito en `wrangler.jsonc`, así que esa comprobación no
+   * podía ser falsa y decía «del sistema» con la base caída.
+   *
+   * No lleva datos del negocio: una señal y la versión desplegada.
+   */
+  salud(): Promise<
+    | { ok: true; datos: { sano: boolean; version: string } }
+    | { ok: false; codigo: string; mensaje: string }
+  >;
 }
 
 function respuesta(cuerpo: unknown, desdeRespaldo: boolean): Response {

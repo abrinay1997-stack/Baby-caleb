@@ -21,6 +21,9 @@ const sistema = (respuesta: Awaited<ReturnType<SistemaWebBinding["archivo"]>>): 
     async catalogo() {
       return { ok: false, codigo: "interno", mensaje: "no toca" };
     },
+    async salud() {
+      return { ok: true as const, datos: { sano: true, version: "doble" } };
+    },
     async archivo(clave) {
       pedidas.push(clave);
       return respuesta;
@@ -104,6 +107,9 @@ describe("lo que no es una petición normal", () => {
     const roto: SistemaWebBinding = {
       async catalogo() {
         return { ok: false, codigo: "interno", mensaje: "x" };
+      },
+      async salud() {
+        return { ok: true as const, datos: { sano: true, version: "doble" } };
       },
       archivo() {
         throw new TypeError("sistema.archivo is not a function");
