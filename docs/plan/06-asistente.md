@@ -73,7 +73,7 @@ el id de la acción).
 |---|---|---|
 | Chat del panel | Access (JWT validado) | Botón flotante en todas las pantallas; sabe en qué pantalla está; pasos a la vista por SSE |
 | Telegram | El vínculo de la consola del CRM (`OWNER_TELEGRAM_CHAT_ID` o enlace del panel) cruzado con `usuarios.telegram_chat_id` | Voz y fotos ya las entiende la consola |
-| MCP | `/mcp` fuera de Access, con OAuth (`@cloudflare/workers-oauth-provider`) usando el inicio de sesión de Access, o un token personal por usuario | Se decide en F6.4; empieza solo con herramientas de lectura |
+| MCP | **Construido.** `/mcp` fuera de Access, con una llave personal por persona y por sitio (`mcp_llaves`, migración 0013). Se decidió la llave y no OAuth: un cliente de MCP no tiene navegador, y OAuth añadía un ida y vuelta que aquí no compra nada | No empieza solo con lectura: expone todas las del rol, pero una **sensible no se ejecuta** — vuelve como `isError: true` diciendo que no se hizo y dónde se permite. Ver `docs/CONECTAR-MCP.md` |
 
 ## 5. Herramientas iniciales
 
