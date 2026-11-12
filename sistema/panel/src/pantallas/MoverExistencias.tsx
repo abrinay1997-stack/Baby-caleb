@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { pedir } from "../api";
+import { aCentavos } from "../dinero";
 import { Hoja } from "../armazon/Hoja";
 
 /**
@@ -99,6 +100,7 @@ export function MoverExistencias({
   const [op, setOp] = useState<Operacion>(OPERACIONES[0] as Operacion);
   const [cantidad, setCantidad] = useState("");
   const [motivo, setMotivo] = useState("");
+  const [costo, setCosto] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
@@ -110,12 +112,18 @@ export function MoverExistencias({
     setOp(OPERACIONES[0] as Operacion);
     setCantidad("");
     setMotivo("");
+    setCosto("");
     setError(null);
   }, [fila]);
 
   if (fila === null) return null;
 
   const n = Number(cantidad.trim());
+  // El costo solo tiene sentido cuando ENTRA mercancía: en una salida lo
+  // decide el promedio, no quien la registra, y el servidor rechaza con
+  // mensaje un costo en una salida.
+  const pideCosto = op.signo === 1;
+  const costoCents = costo.trim() === "" ? null : aCentavos(costo);
   const cantidadValida = cantidad.trim() !== "" && Number.isInteger(n) && n >= 0;
   const quedaria = op.signo === 0 ? n : fila.fisico + op.signo * n;
 
@@ -142,6 +150,11 @@ export function MoverExistencias({
       return;
     }
 
+    if (pideCosto && costo.trim() !== "" && (costoCents === null || costoCents < 0)) {
+      setError("El costo no se entiende. Escríbalo como 2.50");
+      return;
+    }
+
     setError(null);
     setGuardando(true);
     try {
@@ -156,6 +169,10 @@ export function MoverExistencias({
               codigo: fila.codigo,
               bodegaId: fila.bodega_id,
               ...(op.signo === 0 ? { contado: n } : { delta: op.signo * n }),
+              // Solo si se escribió. Mandar 0 por omisión diría que la
+              // mercancía fue gratis y pondría el margen en 100 % (trampa §7):
+              // «no lo sé» y «costó cero» son cosas distintas.
+              ...(pideCosto && costoCents !== null ? { costoUnitCents: costoCents } : {}),
             },
           ],
         }),
@@ -245,6 +262,32 @@ export function MoverExistencias({
             </span>
           ) : null}
         </label>
+
+        {pideCosto ? (
+          <label className="block">
+            <span className="mb-1 block text-[13px] font-bold">
+              ¿Cuánto costó cada unidad?
+            </span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={costo}
+              onChange={(e) => {
+                setCosto(e.target.value.replace(/[^0-9.,]/g, ""));
+                setError(null);
+              }}
+              placeholder="2.50"
+              className="tactil w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[16px] text-fg focus-visible:outline-accent-edge focus-visible:outline-2"
+            />
+            <span className="mt-1 block text-[13px] text-muted">
+              {costo.trim() === ""
+                ? "Puede dejarlo vacío, pero entonces la ganancia de lo que se venda de este producto no se va a poder calcular."
+                : costoCents === null
+                  ? "No se entiende. Escríbalo como 2.50"
+                  : `Entran ${cantidadValida ? n : 0} a ese costo. Es lo que paga usted, no lo que cobra.`}
+            </span>
+          </label>
+        ) : null}
 
         {op.pideMotivo ? (
           <label className="block">

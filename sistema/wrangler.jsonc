@@ -80,7 +80,7 @@
       "assets": {
         "directory": "./panel/dist",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/api/*", "/salud", "/mcp", "/telegram/*"]
+        "run_worker_first": ["/api/*", "/salud", "/mcp", "/telegram/*", "/foto/*"]
       },
       // `routes` se HEREDA en los entornos con nombre: sin este [] vacío,
       // staging se llevaría panel.babycaleb.com y ruta.babycaleb.com
@@ -147,7 +147,7 @@
       "assets": {
         "directory": "./panel/dist",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/api/*", "/salud", "/mcp", "/telegram/*"]
+        "run_worker_first": ["/api/*", "/salud", "/mcp", "/telegram/*", "/foto/*"]
       },
       // Los entornos con nombre no heredan los triggers del nivel raíz.
       "triggers": { "crons": ["*/5 * * * *"] },

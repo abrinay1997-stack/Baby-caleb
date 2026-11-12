@@ -154,8 +154,22 @@ describe("leerVigentes", () => {
     const a = await vigente("reserva_minutos_pago_en_linea");
     expect(a.valor).toBe(PENDIENTE);
     expect(a.origen).toBe("fabrica");
-    expect(a.aviso).toContain("alguien@mano");
+    // El aviso dice QUÉ pasa y NO quién lo guardó.
+    //
+    // Esta prueba exigía lo contrario —que el aviso llevara «alguien@mano»— y
+    // con eso estaba fijando un fallo en vez de protegerlo: ese correo volvía
+    // crudo dentro del texto, así que salía por la rama de lista de
+    // `ver_ajustes` (la que se creyó saneada al quitar el campo `cambiado_por`)
+    // y la guarda de D-20 habría tumbado la herramienta entera el día que un
+    // valor guardado no se pudiera leer. Estaba dormido solo porque hoy
+    // ninguno está corrupto.
+    //
+    // Ahora se exige la ausencia, que es la propiedad que importa: el quién
+    // está en `ver_historial_de_ajuste`, que existe para esa pregunta.
+    expect(a.aviso).not.toContain("alguien@mano");
+    expect(a.aviso).not.toContain("@");
     expect(a.aviso).toContain("arranque");
+    expect(a.aviso).toContain("no se puede usar");
   });
 
   it("y lo mismo si el JSON guardado está roto", async () => {

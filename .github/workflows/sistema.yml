@@ -13,7 +13,7 @@
 # Mientras no estén, las pruebas corren igual: solo los despliegues necesitan
 # la cuenta.
 #
-# NOTA SOBRE ACCESS: la comprobación de `/salud` after de desplegar necesita que
+# NOTA SOBRE ACCESS: la comprobación de `/salud` después de desplegar necesita
 # esa ruta quede FUERA de la aplicación de Cloudflare Access. No lleva ningún
 # dato del negocio —versión, migración y una consulta de humo— y por eso el
 # código no le exige token. Si se deja dentro de Access, el paso de salud
@@ -223,16 +223,65 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Comprobar /salud
-        run: ../.github/scripts/salud.sh "${{ steps.desplegar.outputs.url }}" "$GITHUB_SHA"
+      # El despliegue de staging terminaba SIEMPRE en rojo, y no porque algo
+      # estuviera roto: el Worker subía bien y la base migraba bien. Lo que no
+      # podía pasar nunca era esta comprobación, porque la dirección de staging
+      # está detrás de Cloudflare Access —en workers.dev Access cubre el Worker
+      # ENTERO, ese dominio no es nuestro y no hay recorte por ruta— y Access
+      # contesta un 302 de login antes de que el Worker corra.
+      #
+      # Un control que no puede pasar nunca es peor que ninguno: enseña a
+      # ignorar el rojo, y el día que staging se rompa de verdad nadie lo va a
+      # mirar. Así que la comprobación se hace si HAY con qué hacerla, y si no
+      # se dice en el resumen en vez de tumbar un despliegue que salió bien.
+      #
+      # Producción no pasa por aquí: ahí la salud se mide en
+      # `ruta.babycaleb.com`, que es la superficie del motorizado y no tiene
+      # Access delante.
+      # `secrets` NO existe dentro de un `if:`. GitHub no avisa en el paso: le
+      # tumba el flujo ENTERO en la validación, antes de arrancar un solo job,
+      # y en la pestaña Actions sale un run rojo con cero jobs y ningún log que
+      # explique nada. Pasó aquí exactamente así.
+      #
+      # El camino que sí vale: leer el secreto como variable de entorno —ahí sí
+      # llega— y dejar escrito en una salida si lo hay. Después el `if` mira esa
+      # salida, que es contexto normal. El valor nunca se imprime: solo se
+      # pregunta si está vacío.
+      - name: ¿Hay Service Token de Access?
+        id: credencial
         env:
-          # Credencial de servicio para pasar Cloudflare Access. En workers.dev
-          # Access cubre el Worker ENTERO —ese dominio no es nuestro, así que no
-          # hay recorte por ruta—, de modo que /salud no se puede dejar pública
-          # y el despliegue tiene que entrar con credencial propia. Si los
-          # secretos no están, el guion no manda cabeceras y lo dice.
           ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
           ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
+        run: |
+          if [ -n "$ACCESS_CLIENT_ID" ] && [ -n "$ACCESS_CLIENT_SECRET" ]; then
+            echo "hay=si" >> "$GITHUB_OUTPUT"
+          else
+            echo "hay=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comprobar /salud
+        if: steps.credencial.outputs.hay == 'si'
+        run: ../.github/scripts/salud.sh "${{ steps.desplegar.outputs.url }}" "$GITHUB_SHA"
+        env:
+          ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
+
+      - name: Sin credencial, sin comprobación (y se dice)
+        if: steps.credencial.outputs.hay == 'no'
+        run: |
+          {
+            echo "### Staging desplegado, pero SIN comprobar"
+            echo
+            echo "El Worker subió y la base migró. Lo que no se pudo hacer es preguntarle"
+            echo "si está sano: \`${{ steps.desplegar.outputs.url }}/salud\` está detrás de"
+            echo "Cloudflare Access y contesta un login antes de que el Worker corra."
+            echo
+            echo "Para cerrarlo, una vez: cree un **Service Token** en Zero Trust, añádale"
+            echo "a esa aplicación de Access una política *Service Auth* que lo acepte, y"
+            echo "guarde \`ACCESS_CLIENT_ID\` y \`ACCESS_CLIENT_SECRET\` en los secretos"
+            echo "del repositorio. Desde entonces este paso corre solo."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Staging sin comprobar::Falta el Service Token de Access; el despliegue salió bien pero nadie le preguntó si está sano."
 
   produccion:
     name: Desplegar a producción

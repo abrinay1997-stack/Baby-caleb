@@ -45,9 +45,10 @@ publicando (lección del puente del CRM).
 Receta de D'Casa que se adopta: cambio en una rama `claude/...` con su prueba → staging → capturas
 a la dueña → su visto bueno → PR → `main` → producción a mano. Producción nunca se publica sola.
 
-> **Hoy un despliegue a staging siempre termina en rojo, y no porque algo esté roto.**
+> **El despliegue a staging NO comprueba la salud, y lo dice en el resumen del run.**
 >
-> El Worker sube bien y la base migra bien; lo que falla es el paso de `/salud`. La
+> Terminaba siempre en rojo, y no porque algo estuviera roto: el Worker sube bien y la
+> base migra bien. Lo que no podía pasar nunca era el paso de `/salud`. La
 > dirección de staging (`babycaleb-sistema-staging...workers.dev`) está **detrás de
 > Cloudflare Access** —así lo quiere `wrangler.jsonc`, para que nadie entre a staging por
 > la puerta de atrás— y Access contesta un 302 de login antes de que el Worker corra. El
@@ -61,8 +62,11 @@ a la dueña → su visto bueno → PR → `main` → producción a mano. Producc
 > **En producción no pasa**: ahí la salud se mide en `ruta.babycaleb.com/salud`, que es la
 > superficie del motorizado y no tiene Access delante (comprobado: contesta 200).
 >
-> Mientras tanto hay que mirar el rojo de staging en vez de darlo por sabido, que es
-> exactamente lo que un control que siempre falla acaba consiguiendo que nadie haga.
+> Hasta que ese token exista, el paso **no corre** y el run deja un aviso visible en su
+> resumen. Es a propósito: un control que no puede pasar nunca es peor que ninguno —
+> enseña a ignorar el rojo, y el día que staging se rompa de verdad nadie va a mirar.
+> Así el rojo vuelve a significar rojo, y lo que falta se lee en el resumen de cada
+> despliegue en vez de confundirse con una avería.
 
 ### Repositorio del CRM
 

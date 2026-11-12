@@ -650,3 +650,70 @@ describe("deshacer y el promedio", () => {
     expect(await promedio()).toMatchObject({ unidades: 10, valor_cents: 3_000 });
   });
 });
+
+describe("un movimiento no se deshace dos veces", () => {
+  /**
+   * El candado es de la BASE, no del código.
+   *
+   * `deshacer()` comprueba con un `NOT EXISTS` dentro del SELECT que arma el
+   * lote, y eso es leer y después escribir: dos llamadas a la vez leen las dos
+   * que nadie lo ha deshecho, y escriben las dos. El control de `aplicar()` no
+   * las caza, y no es un descuido suyo: lo que ese control vigila es que no se
+   * saque más de lo que hay, y los dos reversos de una venta son ENTRADAS.
+   * Ninguna viola `fisico >= reservado`, así que el inventario queda por
+   * encima de la realidad y nada protesta.
+   *
+   * Por eso la prueba no llama dos veces a `deshacer()` —eso probaría el
+   * `NOT EXISTS`, que ya funciona cuando no hay carrera— sino que intenta
+   * escribir el segundo reverso directamente, que es lo que una carrera
+   * consigue. La defensa tiene que estar en el esquema o no está.
+   *
+   * El libro de al lado ya lo tenía: `asientos.revierte_id` es UNIQUE desde la
+   * 0011, con el porqué escrito ahí («dos reversos del mismo error descuentan
+   * el doble y el balance cuadra igual»). Este es el mismo fallo en la otra
+   * tabla, y el libro de inventario se había quedado sin el candado.
+   */
+  const reverso = (nuevoId: string, original: string) =>
+    real.DB.prepare(
+      `INSERT INTO movimientos_inventario
+         (id,codigo,bodega_id,delta,tipo,referencia_tipo,referencia_id,motivo,actor,revierte_id,creado_en)
+       VALUES (?,'INV-M','bod-inv-a',-1,'ajuste','reverso','r-1','se deshace','prueba',?,?)`,
+    )
+      .bind(nuevoId, original, T)
+      .run();
+
+  it("la base rechaza un segundo reverso del mismo movimiento", async () => {
+    const original = `mv-orig-${T}`;
+    await real.DB.prepare(
+      `INSERT INTO movimientos_inventario
+         (id,codigo,bodega_id,delta,tipo,referencia_tipo,referencia_id,motivo,actor,creado_en)
+       VALUES (?,'INV-M','bod-inv-a',1,'compra','compra','c-1',NULL,'prueba',?)`,
+    )
+      .bind(original, T)
+      .run();
+
+    // Deshacer una vez es legítimo.
+    await reverso(`mv-rev-1-${T}`, original);
+
+    // Dos, no. Antes de la 0018 esto entraba y el estante quedaba con una caja
+    // menos de las que decía el sistema, sin una sola señal.
+    await expect(reverso(`mv-rev-2-${T}`, original)).rejects.toThrow();
+  });
+
+  it("y los movimientos corrientes, que no deshacen nada, conviven sin chocar", async () => {
+    // El índice es PARCIAL justo para esto. Sin el `WHERE revierte_id IS NOT
+    // NULL`, el segundo movimiento normal del sistema chocaría con el primero
+    // y no se podría mover una caja nunca más: el fallo contrario, y peor.
+    const antes = await nuevos();
+    for (let i = 0; i < 3; i++) {
+      await real.DB.prepare(
+        `INSERT INTO movimientos_inventario
+           (id,codigo,bodega_id,delta,tipo,referencia_tipo,referencia_id,motivo,actor,creado_en)
+         VALUES (?,'INV-M','bod-inv-a',1,'compra','compra',?,NULL,'prueba',?)`,
+      )
+        .bind(`mv-normal-${i}-${T}`, `c-${i}`, T)
+        .run();
+    }
+    expect(await nuevos()).toBe(antes + 3);
+  });
+});

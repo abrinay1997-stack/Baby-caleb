@@ -3,7 +3,7 @@ import { panel } from "./api/panel";
 import { puertaDeTelegram } from "./api/telegram-rutas";
 import { mcp } from "./mcp/servidor";
 import { vencerPendientes } from "./asistente/ejecutar";
-import { barrer } from "./db/archivos";
+import { barrer, leerPublico } from "./db/archivos";
 import { MANEJADORES, atrasados, consumir, publicarPendientes } from "./eventos";
 import { conCabecerasDeSeguridad, encendido, superficieDe } from "./seguridad";
 
@@ -105,6 +105,76 @@ app.all("/mcp", async (c) => await mcp(c.req.raw, c.env));
  * acordarse de tocar; `run_worker_first` ya mordió una vez).
  */
 app.route("/telegram", puertaDeTelegram);
+
+/**
+ * Las fotos del catálogo, también por aquí.
+ *
+ * Ya las sirve la WEB en `babycaleb.com/foto/…`, para que las vea cualquiera
+ * sin sesión. Pero el panel vive en `panel.babycaleb.com`, y lo que se guarda
+ * en `variantes.imagen` es una ruta RELATIVA (`/foto/<clave>`): dentro del
+ * panel ese `<img>` pedía `panel.babycaleb.com/foto/…`, que no era ninguna
+ * ruta de este Worker, y el servidor de estáticos contestaba con el login de
+ * Access. Resultado: la foto subía —201, y el archivo de verdad en R2— y no se
+ * veía NUNCA. Quien la subió lo lee como «no se puede poner una foto», que es
+ * lo único que se puede leer cuando no aparece nada.
+ *
+ * Apuntar el `<img>` a `babycaleb.com` NO era el arreglo: la CSP del panel es
+ * `img-src 'self'` (seguridad/cabeceras.ts), así que el navegador lo habría
+ * bloqueado igual. Eran dos muros independientes y los dos callados. Servirla
+ * aquí arregla los dos de una vez y deja el valor guardado válido en los dos
+ * dominios, que es la razón de que sea relativo.
+ *
+ * No pide permiso de panel, a propósito: un `<img>` no manda cabeceras ni
+ * token, así que exigirlo sería volver a no ver la foto. Quién puede salir lo
+ * decide `leerPublico`, la MISMA función que usa la web por RPC — `sensible =
+ * 0`, sin marca de borrado y un mime de imagen. En ese bucket viven también
+ * los comprobantes de pago de las clientas: el filtro tiene un solo dueño
+ * justo para que no haya dos que puedan discrepar.
+ *
+ * Esta ruta va además en `run_worker_first` de los dos entornos desplegados.
+ * Sin eso el servidor de estáticos contesta antes y volvemos al 302 — la
+ * trampa nº 8, la lista de configuración que alguien tiene que acordarse de
+ * tocar, que con `/mcp` ya mordió una vez.
+ */
+app.get("/foto/*", async (c) => {
+  const prefijo = "/foto/";
+  let clave: string;
+  try {
+    clave = decodeURIComponent(new URL(c.req.url).pathname.slice(prefijo.length));
+  } catch {
+    // Un `%` suelto en la URL. No es una clave, es basura.
+    return noHayFoto();
+  }
+  if (clave === "" || clave.length > 512) return noHayFoto();
+
+  const a = await leerPublico({ db: c.env.DB, r2: c.env.PRIVADO }, clave);
+  if (a === null) return noHayFoto();
+
+  return new Response(a.cuerpo, {
+    headers: {
+      // El mime sale de la FILA, no de R2: es el que se validó al subir.
+      "content-type": a.mime,
+      // Un año e inmutable: la clave lleva un ULID dentro, así que cambiar la
+      // foto de un producto es OTRA clave. No hay caché que esperar.
+      "cache-control": "public, max-age=31536000, immutable",
+      // Que el navegador no adivine el tipo, igual que en la web.
+      "x-content-type-options": "nosniff",
+      "content-disposition": "inline",
+    },
+  });
+});
+
+/**
+ * «No existe» y «no se sirve en abierto» contestan LO MISMO, a propósito.
+ *
+ * Distinguirlos le diría a quien prueba claves al azar cuáles existen, y lo
+ * que hay en ese bucket además de fotos son comprobantes de pago.
+ */
+const noHayFoto = () =>
+  new Response("No encontrado", {
+    status: 404,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
 
 app.all("*", (c) => c.json({ ok: false, codigo: "no_encontrado", mensaje: "ruta desconocida" }, 404));
 

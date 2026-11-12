@@ -1,0 +1,33 @@
+-- Un movimiento de inventario no se deshace dos veces.
+--
+-- `deshacer()` escribe el movimiento contrario y lo liga al original con
+-- `revierte_id`. Su única defensa era un `NOT EXISTS (… revierte_id = m.id)`
+-- DENTRO del SELECT que arma el lote: o sea, leer y después escribir. Dos
+-- «deshacer» del mismo movimiento a la vez pasan los dos, y deshacer una venta
+-- de 5 cajas mete 10 que no existen.
+--
+-- El control de `aplicar()` no lo caza, y no es un descuido suyo: lo que ese
+-- control vigila es que no se saque más de lo que hay, y aquí las dos
+-- escrituras son ENTRADAS. Ninguna viola `fisico >= reservado`. El inventario
+-- acaba por encima de la realidad y nada protesta.
+--
+-- Esto ya estaba resuelto en el libro de al lado. `asientos.revierte_id` es
+-- UNIQUE desde la 0011, y esa migración escribió el porqué con estas palabras:
+-- «dos reversos del mismo error descuentan el doble y el balance cuadra
+-- igual». Es exactamente este fallo, en la otra tabla, y el libro de
+-- inventario se quedó sin el candado.
+--
+-- Va como índice parcial y no como columna UNIQUE porque la tabla es STRICT y
+-- tiene dos triggers que prohíben editarla y borrarla: no se puede recrear sin
+-- mover el libro, y un libro no se mueve. El `WHERE revierte_id IS NOT NULL`
+-- es lo que deja que convivan todos los movimientos normales, que lo tienen
+-- nulo — sin él, el segundo movimiento que no deshace nada choca con el
+-- primero. (En SQLite un UNIQUE normal sí admite varios nulos, pero escribirlo
+-- explícito dice qué se está vigilando y qué no.)
+--
+-- No cambia ni una fila: es un índice. Si hubiera ya dos reversos del mismo
+-- movimiento, esta migración FALLARÍA al crearlo, y eso es lo correcto: querría
+-- decir que el fallo ya mordió y hay que mirar el inventario antes de seguir.
+CREATE UNIQUE INDEX IF NOT EXISTS movs_un_solo_reverso
+  ON movimientos_inventario (revierte_id)
+  WHERE revierte_id IS NOT NULL;

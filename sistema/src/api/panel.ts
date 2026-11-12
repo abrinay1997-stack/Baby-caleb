@@ -11,7 +11,7 @@ import {
   revisarPeticion,
   usuarioDeCorreo,
 } from "../seguridad";
-import { EXTENSIONES, MAXIMO_BYTES, tipoDeImagen } from "../db/imagenes";
+import { EXTENSIONES, MAXIMO_BYTES, porQueNoSirveLaImagen, tipoDeImagen } from "../db/imagenes";
 import { claveDe, enunciadosParaBorrar, subir } from "../db/archivos";
 import {
   borrarVariante,
@@ -603,10 +603,9 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
 
     const tipo = tipoDeImagen(cuerpoBruto);
     if (tipo === null) {
-      return c.json(
-        fallo("entrada_invalida", "Ese archivo no es una imagen (se aceptan JPG, PNG, WebP y AVIF)."),
-        400,
-      );
+      // El mensaje lo decide `porQueNoSirveLaImagen` y no esta línea, porque
+      // una foto de iPhone necesita instrucciones y no un «no es una imagen».
+      return c.json(fallo("entrada_invalida", porQueNoSirveLaImagen(cuerpoBruto)), 400);
     }
 
     const ahora = Date.now();

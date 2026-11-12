@@ -137,3 +137,102 @@ describe("el webhook de Telegram está montado y fuera de Access", () => {
     expect(r.headers.get("X-Robots-Tag")).toContain("noindex");
   });
 });
+
+/**
+ * La foto de un producto, vista DESDE EL PANEL.
+ *
+ * Esto no es una prueba de leer un archivo —eso ya lo cubre
+ * `src/db/archivos.test.ts`— sino de que la ruta exista EN ESTE DOMINIO. Es la
+ * distinción que costó el fallo: subir la foto funcionaba (201, y el archivo
+ * de verdad en R2), pero `variantes.imagen` guarda una ruta relativa y el
+ * `<img>` del panel la pedía a `panel.babycaleb.com`, donde no había ninguna
+ * ruta `/foto/`. El servidor de estáticos contestaba con el login de Access y
+ * la foto no aparecía nunca. Ninguna prueba de módulo podía ver eso: las dos
+ * mitades estaban bien y lo que faltaba era el cable (trampa nº 12).
+ *
+ * Por eso va con `SELF`, que monta el Worker entero, y por eso se pide al
+ * dominio del panel y no a otro.
+ */
+describe("la foto de un producto se ve desde el panel", () => {
+  const T = 1_800_000_000_000;
+  // Los ocho bytes de la firma de un PNG y cuatro de relleno: `tipoDeImagen`
+  // pide doce para no confundir WebP con AVIF, y aquí lo que importa es que
+  // sean los de una imagen de verdad.
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x08, 1, 2, 3, 4]);
+
+  async function sembrar(
+    clave: string,
+    opciones: { mime?: string; sensible?: 0 | 1; borrar?: number | null } = {},
+  ) {
+    const { mime = "image/png", sensible = 0, borrar = null } = opciones;
+    await env.PRIVADO.put(clave, PNG);
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO archivos
+         (r2_key, tipo, mime, bytes, sensible, subido_por, referencia_tipo,
+          referencia_id, borrar_despues_de, creado_en)
+       VALUES (?, 'catalogo', ?, ?, ?, 'prueba@babycaleb.com', 'variante', 'ZZ-1', ?, ?)`,
+    )
+      .bind(clave, mime, PNG.byteLength, sensible, borrar, T)
+      .run();
+  }
+
+  const foto = (clave: string) => SELF.fetch(`https://panel.babycaleb.com/foto/${clave}`);
+
+  it("sale con sus bytes y su tipo, sin pedir sesión", async () => {
+    await sembrar("catalogo/ZZ-1/una.png");
+    const r = await foto("catalogo/ZZ-1/una.png");
+
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/png");
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(PNG);
+    // El contraste con `/api/yo`, que sí contesta 403: si esta ruta acabara
+    // detrás de Access, el `<img>` volvería a recibir el login y la foto
+    // volvería a no verse, sin un error a la vista en ningún sitio.
+    expect((await panel("/api/yo")).status).toBe(403);
+  });
+
+  it("cachea para siempre, porque otra foto es otra clave", async () => {
+    await sembrar("catalogo/ZZ-1/cache.png");
+    const r = await foto("catalogo/ZZ-1/cache.png");
+    expect(r.headers.get("cache-control")).toContain("immutable");
+    expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("un comprobante de pago NO sale por aquí", async () => {
+    // Lo más importante de este bloque. En ese bucket viven las fotos del
+    // catálogo y los comprobantes de pago de las clientas, y lo único que los
+    // separa es `sensible`. Si esta prueba se pone roja, se está sirviendo el
+    // comprobante de una clienta a cualquiera que adivine la clave.
+    await sembrar("pago/C-0042/comprobante.png", { sensible: 1 });
+    const r = await foto("pago/C-0042/comprobante.png");
+    expect(r.status).toBe(404);
+    expect(await r.text()).not.toContain("PNG");
+  });
+
+  it("una foto marcada para borrar tampoco", async () => {
+    await sembrar("catalogo/ZZ-1/vieja.png", { borrar: T });
+    expect((await foto("catalogo/ZZ-1/vieja.png")).status).toBe(404);
+  });
+
+  it("algo que no es una imagen tampoco, aunque no sea sensible", async () => {
+    await sembrar("catalogo/ZZ-1/raro.pdf", { mime: "application/pdf" });
+    expect((await foto("catalogo/ZZ-1/raro.pdf")).status).toBe(404);
+  });
+
+  it("una clave que no existe contesta lo MISMO que una prohibida", async () => {
+    // A propósito: distinguirlas le diría a quien prueba claves al azar cuáles
+    // existen de verdad.
+    await sembrar("pago/C-0042/otro.png", { sensible: 1 });
+    const prohibida = await foto("pago/C-0042/otro.png");
+    const inexistente = await foto("catalogo/ZZ-1/no-esta.png");
+    expect(inexistente.status).toBe(prohibida.status);
+    expect(await inexistente.text()).toBe(await prohibida.text());
+  });
+
+  it("y sale con las cabeceras de seguridad como todo lo demás", async () => {
+    await sembrar("catalogo/ZZ-1/segura.png");
+    const r = await foto("catalogo/ZZ-1/segura.png");
+    expect(r.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(r.headers.get("X-Robots-Tag")).toContain("noindex");
+  });
+});

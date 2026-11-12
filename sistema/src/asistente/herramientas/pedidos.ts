@@ -665,9 +665,24 @@ export const buscarCliente = definir({
     return {
       clientas,
       cuantas: clientas.length,
+      // El aviso NO repite lo que se buscó.
+      //
+      // Lo repetía, y eso mataba la herramienta justo cuando traía malas
+      // noticias: con coincidencia el aviso es null y todo iba bien, pero sin
+      // coincidencia volvía el texto buscado, y si ese texto era un celular
+      // —la mitad de para lo que existe esta herramienta, y el ejemplo de su
+      // propia descripción— la guarda de D-20 veía un celular en la respuesta y
+      // tumbaba el resultado entero. Comprobado en vivo por MCP:
+      // `buscar_cliente("6000-0001")` contestaba «Ese resultado traía datos de
+      // una clienta (celular)». Con el consejo «pruebe con el celular
+      // completo» dentro del mensaje que nunca se podía entregar.
+      //
+      // El razonamiento de arriba —«aquí ENTRA un nombre y no SALE ninguno»—
+      // miraba los datos y se le escapó que la ENTRADA se estaba copiando en
+      // la salida. Un eco también es una salida.
       aviso:
         clientas.length === 0
-          ? `ninguna clienta casa con «${args.texto}». Pruebe con menos letras, o con el celular completo.`
+          ? "ninguna clienta casa con eso. Pruebe con menos letras del nombre, o con el celular completo."
           : null,
     };
   },

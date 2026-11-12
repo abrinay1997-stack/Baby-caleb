@@ -85,6 +85,17 @@ export function EditarVariante({
   const [veredicto, setVeredicto] = useState<Veredicto | null>(null);
   const [foto, setFoto] = useState<string | null>(null);
   const [subiendo, setSubiendo] = useState(false);
+  /**
+   * El fallo de la FOTO va aparte del `error` de la hoja.
+   *
+   * El `error` general se pinta arriba, antes del primer campo. El campo de la
+   * foto está a media hoja, así que en un teléfono se toca «Cambiar foto»
+   * mirando ese campo y el mensaje aparece fuera de la pantalla: existe, nadie
+   * lo lee, y lo que se ve es un botón que no hizo nada. Importa especialmente
+   * aquí porque el mensaje más largo del sistema es justo éste —cómo sacar una
+   * foto del iPhone sin HEIC— y no serviría de nada escrito donde no se mira.
+   */
+  const [errorFoto, setErrorFoto] = useState<string | null>(null);
   const [receta, setReceta] = useState<Ingrediente[] | null>(null);
   const [cargado, setCargado] = useState<string | null>(null);
 
@@ -105,6 +116,7 @@ export function EditarVariante({
     setError(null);
     setVeredicto(null);
     setFoto(variante.imagen);
+    setErrorFoto(null);
     setReceta(null);
     if (variante.es_combo === 1) {
       void pedir<Ingrediente[]>(
@@ -136,7 +148,7 @@ export function EditarVariante({
   async function cambiarFoto(archivo: File) {
     if (variante === null) return;
     setSubiendo(true);
-    setError(null);
+    setErrorFoto(null);
     try {
       const r = await pedir<{ imagen: string }>(
         `/api/catalogo/variantes/${encodeURIComponent(variante.codigo)}/foto`,
@@ -145,7 +157,7 @@ export function EditarVariante({
       setFoto(r.imagen);
       alGuardar();
     } catch (e) {
-      setError((e as Error).message);
+      setErrorFoto((e as Error).message);
     } finally {
       setSubiendo(false);
     }
@@ -389,6 +401,14 @@ export function EditarVariante({
             />
           </label>
         </div>
+        {errorFoto === null ? null : (
+          <p
+            role="alert"
+            className="mt-2 mb-0 rounded-[12px] border border-line bg-bg p-3 text-[14px] font-bold"
+          >
+            {errorFoto}
+          </p>
+        )}
       </Campo>
 
       <Campo etiqueta="Nombre">
