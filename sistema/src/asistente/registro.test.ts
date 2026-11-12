@@ -128,10 +128,24 @@ describe("el catálogo de verdad", () => {
     }
   });
 
-  it("toda herramienta que escribe pide un motivo", () => {
+  it("toda herramienta que escribe pide un motivo, salvo las que solo cierran", () => {
     // Un cambio sin motivo es un descuadre sin explicación, y dentro de un mes
     // nadie se acuerda de por qué el stock bajó.
-    for (const h of todas.filter((x) => x.nivel !== "lectura")) {
+    //
+    // La excepción se nombra una por una y con su razón, nunca por un patrón:
+    // CERRAR no corrige nada ni mueve una cifra —cuenta lo que ya pasó y marca
+    // el día como terminado—, y lo que explica un cierre es su propio
+    // contenido: qué se entregó y cuánto se cobró, que la base ya guarda.
+    // Además `cerrarRuta` no tiene dónde escribir un motivo, así que pedirlo
+    // dejaría un parámetro que se ignora en silencio, que es la trampa §9. Lo
+    // que sí queda de un cierre es quién y cuándo: su fila en `acciones` y
+    // `rutas.cerrada_en`.
+    const soloCierran = new Set(["cerrar_ruta"]);
+    const queEscriben = todas.filter((x) => x.nivel !== "lectura" && !soloCierran.has(x.nombre));
+    // Si la lista se vaciara, esta prueba pasaría sin mirar nada.
+    expect(queEscriben.length).toBeGreaterThan(0);
+
+    for (const h of queEscriben) {
       const forma = JSON.stringify(cerrado(z.toJSONSchema(h.parametros)));
       expect(forma, `${h.nombre} no pide motivo`).toContain("motivo");
     }

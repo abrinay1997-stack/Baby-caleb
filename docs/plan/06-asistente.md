@@ -146,6 +146,11 @@ corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y convie
 | `registrar_reembolso` (es el `reembolsar` de arriba: anota el que YA se hizo, asiento 14) | sensible | dueña |
 | `registrar_contracargo` (lo decide el banco; asiento 15) | sensible | dueña |
 
+| `devolver_parada(pedido, motivo)` — la parada volvió sin entregarse | sensible | dueña |
+| `cancelar_ruta(motorizado, fecha?, motivo)` — deshace una ruta que no salió | sensible | dueña |
+| `cerrar_ruta(motorizado, fecha?)` — cierra el día y cuenta lo cobrado | sensible | dueña |
+| `devolver_pedido(pedido, motivo)` — la clienta devuelve lo ya entregado (asiento 13) | sensible | dueña |
+
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
 
 `ver_ajustes` y `cambiar_ajuste` son la otra puerta de la pantalla de Ajustes, y entraron
@@ -190,6 +195,30 @@ de la pasarela, ni el historial de encendidas, ni si la llave maestra del
 Worker está puesta — el contexto del asistente no la tiene, y «no la tengo» no
 es «no está». Poner una credencial sigue siendo `solo_panel`: un secreto se
 teclea donde se ve.
+
+Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
+
+Las cuatro últimas deshacen o cierran algo que YA PASÓ y llaman a la misma
+función de `src/db/entregas.ts` que la ruta del panel —`devolverParada`,
+`cancelarRuta`, `cerrarRuta`, `devolverPedidoEntregado`—, así que ninguna
+decisión suya está escrita dos veces. Una entrega se nombra por el número del
+pedido y una ruta por el motorizado y el día: son los handles que una persona
+dice en voz alta, y ni la dirección ni el nombre de la clienta —ni el del
+motorizado— vuelven hacia el modelo (D-20).
+
+**Dos huecos conocidos de estas cuatro**, los dos por la regla «lo sensible es
+solo de la dueña» que vigila `asistente/registro.test.ts`:
+
+1. Tres de sus rutas del panel piden editar `pedidos`, que la asistente tiene,
+   así que ella puede devolver una parada o cerrar una ruta en el panel y no
+   por MCP. Cerrarlo bien es que una herramienta declare el `Permiso` que
+   necesita y que sus roles salgan de `seguridad/roles.ts`, en vez de
+   escribirlos a mano una por una: es un cambio del contrato de `registro.ts`
+   y afecta a todas.
+2. `cerrar_ruta` es la única herramienta que escribe y no pide motivo, y es la
+   excepción nombrada en esa misma prueba: cerrar no corrige nada —cuenta lo
+   que ya pasó—, `cerrarRuta` no tiene dónde guardar un motivo, y un parámetro
+   que se ignora en silencio es la trampa §9.
 
 ## 6. Modelo, costo y caché
 
