@@ -7,6 +7,7 @@ import {
   crearVariante,
   editarVariante,
   explicar,
+  ponerReceta,
 } from "../../db/catalogo-admin";
 import { type Contexto, definir } from "../registro";
 
@@ -545,6 +546,68 @@ export const retirarVariante = definir({
   },
 });
 
+
+/**
+ * La receta de un combo: de qué está hecho y cuántas unidades lleva de cada
+ * cosa.
+ *
+ * Es lo que convierte un combo en algo que el sistema puede vender. Un combo
+ * no tiene existencias propias —no hay cajas de «combo» en el estante—, así
+ * que lo que hay disponible sale de sus componentes, y sin receta un combo es
+ * un nombre con precio del que nunca hay ninguno.
+ *
+ * Sensible, por lo que no se ve: cambiar la receta cambia cuántos combos hay
+ * disponibles AHORA MISMO en la web y en el bot, sin tocar una sola caja. Una
+ * receta que pide dos unidades en vez de una parte por la mitad el inventario
+ * del combo, y eso no se descubre contando: se descubre cuando la página deja
+ * de ofrecerlo.
+ *
+ * Lo que ya estaba decidido en `ponerReceta` y aquí no se repite: que la
+ * variante exista, que sea un combo (lo impide además un trigger de la base),
+ * que ninguna cantidad sea cero o negativa, que un combo no se lleve a sí
+ * mismo y que ningún ingrediente esté dos veces. Dos sitios decidiendo lo
+ * mismo acaban decidiendo distinto.
+ */
+export const ponerRecetaDeCombo = definir({
+  nombre: "poner_receta_de_combo",
+  descripcion:
+    "Dice de qué está hecho un combo: qué presentaciones lleva y cuántas unidades de cada una. Reemplaza la receta entera, no añade. Ejemplo: poner_receta_de_combo con el código del combo y [{codigo: «BC-001-S», cantidad: 1}, {codigo: «BC-014-U», cantidad: 2}].",
+  parametros: z.object({
+    codigo: z
+      .string()
+      .min(1)
+      .max(40)
+      .describe("El código del combo. Sale de buscar_articulo o de ver_combo."),
+    receta: z
+      .array(
+        z.object({
+          codigo: z.string().min(1).max(40).describe("El código de la presentación que lleva."),
+          cantidad: z.number().int().positive().describe("Cuántas unidades de esa presentación."),
+        }),
+      )
+      .min(1)
+      .max(30)
+      .describe(
+        "La receta COMPLETA. Lo que no esté en esta lista deja de formar parte del combo.",
+      ),
+    motivo: z
+      .string()
+      .min(3)
+      .max(300)
+      .optional()
+      .describe("Por qué se cambia. Queda en la bitácora del asistente (acciones)."),
+  }),
+  nivel: "sensible",
+  categoria: "catalogo",
+  roles: ["duena"],
+
+  async ejecutar(ctx, args) {
+    const r = await ponerReceta(paraCatalogo(ctx), args.codigo, args.receta);
+    if (!r.ok) throw new Error(r.mensaje);
+    return { codigo: args.codigo, ingredientes: r.datos.ingredientes };
+  },
+});
+
 export const HERRAMIENTAS_DE_CATALOGO_ESCRITURA = [
   crearProductoDelCatalogo,
   crearVarianteDelCatalogo,
@@ -552,4 +615,5 @@ export const HERRAMIENTAS_DE_CATALOGO_ESCRITURA = [
   editarVarianteDelCatalogo,
   verRetiroDeVariante,
   retirarVariante,
+  ponerRecetaDeCombo,
 ] as const;

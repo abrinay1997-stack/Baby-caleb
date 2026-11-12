@@ -65,7 +65,18 @@ const COBERTURA = {
   "GET /pedidos": "buscar_pedido",
   "GET /pedidos/:id": "ver_pedido",
   "GET /resumen": "resumen_del_dia",
-  "GET /usuarios": "PENDIENTE",
+  // Los tres de usuarios son la ÚNICA excepción de fondo a «todo lleva MCP», y
+  // está decidida en 06-asistente §3: lo que el asistente nunca hace no se
+  // comprueba, no existe — y cambiar un permiso es lo primero de esa lista.
+  //
+  // El motivo es el mismo que ya se aceptó para las llaves de MCP: una llave
+  // que puede dar de alta a un usuario con permisos es una llave que se
+  // amplía a sí misma, y entonces revocarla no revoca nada. Darle esto a MCP
+  // no sería una capacidad más, sería quitarle el techo a todas las demás.
+  //
+  // Leer la lista va con ellos a propósito: enseñar quién tiene qué permiso
+  // es el mapa de por dónde entrar.
+  "GET /usuarios": "solo_panel: quién entra y con qué permiso se decide donde se ve a la persona, no por una herramienta (06-asistente §3)",
   "GET /yo": "solo_panel: quién soy lo decide Access, no una herramienta",
   "GET /zonas": "ver_zonas",
   "PATCH /bodegas/:id": "renombrar_bodega + cambiar_uso_de_bodega",
@@ -76,7 +87,7 @@ const COBERTURA = {
   // hacia el modelo. Una excepción razonada vale; una silenciosa no.
   "PATCH /clientes/:id": "corregir_ficha_de_clienta (la dirección se toca solo en el panel)",
   "PATCH /motorizados/:id": "corregir_motorizado",
-  "PATCH /usuarios/:id": "PENDIENTE",
+  "PATCH /usuarios/:id": "solo_panel: una llave que cambia permisos se amplía a sí misma, y entonces revocarla no revoca nada",
   "PATCH /zonas/:id": "cambiar_zona",
   "POST /ajustes/:clave": "cambiar_ajuste",
   "POST /asistente": "solo_panel: es la puerta del propio asistente",
@@ -116,6 +127,8 @@ const COBERTURA = {
   "POST /existencias/movimientos": "ajustar_stock (que ya acepta el costo al entrar) + registrar_merma",
   "POST /motorizados": "dar_de_alta_motorizado",
   "POST /motorizados/:id/estado": "cambiar_estado_motorizado",
+  "POST /pasarelas/:pasarela/credenciales/:credencial/quitar":
+    "solo_panel: quitar un secreto se hace donde se ve, igual que ponerlo",
   "POST /pasarelas/:pasarela/credenciales/:credencial": "solo_panel: un secreto se teclea donde se ve, no por una herramienta",
   "POST /pasarelas/:pasarela/encendida": "encender_pasarela + apagar_pasarela",
   "POST /pasarelas/:pasarela/modo": "cambiar_modo_de_pasarela",
@@ -123,17 +136,29 @@ const COBERTURA = {
   "POST /pedidos/:id/agendar": "agendar_pedido",
   "POST /pedidos/:id/cancelar": "anular_pedido",
   "POST /pedidos/:id/devolucion": "devolver_pedido",
-  "POST /usuarios": "PENDIENTE",
+  "POST /usuarios": "solo_panel: una llave que da de alta usuarios se hace otra a sí misma; es el mismo motivo que las llaves de MCP",
   "POST /usuarios/:id/telegram":
     "solo_panel: entrega un código de un solo uso que se lee en pantalla. Por una\n     herramienta pasaría por el modelo, y el modelo es un Contributor con el que Meta\n     entrena (D-20): una llave no se le enseña ni una vez",
-  "POST /zonas": "crear_zona"
+  "POST /zonas": "crear_zona",
+  "PUT /catalogo/variantes/:codigo/foto":
+    "solo_panel: se sube una imagen, no datos. Una herramienta tendría que recibir el archivo por el modelo",
+  "PUT /catalogo/variantes/:codigo/receta": "poner_receta_de_combo",
+  "PUT /entregas/:envioId/prueba":
+    "solo_panel: se sube la foto de la entrega desde el teléfono del motorizado, no datos"
 };
 
 const fuentes = ["src/api/panel.ts", "src/api/asistente-rutas.ts"];
 const rutas = new Set();
 for (const f of fuentes) {
   const texto = readFileSync(f, "utf8");
-  for (const m of texto.matchAll(/panel\.(get|post|patch|delete)\("([^"]+)"/g)) {
+  // `put` estaba fuera y el salto de línea tras el paréntesis también, así que
+  // cuatro rutas de verdad no las contaba NADIE: las tres `PUT` (la foto y la
+  // receta de una variante, la prueba de una entrega) y el `POST` de quitar
+  // una credencial, que se declara con la ruta en la línea siguiente porque no
+  // cabía en una. El guion existe para que ninguna ruta se escape sin decidir
+  // si MCP la cubre, y se le escapaban cuatro — lo encontraron dos agentes
+  // distintos el mismo día, cada uno con la suya.
+  for (const m of texto.matchAll(/panel\.(get|post|put|patch|delete)\(\s*"([^"]+)"/g)) {
     rutas.add(`${m[1].toUpperCase()} ${m[2]}`);
   }
 }
@@ -211,6 +236,46 @@ if (sinDecidir.length > 0) {
     "\nAñádalas a COBERTURA en este archivo, con el nombre de la herramienta que\n" +
       "las cubre, «PENDIENTE» si todavía no, o «solo_panel: <motivo>» si no tiene\n" +
       "sentido por MCP. Decidirlo es el punto: que no se olvide.",
+  );
+  process.exit(1);
+}
+
+/**
+ * Y la excepción de fondo, vigilada.
+ *
+ * Las tres rutas de `usuarios` son solo_panel porque cambiar un permiso es lo
+ * primero de la lista de lo que el asistente NUNCA hace (06-asistente §3), y
+ * porque una llave de MCP que da de alta usuarios se amplía a sí misma: a
+ * partir de ahí, revocarla no revoca nada.
+ *
+ * Eso estaba escrito en una nota de COBERTURA, y una nota no impide nada. Hay
+ * además una prueba en `registro.test.ts`, pero mira los NOMBRES de las
+ * herramientas, y el nombre no es la garantía: una herramienta llamada
+ * `corregir_ficha_de_clienta` puede escribir en `usuarios` y pasar.
+ *
+ * Esto mira el código. Si algún archivo de herramientas toca la tabla
+ * `usuarios` o importa `db/usuarios`, falla.
+ */
+const TOCAN_USUARIOS = [];
+for (const archivo of readdirSync(DIRECTORIO)) {
+  if (!archivo.endsWith(".ts") || archivo.endsWith(".test.ts")) continue;
+  const texto = readFileSync(`${DIRECTORIO}/${archivo}`, "utf8");
+  // Se mira el SQL y el import, que son las dos formas de llegar a la tabla.
+  // `usuario` en singular queda fuera a propósito: `ctx.usuario` es quién
+  // pregunta y lo usan casi todas.
+  if (/\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+usuarios\b/i.test(texto) ||
+      /from\s+"\.\.\/\.\.\/db\/usuarios"/.test(texto)) {
+    TOCAN_USUARIOS.push(archivo);
+  }
+}
+
+if (TOCAN_USUARIOS.length > 0) {
+  console.error(`\n${TOCAN_USUARIOS.length} archivo(s) de herramientas tocan la tabla «usuarios»:\n`);
+  for (const a of TOCAN_USUARIOS) console.error(`  ${DIRECTORIO}/${a}`);
+  console.error(
+    "\nQuién entra y con qué permiso se decide en el panel, donde se ve a la\n" +
+      "persona. Una llave de MCP que da de alta usuarios o les cambia el rol se\n" +
+      "amplía a sí misma, y entonces revocarla no revoca nada (06-asistente §3).",
   );
   process.exit(1);
 }

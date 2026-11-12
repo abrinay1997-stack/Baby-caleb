@@ -154,7 +154,21 @@ corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y convie
 | `crear_zona` · `cambiar_zona` (la tarifa es dinero; `null` = se cotiza a mano) | sensible | dueña |
 | `corregir_ficha_de_clienta` (por su referencia; no devuelve ningún dato de ella) | construcción | dueña, asistente |
 
+| `poner_receta_de_combo(codigo, receta)` — de qué está hecho un combo | sensible | dueña |
+
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
+
+**La única excepción de fondo a «todo lleva MCP» son los usuarios.** `GET /usuarios`,
+`POST /usuarios` y `PATCH /usuarios/:id` se quedan solo en el panel, y no es deuda: es la
+§3 de este mismo documento. Una llave de MCP que puede dar de alta a un usuario con
+permisos —o cambiarle el rol a uno que ya existe— es una llave que se amplía a sí misma,
+y a partir de ahí revocarla no revoca nada. Es el mismo motivo por el que las llaves de
+MCP no se crean ni se listan por MCP. Leer la lista va con ellas a propósito: enseñar
+quién tiene qué permiso es el mapa de por dónde entrar.
+
+Y está vigilado, no solo escrito: `node scripts/sin-mcp.mjs` falla si algún archivo de
+`src/asistente/herramientas/` escribe en la tabla `usuarios` o importa `db/usuarios`.
+Comprobado al revés, metiendo un `UPDATE usuarios` en una herramienta: sale en rojo.
 
 `ver_ajustes` y `cambiar_ajuste` son la otra puerta de la pantalla de Ajustes, y entraron
 con los dos ajustes de WhatsApp (`whatsapp_pedidos_activo`, `whatsapp_numero`) porque la

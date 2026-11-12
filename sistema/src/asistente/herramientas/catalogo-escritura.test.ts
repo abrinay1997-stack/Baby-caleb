@@ -11,6 +11,7 @@ import {
   editarVarianteDelCatalogo,
   retirarVariante,
   verRetiroDeVariante,
+  ponerRecetaDeCombo,
 } from "./catalogo-escritura";
 
 /**
@@ -145,7 +146,7 @@ async function permitir(accionId: string) {
 // Que estén enchufadas (TRAMPAS §12)
 // ---------------------------------------------------------------------------
 
-describe("las seis herramientas existen y se alcanzan desde fuera", () => {
+describe("las siete herramientas existen y se alcanzan desde fuera", () => {
   const NOMBRES = [
     "crear_producto",
     "crear_variante",
@@ -153,6 +154,7 @@ describe("las seis herramientas existen y se alcanzan desde fuera", () => {
     "editar_variante",
     "ver_retiro_variante",
     "retirar_variante",
+    "poner_receta_de_combo",
   ];
 
   it("están registradas en el catálogo del asistente", () => {
@@ -717,6 +719,9 @@ describe("los niveles son los que dicen los comentarios", () => {
     expect(editarVarianteDelCatalogo.nivel).toBe("sensible");
     expect(retirarVariante.nivel).toBe("sensible");
     expect(verRetiroDeVariante.nivel).toBe("lectura");
+    // Poner la receta es sensible por lo que NO se ve: cambia cuántos combos
+    // hay disponibles ahora mismo en la web y en el bot, sin tocar una caja.
+    expect(ponerRecetaDeCombo.nivel).toBe("sensible");
   });
 
   it("y todas son solo de la dueña", () => {
@@ -727,8 +732,149 @@ describe("los niveles son los que dicen los comentarios", () => {
       editarVarianteDelCatalogo,
       retirarVariante,
       verRetiroDeVariante,
+      ponerRecetaDeCombo,
     ]) {
       expect(h.roles, h.nombre).toEqual(["duena"]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// La receta de un combo
+//
+// `ponerReceta` llevaba meses escrita, con su ruta `PUT` en el panel, y NADIE
+// la probaba: no había un solo `ponerReceta` en ningún `.test.ts`. Es la
+// trampa §12 en su forma más tranquila —la pieza funciona, pero nadie puede
+// decir que siga funcionando mañana— y además la ruta se le escapaba al
+// control de MCP, porque su regex no miraba los `PUT`.
+// ---------------------------------------------------------------------------
+
+/** Un combo vacío: una presentación marcada como combo, sin receta todavía. */
+async function unCombo(): Promise<string> {
+  const codigo = await unaVariante();
+  await env.DB.prepare("UPDATE variantes SET es_combo = 1 WHERE codigo = ?").bind(codigo).run();
+  return codigo;
+}
+
+describe("poner_receta_de_combo", () => {
+  it("escribe la receta entera, y la segunda vez REEMPLAZA en vez de sumar", async () => {
+    const combo = await unCombo();
+    const a = await unaVariante();
+    const b = await unaVariante();
+
+    const puesta = await ejecutar(
+      quien(),
+      registro,
+      pedir("poner_receta_de_combo", {
+        codigo: combo,
+        receta: [
+          { codigo: a, cantidad: 1 },
+          { codigo: b, cantidad: 2 },
+        ],
+        motivo: "el combo de estreno",
+      }),
+    );
+    expect(puesta.ok, JSON.stringify(puesta)).toBe(true);
+    if (!puesta.ok || puesta.datos.clase !== "por_confirmar") throw new Error("no quedó esperando");
+    const hecha = await permitir(puesta.datos.accionId);
+    expect(hecha.ok, JSON.stringify(hecha)).toBe(true);
+
+    const { results } = await env.DB.prepare(
+      "SELECT codigo, cantidad FROM combo_componentes WHERE combo_codigo = ? ORDER BY codigo",
+    )
+      .bind(combo)
+      .all<{ codigo: string; cantidad: number }>();
+    expect(results).toHaveLength(2);
+
+    // Y ahora la misma receta con UN solo ingrediente: lo que no está en la
+    // lista deja de formar parte del combo. Si sumara en vez de reemplazar,
+    // el combo seguiría pidiendo mercancía que nadie quiso meterle.
+    const otra = await ejecutar(
+      quien(),
+      registro,
+      pedir("poner_receta_de_combo", {
+        codigo: combo,
+        receta: [{ codigo: a, cantidad: 3 }],
+        motivo: "se simplificó",
+      }),
+    );
+    if (!otra.ok || otra.datos.clase !== "por_confirmar") throw new Error("no quedó esperando");
+    expect((await permitir(otra.datos.accionId)).ok).toBe(true);
+
+    const despues = await env.DB.prepare(
+      "SELECT codigo, cantidad FROM combo_componentes WHERE combo_codigo = ?",
+    )
+      .bind(combo)
+      .all<{ codigo: string; cantidad: number }>();
+    expect(despues.results).toEqual([{ codigo: a, cantidad: 3 }]);
+  });
+
+  /**
+   * Sensible, y eso significa que no se hace sola. Cambiar la receta cambia
+   * cuántos combos hay disponibles en la web y en el bot sin tocar una caja:
+   * pedir dos unidades en vez de una parte por la mitad el inventario del
+   * combo, y eso no se descubre contando.
+   */
+  it("no se escribe nada hasta que una persona lo permite", async () => {
+    const combo = await unCombo();
+    const a = await unaVariante();
+
+    const r = await ejecutar(
+      quien(),
+      registro,
+      pedir("poner_receta_de_combo", {
+        codigo: combo,
+        receta: [{ codigo: a, cantidad: 1 }],
+        motivo: "probando",
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.clase).toBe("por_confirmar");
+
+    const cuantos = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM combo_componentes WHERE combo_codigo = ?",
+    )
+      .bind(combo)
+      .first<{ n: number }>();
+    expect(cuantos?.n).toBe(0);
+  });
+
+  it("se niega sobre una presentación que no es un combo", async () => {
+    const normal = await unaVariante();
+    const a = await unaVariante();
+
+    const r = await ejecutar(
+      quien(),
+      registro,
+      pedir("poner_receta_de_combo", {
+        codigo: normal,
+        receta: [{ codigo: a, cantidad: 1 }],
+        motivo: "probando",
+      }),
+    );
+    if (!r.ok || r.datos.clase !== "por_confirmar") throw new Error("no quedó esperando");
+    const hecha = await permitir(r.datos.accionId);
+    expect(hecha.ok).toBe(false);
+  });
+
+  it("y a la asistente se le niega aunque la pida", async () => {
+    const r = await ejecutar(
+      quien(asistente),
+      registro,
+      pedir("poner_receta_de_combo", {
+        codigo: "LO-QUE-SEA",
+        receta: [{ codigo: "OTRO", cantidad: 1 }],
+        motivo: "probando",
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("no_autorizado");
+  });
+
+  it("una receta vacía no pasa del esquema", () => {
+    const malo = ponerRecetaDeCombo.parametros.safeParse({ codigo: "X", receta: [] });
+    expect(malo.success).toBe(false);
   });
 });
