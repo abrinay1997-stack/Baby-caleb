@@ -270,8 +270,26 @@ reglas, y sin puerta nadie nota que faltan.
 
 Lo mismo con `/mcp`: lleva meses reservado en `run_worker_first` de los dos
 entornos, apuntando a una ruta que no existe. Y con `checkout_activo`, un
-ajuste que en producción vale `true` y que **ningún código consulta**: la web
-no lo mira en ningún sitio, así que la dueña puede encenderlo y no pasa nada.
+ajuste que en producción valía `true` y que **ningún código consultaba**: la
+web no lo miraba en ningún sitio, así que la dueña podía encenderlo y no pasaba
+nada.
+
+**El caso de `checkout_activo` ya se cerró, y cómo se cerró también es la
+lección.** No se conectó el cobro —eso exige una pasarela, y hay tres con cero
+credenciales—: se hizo que el ajuste **diga la verdad**. Ahora
+`src/dominio/checkout.ts` calcula, de los datos, si la web puede cobrar; la
+pantalla de Ajustes enseña «Encendido, pero todavía sin efecto» con la lista de
+lo que falta; y hay una ruta (`GET /checkout`) y una herramienta
+(`ver_checkout`) que contestan lo mismo. La parte que importa es que el
+veredicto **no es un texto escrito a mano**: el día que una pasarela esté
+lista, la pantalla cambia sola. Un aviso que alguien tiene que acordarse de
+borrar es la siguiente mentira esperando turno.
+
+Lo que ahí no se podía calcular de los datos —si el carrito de la web sabe
+mandar a pagar— quedó declarado en una constante y **vigilado por una prueba
+que lee el carrito de verdad** (`test/node/checkout-de-la-web.test.ts`), que se
+pone roja en las dos direcciones. Es la salida honesta para un hecho que no
+está en ninguna tabla.
 
 **La regla, y la pidió el dueño del proyecto:** un ajuste nuevo, un campo nuevo
 o una capacidad nueva **no están terminados hasta que se pueden usar también
@@ -289,6 +307,12 @@ de inmediato en vez de dentro de seis semanas.
 herramientas del asistente con las rutas del panel y dice qué se puede hacer
 por una puerta y no por la otra. Una capacidad que no esté en las dos es un
 fallo, no una tarea pendiente.
+
+Y comprueba una segunda cosa, por el mismo motivo que existe esta entrada: que
+la herramienta nombrada en el mapa **exista de verdad** en
+`src/asistente/herramientas/`. Escribir «esto ya se puede por MCP» al lado de
+un nombre inventado es la misma mentira que `checkout_activo`, y con el mismo
+efecto: nadie vuelve a mirarlo.
 
 ---
 

@@ -48,8 +48,28 @@ describe("el panel de muestra", () => {
                      "/api/bodegas", "/api/zonas", "/api/ajustes", "/api/usuarios",
                      // Clientas: sin su muestra, la auditoría mediría un 404
                      // en la pantalla donde se escribe la cédula.
-                     "/api/clientes"]) {
+                     "/api/clientes",
+                     // El checkout: lo pide la pantalla de Ajustes para poder
+                     // decir si `checkout_activo` está surtiendo efecto. Sin
+                     // su muestra, esa tarjeta —que existe justo porque el
+                     // interruptor mentía— no la mira nunca nadie.
+                     "/api/checkout"]) {
       expect(rutas, `falta la muestra de ${r}`).toContain(r);
+    }
+  });
+
+  /**
+   * Y la muestra de pedidos trae una COTIZACIÓN.
+   *
+   * La hoja que la confirma solo existe sobre una fila en ese estado: sin
+   * ella, el auditor abre la pantalla de pedidos, no encuentra ninguna
+   * cotización y pasa de largo diciendo «sin fallas» de lo que ya estaba.
+   */
+  it("trae un pedido en cada estado que el panel sabe pintar, cotización incluida", () => {
+    const estados = [...fuente.matchAll(/estado: "(\w+)",\s*\n\s*estado_pago:/g)].map((m) => m[1]!);
+    for (const e of ["cotizacion", "por_abonar", "agendado", "en_ruta", "entregado", "cancelado",
+                     "devuelto"]) {
+      expect(estados, `falta un pedido en estado ${e}`).toContain(e);
     }
   });
 

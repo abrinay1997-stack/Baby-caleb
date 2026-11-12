@@ -113,6 +113,15 @@ export const IdentidadRef = z.object({
  * Sin nombre, sin celular y sin la dirección completa (07-seguridad.md §4): el
  * token sale en un enlace, y un enlace se reenvía. Lleva la zona, que basta
  * para saber a dónde va, y no el texto de la calle.
+ *
+ * **`cotizacion` NO está en la lista de estados, y no es un olvido.** Este
+ * esquema es contrato con el CRM —hay una copia allá y una huella que falla si
+ * las dos se separan— y describe el enlace de SEGUIMIENTO de un pedido. Una
+ * cotización no tiene seguimiento: no se agenda, no sale a la calle y no se
+ * entrega; vive en el panel hasta que alguien la confirma o la descarta. El
+ * día que se quiera enseñarle una cotización a una clienta por un enlace, eso
+ * se decide en 03-contratos, se cambia en los dos repositorios y se vuelve a
+ * sellar la huella — no se añade aquí de paso.
  */
 export const EstadoPublicoPedido = z.object({
   numero: z.string().min(1),

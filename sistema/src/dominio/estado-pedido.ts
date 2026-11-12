@@ -12,6 +12,10 @@
  */
 
 export const ESTADOS_PEDIDO = [
+  // Una cotización es este mismo documento antes de apartar nada. Va primera
+  // porque es la primera del recorrido: confirmarla es pasar a `por_abonar`,
+  // que es donde el inventario se aparta. Ver `esCotizacion` más abajo.
+  "cotizacion",
   "por_abonar",
   "agendado",
   "en_ruta",
@@ -40,6 +44,7 @@ export const esEstadoPago = (v: string): v is EstadoPago =>
 
 /** Lo que se lee en pantalla. El trato es de usted, siempre. */
 export const ETIQUETAS_PEDIDO: Record<EstadoPedido, string> = {
+  cotizacion: "Cotización",
   por_abonar: "Esperando su abono",
   agendado: "Agendado",
   en_ruta: "Va en camino",
@@ -57,6 +62,15 @@ export const ETIQUETAS_PAGO: Record<EstadoPago, string> = {
 };
 
 const TRANSICIONES_PEDIDO: Record<EstadoPedido, readonly EstadoPedido[]> = {
+  // Confirmar una cotización es ESTA transición, y es la única puerta por la
+  // que el inventario se aparta. De ahí que no haya ningún atajo a `agendado`:
+  // un documento que no ha apartado nada no puede entrar en la lista de
+  // entregas, por mucho que esté pagado.
+  //
+  // Y se cancela sin tocar los libros, porque no hubo venta: una cotización
+  // que caduca o que la clienta descarta no deja ni un asiento ni una reserva
+  // que devolver.
+  cotizacion: ["por_abonar", "cancelado"],
   por_abonar: ["agendado", "cancelado"],
   agendado: ["en_ruta", "cancelado"],
   // De «en_ruta» se vuelve a «agendado» cuando la entrega falla y se
@@ -104,6 +118,37 @@ export function transicionesPago(de: EstadoPago): readonly EstadoPago[] {
 
 export function esTerminalPedido(estado: EstadoPedido): boolean {
   return TRANSICIONES_PEDIDO[estado].length === 0;
+}
+
+/**
+ * ¿Este documento todavía no ha apartado nada?
+ *
+ * Es la pregunta que de verdad distingue una cotización de un pedido, y por eso
+ * se escribe así y no `estado === "cotizacion"` repartido por diez archivos.
+ * Quien la lee necesita saber una sola cosa: si tocar este documento mueve
+ * `existencias.reservado` o no.
+ *
+ * Lo que de aquí se sigue, y está probado en `estado-pedido.test.ts`:
+ *
+ *  - crearla NO resta nada de lo libre;
+ *  - cancelarla o dejarla caducar no devuelve nada, porque no se quitó nada;
+ *  - confirmarla —la transición a `por_abonar`— es el único momento en que se
+ *    aparta, y es también el único que puede fallar por falta de existencias.
+ */
+export function esCotizacion(estado: EstadoPedido): boolean {
+  return estado === "cotizacion";
+}
+
+/**
+ * ¿Este documento aparta inventario mientras está en este estado?
+ *
+ * El complemento de `esCotizacion`, escrito en positivo porque es como se lee
+ * en el sitio donde importa: `cancelar` pregunta «¿hay que devolver algo?».
+ * Los estados terminales tampoco apartan —al entregar se consume, al cancelar
+ * se libera— así que aquí solo están los tres del medio.
+ */
+export function apartaInventario(estado: EstadoPedido): boolean {
+  return estado === "por_abonar" || estado === "agendado" || estado === "en_ruta";
 }
 
 /**

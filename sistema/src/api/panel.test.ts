@@ -1,5 +1,6 @@
 import { env as real } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
+import { CLAVES } from "../dominio/ajustes";
 import type { RolDePanel, Usuario } from "../seguridad";
 import { type ResolverUsuario, crearPanel, exigeEditar, panel } from "./panel";
 import { Hono } from "hono";
@@ -419,9 +420,15 @@ describe("/ajustes", () => {
       ajustes: { clave: string; origen: string; valor: unknown; pendiente: boolean }[];
     };
 
-    // Las 15 claves, siempre. Una que desaparece de la lista es una que nadie
-    // vuelve a buscar.
-    expect(d.ajustes.length).toBe(15);
+    // TODAS las claves, siempre. Una que desaparece de la lista es una que
+    // nadie vuelve a buscar.
+    //
+    // El número sale de `CLAVES` y no escrito a mano: estaba en 15 y añadir
+    // `cotizacion_dias_validez` lo puso rojo sin que faltara nada. Un número
+    // copiado en una prueba es un número que alguien tiene que acordarse de
+    // subir, y en este repositorio ya ha quedado desactualizado tres veces en
+    // el auditor (docs/TRAMPAS.md §4).
+    expect(d.ajustes.length).toBe(CLAVES.length);
     expect(d.ajustes.every((a) => a.origen === "fabrica")).toBe(true);
 
     // Y lo que todavía nadie ha decidido se ve como tal, que no es lo mismo

@@ -82,7 +82,12 @@ import {
 import type { CambiosEnClienta, CambiosEnDireccion } from "../db/clientes";
 import { type HacerProveedor, registrarRutasDelAsistente } from "./asistente-rutas";
 import { crearPedido } from "../db/pedidos";
-import { agendar as agendarPedido, cancelar as cancelarPedido } from "../db/transiciones";
+import { verCheckout } from "../db/checkout";
+import {
+  agendar as agendarPedido,
+  cancelar as cancelarPedido,
+  confirmarCotizacion,
+} from "../db/transiciones";
 import {
   armarRuta,
   cancelarRuta,
@@ -1055,6 +1060,27 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
+  /**
+   * ¿Puede la web cobrar? Y si no, qué falta.
+   *
+   * Esta ruta es la que hace que `ajustes.checkout_activo` deje de mentir.
+   * Antes ese interruptor valía `true` en producción y NINGÚN código lo
+   * consultaba: la dueña lo encendía y no pasaba nada, lo apagaba y tampoco
+   * (docs/TRAMPAS.md §13). Ahora hay quien lo lea, y lo que contesta no es el
+   * valor guardado sino lo que ese valor está consiguiendo.
+   *
+   * Va con `ajustes` y no con `cobros`: es la pantalla de Configuración la que
+   * la pide, al lado del propio interruptor, y lo que devuelve es
+   * configuración —qué está puesto y qué falta—, no dinero.
+   *
+   * No lleva ni una credencial: `verCheckout` se apoya en `estado` de
+   * pasarelas, cuya consulta no nombra siquiera la columna del secreto.
+   */
+  panel.get("/checkout", exige("ajustes"), async (c) => {
+    const r = await verCheckout(contextoPasarelas(c));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
   panel.post("/pasarelas/:pasarela/credenciales/:credencial", exigeEditar("ajustes"), async (c) => {
     const b = await cuerpo(c);
     if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
@@ -1289,9 +1315,13 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
    * contempla, no un hueco: un pedido que tomó una persona no se cancela solo
    * a espaldas de quien lo tomó.
    */
-  async function reglasDelPedido(
-    c: Context<Entorno>,
-  ): Promise<Resultado<{ abonoMinimoCents: number; minutosParaAbonar: number | null }>> {
+  async function reglasDelPedido(c: Context<Entorno>): Promise<
+    Resultado<{
+      abonoMinimoCents: number;
+      minutosParaAbonar: number | null;
+      minutosDeValidezCotizacion: number | null;
+    }>
+  > {
     const r = await leerVigentes({ db: c.env.DB, ahora: Date.now() });
     if (!r.ok) return r;
     const de = (clave: string) => r.datos.ajustes.find((a) => a.clave === clave);
@@ -1310,7 +1340,74 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
         ? null
         : horas.valor * 60;
 
-    return ok({ abonoMinimoCents: abono.valor, minutosParaAbonar });
+    // Cuánto vale una cotización. Nace PENDIENTE —nadie ha confirmado cuántos
+    // días Baby Caleb mantiene un precio por escrito— y PENDIENTE no se
+    // rellena: sin decidir, la cotización no caduca sola. Ese es el lado
+    // seguro: una cotización vencida no se puede confirmar, así que un número
+    // inventado de menos dejaría a la clienta con un papel que el sistema
+    // rechaza.
+    const dias = de("cotizacion_dias_validez");
+    const minutosDeValidezCotizacion =
+      dias === undefined || dias.pendiente || typeof dias.valor !== "number"
+        ? null
+        : dias.valor * 24 * 60;
+
+    return ok({ abonoMinimoCents: abono.valor, minutosParaAbonar, minutosDeValidezCotizacion });
+  }
+
+  /**
+   * Lo que se teclea para tomar un pedido o para hacer una cotización.
+   *
+   * Es la MISMA lectura del cuerpo para las dos rutas, y a propósito: el
+   * documento es el mismo (modelo de Odoo), así que dos lecturas distintas
+   * serían dos formas de entender «qué lleva» que acabarían discrepando.
+   * `origen` se fija en «panel» y no se lee del cuerpo — si quien llama pudiera
+   * declararse «web», un pedido tecleado a mano contaría como una venta que la
+   * tienda nunca hizo.
+   *
+   * Ningún precio entra por aquí: el cuerpo ni siquiera tiene dónde escribir
+   * uno. Los pone el servidor desde el catálogo.
+   */
+  async function loQueSePidio(
+    c: Context<Entorno>,
+    cotizacion: boolean,
+  ): Promise<Resultado<Parameters<typeof crearPedido>[1]>> {
+    const b = await cuerpo(c);
+    if (b === null) return fallo("entrada_invalida", "falta el cuerpo");
+
+    const lineas = b["lineas"];
+    if (!Array.isArray(lineas) || lineas.length === 0) {
+      return fallo(
+        "entrada_invalida",
+        cotizacion
+          ? "una cotización sin líneas no cotiza nada"
+          : "un pedido sin líneas no es un pedido",
+      );
+    }
+
+    // La llave de idempotencia la pone la PANTALLA, una por formulario
+    // abierto. Sin ella, un doble toque con mala señal crea dos documentos, y
+    // en el caso del pedido aparta el stock dos veces — eso solo se descubre
+    // contando cajas.
+    const idempotencia = texto(b["idempotencia"]);
+    if (idempotencia === undefined || idempotencia.trim() === "") {
+      return fallo("entrada_invalida", "falta la llave de idempotencia");
+    }
+
+    return ok({
+      idempotencia: idempotencia.trim(),
+      clienteId: texto(b["clienteId"]) ?? "",
+      origen: "panel" as const,
+      lineas: lineas as never,
+      ...(cotizacion ? { cotizacion: true } : {}),
+      ...(texto(b["zona"]) === undefined ? {} : { zona: texto(b["zona"]) as string }),
+      ...(texto(b["direccionId"]) === undefined
+        ? {}
+        : { direccionId: texto(b["direccionId"]) as string }),
+      ...(texto(b["notasCliente"]) === undefined
+        ? {}
+        : { notasCliente: texto(b["notasCliente"]) as string }),
+    });
   }
 
   /**
@@ -1331,21 +1428,8 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
    * escribir un precio.
    */
   panel.post("/pedidos", exigeEditar("pedidos"), async (c) => {
-    const b = await cuerpo(c);
-    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
-
-    const lineas = b["lineas"];
-    if (!Array.isArray(lineas) || lineas.length === 0) {
-      return c.json(fallo("entrada_invalida", "un pedido sin líneas no es un pedido"), 400);
-    }
-
-    // La llave de idempotencia la pone la PANTALLA, una por formulario abierto.
-    // Sin ella, un doble toque con mala señal crea dos pedidos y aparta el
-    // stock dos veces, y eso solo se descubre contando cajas.
-    const idempotencia = texto(b["idempotencia"]);
-    if (idempotencia === undefined || idempotencia.trim() === "") {
-      return c.json(fallo("entrada_invalida", "falta la llave de idempotencia"), 400);
-    }
+    const pedido = await loQueSePidio(c, false);
+    if (!pedido.ok) return c.json(pedido, codigoHttp(pedido.codigo));
 
     const reglas = await reglasDelPedido(c);
     if (!reglas.ok) return c.json(reglas, codigoHttp(reglas.codigo));
@@ -1358,21 +1442,76 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
         abonoMinimoCents: reglas.datos.abonoMinimoCents,
         minutosParaAbonar: reglas.datos.minutosParaAbonar,
       },
-      {
-        idempotencia: idempotencia.trim(),
-        clienteId: texto(b["clienteId"]) ?? "",
-        origen: "panel",
-        lineas: lineas as never,
-        ...(texto(b["zona"]) === undefined ? {} : { zona: texto(b["zona"]) as string }),
-        ...(texto(b["direccionId"]) === undefined
-          ? {}
-          : { direccionId: texto(b["direccionId"]) as string }),
-        ...(texto(b["notasCliente"]) === undefined
-          ? {}
-          : { notasCliente: texto(b["notasCliente"]) as string }),
-      },
+      pedido.datos,
     );
     return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cotizaciones
+  //
+  // El dueño lo pidió «tomando el modelo de Odoo»: una cotización, al
+  // confirmarse, SE CONVIERTE en pedido. Es el mismo documento cambiando de
+  // estado, no dos documentos — así que aquí no hay `GET /cotizaciones` ni
+  // `GET /cotizaciones/:id`: se leen con `GET /pedidos?estado=cotizacion` y con
+  // `GET /pedidos/:id`, que son las consultas que ya existían. Dos lectores del
+  // mismo documento acabarían recortando el dinero por rol de dos maneras
+  // distintas, y el flojo es el que nadie revisa.
+  //
+  // Y tampoco hay una ruta para cancelarla: `POST /pedidos/:id/cancelar` ya la
+  // acepta. Lo único propio de una cotización son sus dos verbos: hacerla y
+  // confirmarla.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Hacer una cotización: el mismo documento, sin apartar nada.
+   *
+   * Lee el cuerpo con la misma función que un pedido y llama a la misma
+   * `crearPedido`. Lo único que cambia es la bandera, y lo que la bandera
+   * cambia es lo que NO se hace: no se toca `existencias.reservado` y no se
+   * escribe `pedido_linea_componentes`.
+   *
+   * Va con `pedidos` en editar y no con un permiso propio: cotizar es parte de
+   * atender, y quien toma pedidos es quien cotiza. No mueve dinero ni
+   * inventario, así que no sube de nivel.
+   */
+  panel.post("/cotizaciones", exigeEditar("pedidos"), async (c) => {
+    const pedido = await loQueSePidio(c, true);
+    if (!pedido.ok) return c.json(pedido, codigoHttp(pedido.codigo));
+
+    const reglas = await reglasDelPedido(c);
+    if (!reglas.ok) return c.json(reglas, codigoHttp(reglas.codigo));
+
+    const r = await crearPedido(
+      {
+        db: c.env.DB,
+        ahora: Date.now(),
+        actor: c.get("usuario").correo,
+        abonoMinimoCents: reglas.datos.abonoMinimoCents,
+        minutosParaAbonar: reglas.datos.minutosParaAbonar,
+        minutosDeValidezCotizacion: reglas.datos.minutosDeValidezCotizacion,
+      },
+      pedido.datos,
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Confirmarla: se convierte en pedido y AHÍ se aparta el inventario.
+   *
+   * No recibe nada en el cuerpo. Los precios son los que la cotización ya
+   * llevaba escritos —volver a calcularlos al confirmar sería no haber
+   * cotizado— y si alcanza o no la mercancía lo decide el servidor con las
+   * existencias de este momento.
+   *
+   * Si ya no hay, responde `sin_stock` nombrando el artículo y **la cotización
+   * se queda siendo cotización**: ni se agenda, ni se cancela, ni se queda a
+   * medias. Es lo que se pidió, y lo garantiza el batch de
+   * `confirmarCotizacion`, que es todo o nada.
+   */
+  panel.post("/cotizaciones/:id/confirmar", exigeEditar("pedidos"), async (c) => {
+    const r = await confirmarCotizacion(contextoCatalogo(c), c.req.param("id"));
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   /**

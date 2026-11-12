@@ -91,6 +91,8 @@ el id de la acción).
 | `entregas_del_dia` · `pagos_por_confirmar` | lectura | dueña, asistente |
 | `clientas_para_recompra` | lectura | dueña |
 | `crear_pedido` (queda por_abonar) | construcción | dueña, asistente |
+| `crear_cotizacion` (no aparta nada) · `confirmar_cotizacion` (aquí sí aparta) | construcción | dueña, asistente |
+| `ver_checkout` (si la web puede cobrar y qué falta) | lectura | dueña, asistente |
 | `anotar_en_pedido` · `anotar_en_cliente` | construcción | dueña, asistente |
 | `registrar_gasto` (con foto del recibo) | construcción | dueña, asistente |
 | `registrar_compra` (borrador) · `poner_tiempo_de_llegada` | construcción | dueña |

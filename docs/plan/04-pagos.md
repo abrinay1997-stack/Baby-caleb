@@ -217,3 +217,37 @@ bancaria y Yappy Comercial a su nombre, confirmado el 2026-10-29): los trámites
 - Antes de encender cada pasarela en producción: un cobro real de $1 y su reembolso, revisados en el
   portal de la pasarela y en el panel. Recién entonces entra en `ajustes.pasarelas_activas`.
 - El interruptor apaga una pasarela al instante desde el panel; el checkout deja de ofrecerla.
+
+## 11. `checkout_activo`: qué enciende de verdad, y qué no
+
+**El 2026-11-12 se descubrió que no encendía nada.** Ese ajuste valía `true` en producción y
+**ningún código lo consultaba**: no aparecía ni en `src/` ni en `worker/` de la web más que en
+comentarios. La dueña podía encenderlo y no pasaba nada; podía apagarlo y tampoco. El carrito
+terminaba en un mensaje de WhatsApp en los dos casos. El porqué de que eso sea grave está en
+[`../TRAMPAS.md`](../TRAMPAS.md) §13: un ajuste que dice controlar algo que no controla es peor
+que no tener el ajuste, porque quien lo enciende deja de buscar el problema.
+
+**Lo que se hizo, y lo que NO.** No se conectó el cobro: hacerlo exige una pasarela a la que mandar
+a la clienta, y hoy hay **tres pasarelas y cero credenciales** (§9 de este documento). Un botón
+«Pagar» apuntando a una pasarela sin credenciales es una mentira peor, porque la descubre la
+clienta. Lo que se hizo es que el ajuste **diga la verdad**: el panel enseña si está surtiendo
+efecto y, si no, qué falta.
+
+**Quién decide.** `sistema/src/dominio/checkout.ts`, puro y con un solo dueño de la respuesta.
+Cruza tres cosas, y las tres tienen que ser ciertas para que la web cobre:
+
+1. el interruptor `checkout_activo`, que es la intención de la dueña;
+2. al menos una pasarela **encendida, con sus credenciales completas y en modo real** (una en modo
+   de prueba no cuenta: cobraría con credenciales de prueba y la clienta quedaría con un pedido
+   que nadie pagó);
+3. que el carrito de la web sepa mandar a pagar, declarado en `LA_WEB_TIENE_CHECKOUT` y vigilado
+   por `sistema/test/node/checkout-de-la-web.test.ts`, que lee `src/pages/Carrito.tsx` y se pone
+   rojo si la constante y el archivo dejan de coincidir.
+
+**Quién lo pregunta.** `GET /checkout` del panel (lo usa la pantalla de Ajustes, arriba del
+interruptor) y la herramienta `ver_checkout` del asistente. Las dos leen la misma función: dos
+cálculos del mismo veredicto acabarían discrepando.
+
+El estado de hoy, y es el que sale en pantalla: *«Encendido, pero todavía sin efecto: la web no
+cobra»*, con la lista de lo que falta. Cuando una pasarela esté lista, eso cambia solo — el
+veredicto se calcula de los datos, no de un texto que alguien tenga que acordarse de borrar.

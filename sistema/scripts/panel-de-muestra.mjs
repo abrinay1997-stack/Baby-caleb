@@ -519,6 +519,27 @@ const RESPUESTAS = {
    */
   "/api/pedidos": ok({
     pedidos: [
+      // La cotización va PRIMERA, y con un nombre largo: es la fila nueva y es
+      // la que nadie ha mirado todavía en un teléfono. Sin ella, el auditor
+      // mediría la pantalla de pedidos sin una sola cotización y no diría nada
+      // de la hoja que la confirma (docs/TRAMPAS.md §4: una pantalla que no se
+      // mide no dice «está bien», no dice nada).
+      {
+        id: "ped-0",
+        numero: "BC-1040",
+        estado: "cotizacion",
+        estado_pago: "sin_pago",
+        cliente: "Madelaine Esther Castillo de Bethancourt",
+        origen: "whatsapp",
+        lineas: 2,
+        creado_en: 1_794_190_000_000,
+        // Sin fecha de caducidad: `cotizacion_dias_validez` está PENDIENTE, y
+        // así es como se ve hoy de verdad.
+        vence_en: null,
+        total_cents: 12_300,
+        pagado_cents: 0,
+        saldo_cents: 12_300,
+      },
       {
         id: "ped-1",
         numero: "BC-1041",
@@ -605,6 +626,30 @@ const RESPUESTAS = {
       },
     ],
     hayMas: false,
+  }),
+
+  /**
+   * `/checkout`: el veredicto que la pantalla de Ajustes enseña arriba.
+   *
+   * Es el estado REAL de hoy (2026-11-12): el interruptor encendido, tres
+   * pasarelas, cero credenciales, y el carrito de la web terminando en
+   * WhatsApp. Sin esta muestra, la tarjeta que explica todo eso se vería como
+   * un 404 y la auditoría seguiría diciendo «sin fallas» sobre las filas que
+   * ya estaban.
+   */
+  "/api/checkout": ok({
+    interruptor: true,
+    cobra: false,
+    inerte: true,
+    listas: [],
+    enPrueba: [],
+    impedimentos: [
+      "Ninguna pasarela está encendida, así que no hay con qué cobrar. Se encienden una por una en Pasarelas de cobro, después de un cobro real de prueba y su reembolso.",
+      "A ninguna de las 3 pasarelas se le han puesto todavía sus credenciales: Yappy · Botón de Pago, Tilopay · tarjetas y cuotas, PayPal. Las da cada pasarela cuando aprueba el comercio.",
+      "El carrito de la web todavía no sabe mandar a pagar: termina en un mensaje de WhatsApp con el pedido ya escrito. Eso se programa cuando haya una pasarela con la que probarlo.",
+    ],
+    resumen: "Encendido, pero todavía sin efecto: la web no cobra. Abajo está lo que falta.",
+    llave_maestra_puesta: true,
   }),
 
   "/api/contabilidad": ok({
@@ -797,6 +842,31 @@ const RESPUESTAS = {
       clientas: (url.searchParams.get("buscar") ?? "").trim() === "" ? [] : CLIENTAS_DE_MUESTRA,
     }),
 
+  /**
+   * `/cotizaciones`: lo que contesta el servidor al hacer una.
+   *
+   * La pantalla pinta la pantalla de «listo» con ESTA respuesta —el número, el
+   * total, y sobre todo `aparto: false`, que es lo que le hace escribir «esto
+   * no aparta mercancía»—. Sin la muestra, esa pantalla final contestaría «Sin
+   * muestra para /api/cotizaciones» y el aviso que explica qué es una
+   * cotización no lo vería nunca nadie.
+   *
+   * `venceEn` en nulo porque `cotizacion_dias_validez` está PENDIENTE: así se
+   * ve el texto de «no caduca», que es el de hoy.
+   */
+  "/api/cotizaciones": ok({
+    id: "ped-nueva",
+    numero: "BC-1047",
+    token: "tok-de-muestra",
+    totalCents: 9_900,
+    envioCents: 350,
+    abonoMinimoCents: 1_000,
+    requierePagoTotal: false,
+    venceEn: null,
+    estado: "cotizacion",
+    aparto: false,
+  }),
+
   // `/catalogo`: las columnas del SELECT, con costo porque el rol es dueña.
   "/api/catalogo": ok({
     muestraCosto: true,
@@ -920,9 +990,19 @@ const RESPUESTAS = {
       }),
       ajuste("stock_bajo", 5),
       ajuste("ferguson_pago_total", true),
-      ajuste("checkout_activo", false),
+      // ENCENDIDO, como en producción, y a propósito.
+      //
+      // Antes la muestra lo traía apagado, así que la auditoría nunca veía el
+      // estado que de verdad tiene la dueña delante: encendido y sin hacer
+      // nada. Una muestra que esquiva el caso incómodo aprueba una pantalla
+      // que en producción se lee distinto.
+      ajuste("checkout_activo", true, {
+        origen: "guardado", version: 1, vigente_desde: Date.now() - 40 * dia,
+        cambiado_por: "duena@babycaleb.com", motivo: "Para poder cobrar en la página",
+      }),
       ajuste("pasarelas_activas", []),
       ajuste("metodos_para_abono", ["yappy", "manual"]),
+      ajuste("cotizacion_dias_validez", PENDIENTE),
       ajuste("reserva_minutos_pago_en_linea", 30, {
         origen: "guardado", version: 1, vigente_desde: Date.now() - 2 * dia,
         cambiado_por: "duena@babycaleb.com", motivo: "Media hora alcanza para pagar por Yappy",

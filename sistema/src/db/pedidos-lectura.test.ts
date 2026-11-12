@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
+import { ESTADOS_PEDIDO } from "../dominio/estado-pedido";
 import { leerPedido, listarPedidos } from "./pedidos-lectura";
 
 /**
@@ -170,6 +171,35 @@ describe("la lista", () => {
     const r = await listarPedidos(env.DB, TODO, { busca: "BC-CUENTA" });
     if (!r.ok) throw new Error("no listó");
     expect(r.datos.pedidos[0]!.lineas).toBe(1);
+  });
+
+  /**
+   * Una cotización se lista y se lee con estas mismas dos consultas.
+   *
+   * Es la consecuencia práctica de que sea el MISMO documento: no hay una
+   * `listarCotizaciones` ni una pantalla paralela. Si el filtro no admitiera
+   * `cotizacion`, las cotizaciones existirían en la base y no habría forma de
+   * verlas desde el panel — una pieza terminada que nadie llama (TRAMPAS §12).
+   */
+  it("se puede filtrar por cotizacion, que es el mismo documento en su primer estado", async () => {
+    await unPedido({ estado: "cotizacion", numero: "BC-COT" });
+    await unPedido({ estado: "agendado", numero: "BC-PED" });
+
+    const r = await listarPedidos(env.DB, TODO, { estado: "cotizacion" });
+    if (!r.ok) throw new Error(r.mensaje);
+    expect(r.datos.pedidos.map((p) => p.numero)).toContain("BC-COT");
+    expect(r.datos.pedidos.map((p) => p.numero)).not.toContain("BC-PED");
+  });
+
+  it("y los estados por los que se filtra son los del dominio, ni uno más ni uno menos", async () => {
+    // Dos listas de estados que se separan dan un filtro que existe en la
+    // pantalla y que el servidor rechaza, o al contrario. Se comprueba por el
+    // comportamiento —que cada estado del dominio se acepte— y no leyendo la
+    // constante, porque lo que importa es lo que contesta la ruta.
+    for (const estado of ESTADOS_PEDIDO) {
+      const r = await listarPedidos(env.DB, TODO, { estado });
+      expect(r.ok, `rechazó el estado ${estado}`).toBe(true);
+    }
   });
 });
 

@@ -38,6 +38,9 @@ const UN_VALOR_MALO: Record<Clave, unknown> = {
   metodos_para_abono: ["cheque"],
   reserva_minutos_pago_en_linea: 0,
   reserva_horas_comprobante: 0,
+  // Cero días no es una cotización: es un precio dicho de palabra, y además
+  // nacería caducada.
+  cotizacion_dias_validez: 0,
   ventanas_entrega: [],
   comisiones: {},
   cancelacion_con_abono: "nada",

@@ -86,7 +86,17 @@ export interface Filtro {
   readonly limite?: number;
 }
 
+/**
+ * Los estados por los que se puede filtrar.
+ *
+ * Es la lista de `ESTADOS_PEDIDO` del dominio, repetida aquí a mano igual que
+ * en otras fronteras del sistema — y con una prueba en `pedidos-lectura.test.ts`
+ * que falla si las dos se separan. `cotizacion` está porque una cotización es
+ * el mismo documento en su primer estado: se lista y se lee con las mismas dos
+ * consultas de este archivo, sin una pantalla ni una ruta paralelas.
+ */
 const ESTADOS = [
+  "cotizacion",
   "por_abonar",
   "agendado",
   "en_ruta",

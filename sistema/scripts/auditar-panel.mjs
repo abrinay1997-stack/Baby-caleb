@@ -231,6 +231,161 @@ for (const [nombreVista, tamano] of VISTAS) {
     }
   }
 
+  // La hoja de hacer una COTIZACIÓN, en las dos vistas.
+  //
+  // Es la misma hoja que «Tomar un pedido» con otro modo, pero no es la misma
+  // pantalla: cambia el título, el botón y —lo que importa— el aviso de que
+  // esto NO aparta mercancía, que es un párrafo en caja y es justo donde se
+  // rompe una caja. Y va fuera del bloque de «si es teléfono» porque la hoja
+  // en computadora ya estuvo un año pegada a la esquina sin que nadie la
+  // mirara (docs/TRAMPAS.md §4).
+  {
+    await pagina.goto(`${BASE}/pedidos`, { waitUntil: "networkidle" });
+    const abrir = pagina.getByRole("button", { name: /Hacer una cotización/ }).first();
+    const aparecio = await abrir
+      .waitFor({ state: "visible", timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!aparecio) {
+      // Una hoja que no se puede abrir NO se da por buena en silencio.
+      todas.push({
+        vista: nombreVista,
+        pantalla: "hoja-cotizacion",
+        regla: "la hoja se puede abrir",
+        detalle: "no encontré con qué abrirla en /pedidos",
+      });
+    } else {
+      await abrir.click();
+      await pagina.waitForTimeout(300);
+
+      const suyas = await pagina.evaluate(medir);
+      revisadas += 1;
+      for (const f of suyas) todas.push({ vista: nombreVista, pantalla: "hoja-cotizacion", ...f });
+
+      if (!soloMedir) {
+        await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-cotizacion.png` });
+      }
+
+      /**
+       * Y la pantalla de DESPUÉS de hacerla, que es la que importa.
+       *
+       * Es donde está el aviso de que una cotización no aparta mercancía: el
+       * párrafo que separa un presupuesto de una venta. Medir solo la hoja en
+       * blanco no lo mide nunca, y es justo el texto que la dueña va a leer
+       * para entender qué acaba de hacer.
+       *
+       * Se llega como se llega de verdad: buscando la clienta, añadiendo un
+       * producto y tocando el botón. Si algún paso no está, se dice en vez de
+       * darlo por bueno en silencio.
+       */
+      const celular = pagina.getByPlaceholder("6000-0001");
+      if ((await celular.count()) > 0) {
+        await celular.fill("6000-0101");
+        await pagina.getByRole("button", { name: /Buscar o dar de alta/ }).first().click();
+        await pagina.waitForTimeout(300);
+
+        const buscador = pagina.getByPlaceholder("Nombre, talla o código");
+        await buscador.fill("ma");
+        await pagina.waitForTimeout(250);
+        const anadir = pagina.getByRole("button", { name: /Añadir/ }).first();
+        if ((await anadir.count()) > 0) {
+          await anadir.click();
+          await pagina.waitForTimeout(150);
+        }
+
+        const hacerla = pagina.getByRole("button", { name: /^Hacer la cotización$/ });
+        if ((await hacerla.count()) > 0 && (await hacerla.first().isEnabled())) {
+          await hacerla.first().click();
+          await pagina.waitForTimeout(400);
+
+          const hecha = await pagina.evaluate(medir);
+          revisadas += 1;
+          for (const f of hecha) {
+            todas.push({ vista: nombreVista, pantalla: "hoja-cotizacion-hecha", ...f });
+          }
+          if (!soloMedir) {
+            await pagina.screenshot({
+              path: `${SALIDA}/${nombreVista}-hoja-cotizacion-hecha.png`,
+            });
+          }
+        } else {
+          todas.push({
+            vista: nombreVista,
+            pantalla: "hoja-cotizacion-hecha",
+            regla: "la cotización se puede hacer",
+            detalle: "el botón de hacerla no llegó a habilitarse",
+          });
+        }
+      }
+
+      await pagina.keyboard.press("Escape");
+      await pagina.waitForTimeout(150);
+    }
+  }
+
+  // Y la hoja de ACTUAR sobre una cotización: la que lleva el botón de
+  // confirmar y el aviso de que ahí se aparta el inventario. Se abre sobre
+  // BC-1040, que es la cotización del panel de muestra.
+  {
+    await pagina.goto(`${BASE}/pedidos`, { waitUntil: "networkidle" });
+    const fila = pagina.getByRole("button", { name: /BC-1040/ }).first();
+    const aparecio = await fila
+      .waitFor({ state: "visible", timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!aparecio) {
+      todas.push({
+        vista: nombreVista,
+        pantalla: "hoja-acciones-cotizacion",
+        regla: "la hoja se puede abrir",
+        detalle: "no hay ninguna cotización en /pedidos sobre la que actuar",
+      });
+    } else {
+      await fila.click();
+      await pagina.waitForTimeout(300);
+
+      const suyas = await pagina.evaluate(medir);
+      revisadas += 1;
+      for (const f of suyas) {
+        todas.push({ vista: nombreVista, pantalla: "hoja-acciones-cotizacion", ...f });
+      }
+
+      // La captura va ANTES de desplegar el descarte: si se tomara después,
+      // el archivo que dice «acciones» enseñaría la hoja ya abierta en el
+      // descarte, y quien la mire creería que eso es lo primero que ve la
+      // dueña. Una captura con el nombre de otro estado es peor que no
+      // tenerla.
+      if (!soloMedir) {
+        await pagina.screenshot({
+          path: `${SALIDA}/${nombreVista}-hoja-acciones-cotizacion.png`,
+        });
+      }
+
+      // Y con el «¿por qué se descarta?» desplegado, que es donde está el
+      // campo: una hoja medida sin él no mide los 16 px del §7b.
+      const descartar = pagina
+        .locator("dialog.hoja[open]")
+        .getByRole("button", { name: /Descartar la cotización/ });
+      if ((await descartar.count()) > 0) {
+        await descartar.click();
+        await pagina.waitForTimeout(200);
+        const conCampo = await pagina.evaluate(medir);
+        revisadas += 1;
+        for (const f of conCampo) {
+          todas.push({ vista: nombreVista, pantalla: "hoja-descartar-cotizacion", ...f });
+        }
+        if (!soloMedir) {
+          await pagina.screenshot({
+            path: `${SALIDA}/${nombreVista}-hoja-descartar-cotizacion.png`,
+          });
+        }
+      }
+
+      await pagina.keyboard.press("Escape");
+      await pagina.waitForTimeout(150);
+    }
+  }
+
   // La hoja en ESCRITORIO.
   //
   // Todo el bloque de hojas de abajo vive dentro del «si es teléfono», que se

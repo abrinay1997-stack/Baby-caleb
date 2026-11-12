@@ -17,7 +17,7 @@
  *   node scripts/sin-mcp.mjs            el resumen
  *   node scripts/sin-mcp.mjs --lista    además, qué falta exactamente
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 /**
  * Qué cubre qué.
@@ -34,6 +34,10 @@ const COBERTURA = {
   "GET /catalogo": "buscar_articulo",
   "GET /catalogo/variantes/:codigo/borrado": "PENDIENTE",
   "GET /catalogo/variantes/:codigo/receta": "ver_combo",
+  // El veredicto del checkout, que es lo que destapa si `checkout_activo` está
+  // haciendo algo. Por MCP se pide con `ver_checkout`, que contesta lo mismo:
+  // las dos puertas leen `verCheckout`, no dos cálculos distintos.
+  "GET /checkout": "ver_checkout",
   "GET /clientes": "PENDIENTE",
   "GET /clientes/:id": "PENDIENTE",
   "GET /cobros": "PENDIENTE",
@@ -78,6 +82,12 @@ const COBERTURA = {
   "POST /contabilidad/cierre": "PENDIENTE",
   "POST /contabilidad/cierre/reabrir": "PENDIENTE",
   "POST /contabilidad/redondeos": "PENDIENTE",
+  // Las dos cotizaciones nacen con su herramienta, en el mismo cambio, que es
+  // la regla del dueño (docs/TRAMPAS.md §13). Las dos pasan por la MISMA
+  // función que el panel: `crearPedido` con la bandera, y
+  // `confirmarCotizacion`.
+  "POST /cotizaciones": "crear_cotizacion",
+  "POST /cotizaciones/:id/confirmar": "confirmar_cotizacion",
   "POST /entregas/:envioId/devolucion": "PENDIENTE",
   "POST /entregas/:envioId/entregada": "PENDIENTE",
   "POST /entregas/:envioId/fallida": "PENDIENTE",
@@ -107,6 +117,44 @@ for (const f of fuentes) {
   }
 }
 
+/**
+ * Las herramientas que EXISTEN de verdad.
+ *
+ * Se leen del código, no de una lista: `nombre: "..."` en
+ * `src/asistente/herramientas/`. Hace falta porque el mapa de arriba se
+ * escribe a mano, y una entrada que nombre una herramienta inexistente diría
+ * «esto ya se puede por MCP» sin que se pueda — la misma clase de mentira que
+ * `checkout_activo`, que decía controlar algo que no controlaba.
+ */
+const DIRECTORIO = "src/asistente/herramientas";
+const existentes = new Set();
+for (const archivo of readdirSync(DIRECTORIO)) {
+  if (!archivo.endsWith(".ts") || archivo.includes(".test.")) continue;
+  const texto = readFileSync(`${DIRECTORIO}/${archivo}`, "utf8");
+  for (const m of texto.matchAll(/nombre:\s*"([a-z][a-z0-9_]*)"/g)) existentes.add(m[1]);
+}
+
+/**
+ * Los nombres de herramienta que una nota del mapa menciona.
+ *
+ * Una nota puede nombrar varias («ajustar_stock + registrar_merma») o llevar
+ * texto alrededor («cambiar_precio (solo el precio; el resto PENDIENTE)»), así
+ * que se buscan las palabras en `snake_case`: el prefijo verbo_objeto que
+ * exige `registro.ts`. La prosa en español no las usa, y si alguna vez
+ * chocara, la salida dice cuál y se reescribe la nota.
+ */
+const herramientasNombradas = (nota) => [
+  ...new Set([...String(nota).matchAll(/\b[a-z][a-z0-9]*_[a-z0-9_]+\b/g)].map((m) => m[0])),
+];
+
+const inventadas = [];
+for (const [ruta, nota] of Object.entries(COBERTURA)) {
+  if (nota === "PENDIENTE" || String(nota).startsWith("solo_panel")) continue;
+  for (const nombre of herramientasNombradas(nota)) {
+    if (!existentes.has(nombre)) inventadas.push({ ruta, nombre });
+  }
+}
+
 const sinDecidir = [...rutas].filter((r) => !Object.hasOwn(COBERTURA, r)).sort();
 const pendientes = [...rutas].filter((r) => COBERTURA[r] === "PENDIENTE").sort();
 const soloPanel = [...rutas].filter((r) => String(COBERTURA[r] ?? "").startsWith("solo_panel"));
@@ -116,10 +164,23 @@ console.log(`Rutas del panel: ${rutas.size}`);
 console.log(`  ya se pueden por MCP: ${cubiertas}`);
 console.log(`  solo panel, con motivo: ${soloPanel.length}`);
 console.log(`  PENDIENTE de MCP: ${pendientes.length}`);
+console.log(`Herramientas del asistente que existen: ${existentes.size}`);
 
 if (process.argv.includes("--lista") && pendientes.length > 0) {
   console.log("\nLo que el panel puede y MCP todavía no:\n");
   for (const r of pendientes) console.log("  " + r);
+}
+
+if (inventadas.length > 0) {
+  console.error(`\n${inventadas.length} ruta(s) dicen estar cubiertas por una herramienta que no existe:\n`);
+  for (const i of inventadas) console.error(`  ${i.ruta} → «${i.nombre}»`);
+  console.error(
+    "\nDecir que algo se puede por MCP sin que se pueda es peor que decir\n" +
+      "«PENDIENTE»: nadie va a volver a mirarlo. O se escribe la herramienta en\n" +
+      `${DIRECTORIO}/ y se registra en src/asistente/index.ts, o la\n` +
+      "entrada vuelve a «PENDIENTE».",
+  );
+  process.exit(1);
 }
 
 if (sinDecidir.length > 0) {

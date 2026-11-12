@@ -25,6 +25,8 @@ export * from "./referencias";
 export * from "./proveedor";
 
 import { HERRAMIENTAS_DE_CATALOGO } from "./herramientas/catalogo";
+import { HERRAMIENTAS_DE_CHECKOUT } from "./herramientas/checkout";
+import { HERRAMIENTAS_DE_COTIZACIONES } from "./herramientas/cotizaciones";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
 import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
 import { Registro } from "./registro";
@@ -39,6 +41,8 @@ export function catalogo(): Registro {
   const r = new Registro();
   for (const h of [
     ...HERRAMIENTAS_DE_CATALOGO,
+    ...HERRAMIENTAS_DE_CHECKOUT,
+    ...HERRAMIENTAS_DE_COTIZACIONES,
     ...HERRAMIENTAS_DE_INVENTARIO,
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
   ]) {
@@ -49,4 +53,10 @@ export function catalogo(): Registro {
 
 export * from "./ejecutar";
 export * from "./conversar";
-export { HERRAMIENTAS_DE_CATALOGO, HERRAMIENTAS_DE_INVENTARIO, HERRAMIENTAS_DE_PRECIOS_Y_STOCK };
+export {
+  HERRAMIENTAS_DE_CATALOGO,
+  HERRAMIENTAS_DE_CHECKOUT,
+  HERRAMIENTAS_DE_COTIZACIONES,
+  HERRAMIENTAS_DE_INVENTARIO,
+  HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
+};
