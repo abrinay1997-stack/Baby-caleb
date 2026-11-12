@@ -114,6 +114,46 @@ describe("buscar", () => {
     expect(porCelular.datos.clientas).toHaveLength(1);
   });
 
+  it("encuentra por un TROZO del celular, que es como se busca de verdad", async () => {
+    // El fallo que esto fija: la consulta comparaba el celular con `=`, así
+    // que solo valía el número entero. Escribir los cuatro dígitos que uno
+    // recuerda de una clienta que acaba de llamar no devolvía nada, mientras
+    // la propia pantalla invitaba a «probar con el celular». Buscar es justo
+    // lo que se hace cuando NO se tiene el dato entero.
+    await encontrarOCrear(ctx, { nombre: "Trocito Pérez", celular: "6999-0021" });
+
+    for (const trozo of ["0021", "990021", "9990021"]) {
+      const r = await buscar(real.DB, trozo);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(
+        r.datos.clientas.some((c) => c.celular_e164 === "50769990021"),
+        `«${trozo}» no la encontró`,
+      ).toBe(true);
+    }
+  });
+
+  it("pero no con uno o dos dígitos, que devolverían medio Panamá", async () => {
+    await encontrarOCrear(ctx, { nombre: "Corta Pérez", celular: "6999-0022" });
+    // Tres es el mínimo: con menos, cualquier celular casa con cualquier cosa
+    // y la lista deja de ayudar.
+    const r = await buscar(real.DB, "99");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.datos.clientas.some((c) => c.celular_e164 === "50769990022")).toBe(false);
+  });
+
+  it("y un nombre con números dentro no se busca como si fuera un teléfono", async () => {
+    // Si cualquier texto con dígitos disparara la búsqueda por celular, un
+    // nombre como «Ana 2» traería gente por su número sin que nadie lo pida.
+    await encontrarOCrear(ctx, { nombre: "Casa 507 Pérez", celular: "6999-0023" });
+    const r = await buscar(real.DB, "Casa 507");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // La encuentra por el NOMBRE, que es lo que se escribió.
+    expect(r.datos.clientas.some((c) => c.celular_e164 === "50769990023")).toBe(true);
+  });
+
   it("no enseña a las fusionadas: apuntan a otra ficha", async () => {
     const v = await encontrarOCrear(ctx, { nombre: "Fusionada Pérez", celular: "6999-0010" });
     const q = await encontrarOCrear(ctx, { nombre: "Quedó Viva", celular: "6999-0011" });

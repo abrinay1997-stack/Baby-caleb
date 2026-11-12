@@ -62,10 +62,25 @@ export function normalizarCelular(crudo: string): string | null {
 }
 
 /**
- * Buscar por nombre o por celular.
+ * Buscar por nombre o por celular, entero o por el final.
  *
  * La búsqueda por celular normaliza ANTES de comparar, para que «6000-0001»
  * encuentre a quien está guardada como `50760000001`.
+ *
+ * Y acepta un TROZO del número, que es como lo usa una persona. Antes solo
+ * valía el celular completo: escribir «6999» —los cuatro dígitos que uno
+ * recuerda de una clienta que acaba de llamar— no devolvía nada, mientras la
+ * propia pantalla invitaba a «probar con el celular». Buscar es justo lo que
+ * se hace cuando NO se tiene el dato entero; pedir el número completo es
+ * pedir lo que se estaba buscando.
+ *
+ * Por el FINAL y no por cualquier parte: un celular se recuerda por sus
+ * últimas cifras, y buscar «507» en medio devolvería a todo Panamá. Se piden
+ * tres dígitos como mínimo por lo mismo.
+ *
+ * Lo encontró una persona usando el panel, no una prueba: la consulta hacía
+ * exactamente lo que decía su comentario, y su comentario no describía cómo
+ * busca alguien de verdad.
  */
 export async function buscar(
   db: D1Database,
@@ -78,6 +93,11 @@ export async function buscar(
   const tope = Math.min(Math.max(1, limite), TOPE);
   const porNombre = `%${texto.toLowerCase()}%`;
   const porCelular = normalizarCelular(texto);
+  // El trozo final: solo si lo que se escribió son dígitos (con separadores),
+  // para que un nombre con un número dentro no se convierta en una búsqueda
+  // de teléfonos.
+  const digitos = /^[\d\s()+-]+$/.test(texto) ? texto.replace(/\D/g, "") : "";
+  const finalDelCelular = digitos.length >= 3 ? `%${digitos}` : null;
 
   const { results } = await db
     .prepare(
@@ -88,11 +108,12 @@ export async function buscar(
         WHERE c.anonimizado_en IS NULL
           AND c.fusionado_en_id IS NULL
           AND (LOWER(COALESCE(c.nombre,'')) LIKE ?1
-               OR (?2 IS NOT NULL AND c.celular_e164 = ?2))
+               OR (?2 IS NOT NULL AND c.celular_e164 = ?2)
+               OR (?3 IS NOT NULL AND c.celular_e164 LIKE ?3))
         ORDER BY ultimo_pedido DESC NULLS LAST, c.nombre
-        LIMIT ?3`,
+        LIMIT ?4`,
     )
-    .bind(porNombre, porCelular, tope)
+    .bind(porNombre, porCelular, finalDelCelular, tope)
     .all<ClientaEnLista>();
 
   return ok({ clientas: results });
