@@ -89,6 +89,28 @@ fila de `control_cuadre`, que tumba el batch si el asiento no cuadra.
 - El costo de la salida queda copiado en `pedido_lineas.costo_unit_cents` y en el movimiento: un
   cambio posterior del promedio no reescribe ventas pasadas.
 
+**`unidades` son las unidades VALORADAS, no el físico.** Una entrada sin costo sube
+`existencias.fisico` y no sube el promedio —no se sabe qué costó, y un cero diría que fue gratis
+(§7 de `docs/TRAMPAS.md`)—, así que `unidades <= Σ fisico` y la diferencia es, literalmente,
+«unidades cuyo costo nadie sabe». Esa diferencia es el hueco «costos de apertura» del panel, y se
+cierra cargando el costo, nunca rellenándolo.
+
+**Qué movimiento toca el promedio** (lo escribe `db/inventario.ts`, `aplicar()`, en el mismo batch
+que el movimiento y con su fila de control en absoluto; la venta del pedido la escribe
+`marcarEntregada`, que no pasa por ahí):
+
+| Tipo | ¿Toca el promedio? | Por qué |
+|---|---|---|
+| `apertura`, `compra` | Sube, si trae costo | Es la entrada de mercancía valorada: `unidades += q`, `valor_cents += q × costo` |
+| `devolucion` | Sube, si trae costo | Vuelve con el costo con que salió; sin costo conocido no entra valor que nunca salió |
+| `venta`, `merma`, `muestra`, `regalo` | Baja, proporcional | La mercancía se fue y su costo se va con ella, o el inventario queda valiendo más de lo que hay |
+| `ajuste`, `conteo` | Según el signo | Si falta mercancía, su costo también se fue; si aparece, solo sube con un costo dicho |
+| `traslado_salida`, `traslado_entrada` | **Nunca** | El promedio es por variante, no por bodega: salida y entrada se anulan. Tocarlo inventaría valor en una mitad y lo destruiría en la otra |
+
+Una entrada sin costo y una salida sin promedio que alcance (`unidades < q`) no tocan nada y dejan
+el `costo_unit_cents` del movimiento en NULL: es lo mismo que ya decide `marcarEntregada`, y es lo
+que hace que la entrega salga con `costoDesconocido` en vez de con un cero.
+
 **Costo puesto en bodega** (compras importadas): los gastos de la compra (`compra_gastos`: flete,
 aduana, impuestos, acarreo) se reparten entre sus líneas:
 

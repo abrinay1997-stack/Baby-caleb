@@ -126,7 +126,7 @@ corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y convie
 | `asignar_motorizado` · `programar_entrega` | construcción | dueña, asistente |
 | `crear_pedido` (queda por_abonar; aparta mercancía) | sensible | dueña |
 | `confirmar_abono` · `registrar_cobro` · `rechazar_cobro` | sensible | dueña |
-| `cambiar_precio` · `ajustar_stock` · `registrar_merma` · `trasladar_stock` | sensible | dueña |
+| `cambiar_precio` · `ajustar_stock(…, costo_unitario_cents?)` · `registrar_merma` · `trasladar_stock` | sensible | dueña |
 | `cambiar_boton_whatsapp(codigo, mostrar)` — el botón «Pedir por WhatsApp» de UN artículo | sensible | dueña |
 | `recibir_compra` | sensible | dueña |
 | `anular_pedido` · `reembolsar` | sensible | dueña |

@@ -107,7 +107,7 @@ const COBERTURA = {
   "POST /entregas/rutas/:rutaId/cancelar": "PENDIENTE",
   "POST /entregas/rutas/:rutaId/cerrar": "PENDIENTE",
   "POST /entregas/rutas/:rutaId/despachar": "despachar_ruta",
-  "POST /existencias/movimientos": "ajustar_stock + registrar_merma",
+  "POST /existencias/movimientos": "ajustar_stock (que ya acepta el costo al entrar) + registrar_merma",
   "POST /pasarelas/:pasarela/credenciales/:credencial": "solo_panel: un secreto se teclea donde se ve, no por una herramienta",
   "POST /pasarelas/:pasarela/encendida": "PENDIENTE",
   "POST /pasarelas/:pasarela/modo": "PENDIENTE",

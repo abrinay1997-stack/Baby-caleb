@@ -419,3 +419,129 @@ describe("el resumen", () => {
     expect(resumir("ajustar_stock", "sensible", { cantidad: 3 }, "x")).toContain("ajustar stock");
   });
 });
+
+/**
+ * El costo promedio por la puerta del asistente (y por lo tanto por MCP).
+ *
+ * `CLAUDE.md` y `docs/TRAMPAS.md` §13 lo piden así: una capacidad nueva no está
+ * terminada hasta que se puede usar también por MCP, en el MISMO cambio. El
+ * catálogo de herramientas es uno solo y de él salen las tres puertas —el chat
+ * del panel, Telegram y MCP—, así que probar la herramienta por el ejecutor
+ * prueba las tres.
+ *
+ * Y se prueba por `confirmar`, no llamando a la herramienta a mano: es
+ * «sensible», o sea que lo que de verdad la ejecuta es ese camino.
+ */
+describe("ajustar_stock con costo: la puerta de MCP al costo promedio", () => {
+  const promedioDeNatM = async (): Promise<{ unidades: number; valor_cents: number } | null> =>
+    await real.DB.prepare(
+      "SELECT unidades, valor_cents FROM valor_inventario WHERE codigo = 'NAT-M'",
+    ).first<{ unidades: number; valor_cents: number }>();
+
+  const sinPromedio = async (): Promise<void> => {
+    await real.DB.prepare("DELETE FROM valor_inventario WHERE codigo = 'NAT-M'").run();
+  };
+
+  async function proponer(args: Record<string, unknown>): Promise<string> {
+    const r = await ejecutar(quien(), registro, pedir("ajustar_stock", args));
+    if (!r.ok || r.datos.clase !== "por_confirmar") {
+      throw new Error(`no quedó esperando: ${JSON.stringify(r)}`);
+    }
+    return r.datos.accionId;
+  }
+
+  it("una entrada con su costo sube el promedio", async () => {
+    await sinPromedio();
+    const id = await proponer({
+      codigo: "NAT-M",
+      bodega: "Bodega Ciudad de Panamá",
+      modo: "sumar",
+      cantidad: 10,
+      costo_unitario_cents: 250,
+      motivo: `aparecieron diez ${n}`,
+    });
+
+    const r = await confirmar(quien(), registro, id, "permitir");
+    expect(r.ok).toBe(true);
+    expect(await fisicoDeNatM()).toBe(40);
+    expect(await promedioDeNatM()).toMatchObject({ unidades: 10, valor_cents: 2_500 });
+  });
+
+  it("sin costo no toca el promedio: las unidades existen y el costo no se sabe", async () => {
+    await sinPromedio();
+    const id = await proponer({
+      codigo: "NAT-M",
+      bodega: "Bodega Ciudad de Panamá",
+      modo: "sumar",
+      cantidad: 10,
+      motivo: `aparecieron diez sin factura ${n}`,
+    });
+
+    const r = await confirmar(quien(), registro, id, "permitir");
+    expect(r.ok).toBe(true);
+    expect(await fisicoDeNatM()).toBe(40);
+    expect(await promedioDeNatM()).toBeNull();
+  });
+
+  it("la dueña LEE el costo en dólares antes de permitirlo", async () => {
+    // «¿Permite ajustar stock?» no es una pregunta que nadie pueda contestar
+    // bien. Y un costo son centavos: nadie confirma «250» a ojo.
+    await sinPromedio();
+    const r = await ejecutar(
+      quien(),
+      registro,
+      pedir("ajustar_stock", {
+        codigo: "NAT-M",
+        bodega: "Bodega Ciudad de Panamá",
+        modo: "sumar",
+        cantidad: 10,
+        costo_unitario_cents: 250,
+        motivo: `con costo ${n}`,
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.datos.clase !== "por_confirmar") return;
+    expect(r.datos.resumen).toContain("$2.50");
+  });
+
+  it("un costo en un ajuste que SACA mercancía se rechaza, no se ignora", async () => {
+    // En una salida el costo lo decide el promedio (05-contabilidad §4).
+    // Aceptarlo y no usarlo dejaría a la dueña creyendo que lo cargó.
+    await sinPromedio();
+    const id = await proponer({
+      codigo: "NAT-M",
+      bodega: "Bodega Ciudad de Panamá",
+      modo: "restar",
+      cantidad: 5,
+      costo_unitario_cents: 250,
+      motivo: `salida con costo ${n}`,
+    });
+
+    const r = await confirmar(quien(), registro, id, "permitir");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.mensaje).toContain("ENTRA");
+    expect(await fisicoDeNatM()).toBe(30);
+    expect(await promedioDeNatM()).toBeNull();
+  });
+
+  it("el costo NO vuelve en la respuesta, ni cuando lo mandó quien pregunta", async () => {
+    // El costo sale del asistente por una sola puerta, que es ninguna
+    // (`fronteras.test.ts`). Que el argumento entre no lo convierte en algo
+    // que el modelo pueda repetir después.
+    await sinPromedio();
+    const id = await proponer({
+      codigo: "NAT-M",
+      bodega: "Bodega Ciudad de Panamá",
+      modo: "sumar",
+      cantidad: 10,
+      costo_unitario_cents: 250,
+      motivo: `sin fuga ${n}`,
+    });
+
+    const r = await confirmar(quien(), registro, id, "permitir");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(JSON.stringify(r.datos)).not.toContain("250");
+  });
+});

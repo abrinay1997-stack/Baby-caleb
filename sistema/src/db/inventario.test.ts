@@ -1,6 +1,6 @@
 import { env as real } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
-import { aplicar, registrar } from "./inventario";
+import { aplicar, deshacer, registrar, trasladar } from "./inventario";
 
 const T = 1_800_000_000_000;
 const ctx = { db: real.DB, actor: "usr-duena", ahora: T };
@@ -63,9 +63,44 @@ beforeEach(async () => {
     real.DB.prepare(
       "UPDATE existencias SET fisico = 0, reservado = 0 WHERE codigo = 'INV-M' AND bodega_id = 'bod-inv-b'",
     ),
+    // El promedio SÍ se puede borrar: no es un libro, es un saldo calculado
+    // (los movimientos que lo explican son los que no se borran, y esos se
+    // quedan). Cada prueba del promedio empieza sin fila, que es como está
+    // hoy la producción: la tabla llevaba desde 0001 sin que nadie la llenara.
+    real.DB.prepare("DELETE FROM valor_inventario WHERE codigo = 'INV-M'"),
   ]);
   base = await cuantosMovimientos();
 });
+
+/** El promedio ponderado de la variante de prueba, o `null` si no hay fila. */
+async function promedio(
+  codigo = "INV-M",
+): Promise<{ unidades: number; valor_cents: number } | null> {
+  return await real.DB.prepare(
+    "SELECT unidades, valor_cents FROM valor_inventario WHERE codigo = ?",
+  )
+    .bind(codigo)
+    .first<{ unidades: number; valor_cents: number }>();
+}
+
+/** Siembra un promedio ya cargado, como lo deja una entrada con costo. */
+const conPromedio = async (unidades: number, valorCents: number): Promise<void> => {
+  await real.DB.prepare(
+    "INSERT INTO valor_inventario (codigo,unidades,valor_cents) VALUES ('INV-M',?,?)",
+  )
+    .bind(unidades, valorCents)
+    .run();
+};
+
+/** El costo que quedó anotado en el movimiento de ese motivo. */
+async function costoDelMovimiento(motivo: string): Promise<number | null | undefined> {
+  const m = await real.DB.prepare(
+    "SELECT costo_unit_cents FROM movimientos_inventario WHERE motivo = ?",
+  )
+    .bind(motivo)
+    .first<{ costo_unit_cents: number | null }>();
+  return m === null ? undefined : m.costo_unit_cents;
+}
 
 describe("registrar: cargar y corregir el inventario desde el panel", () => {
   it("una apertura sube el físico y deja su movimiento", async () => {
@@ -268,5 +303,350 @@ describe("quedaEn: el conteo no pisa una venta que entró en medio", () => {
     expect(r.ok).toBe(false);
     expect(await fisico()).toBe(8); // Solo la venta.
     expect(await nuevos()).toBe(0);
+  });
+});
+
+/**
+ * El costo promedio del inventario: el dato que nadie escribía nunca.
+ *
+ * `valor_inventario` nació con la migración 0001 y hasta hoy se leía al
+ * entregar, se bajaba al entregar y se subía al devolver — y no había UN SOLO
+ * sitio que la llenara. Así que toda entrega salía con `costoDesconocido`, sin
+ * asiento 3b, y la ganancia bruta no se podía calcular. Estas pruebas vigilan
+ * las dos mitades del arreglo: que las entradas con costo la llenen, y que las
+ * salidas la bajen — porque una tabla que sube y no baja es un promedio
+ * corrompido que cuadra igual, que es lo peor que puede pasar.
+ */
+describe("el costo promedio: quién lo llena y quién lo baja", () => {
+  it("una entrada con costo CREA la fila y sube el promedio", async () => {
+    // Es la puerta que faltaba. Sin el `ON CONFLICT` del upsert, una variante
+    // sin fila no tiene qué actualizar: el UPDATE no casa, no falla, y el
+    // costo se pierde en silencio.
+    const r = await registrar(ctx, {
+      tipo: "apertura",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-b", delta: 40, costoUnitCents: 300 }],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(await promedio()).toMatchObject({ unidades: 40, valor_cents: 12_000 });
+    expect(await fisico("INV-M", "bod-inv-b")).toBe(40);
+  });
+
+  it("una entrada SIN costo no toca el promedio, y no pone un cero", async () => {
+    // Las unidades existen físicamente; lo que costaron no se sabe. Un cero
+    // diría que fueron gratis y pondría el margen en 100 % (TRAMPAS §7).
+    const r = await registrar(ctx, {
+      tipo: "apertura",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-b", delta: 40 }],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(await fisico("INV-M", "bod-inv-b")).toBe(40);
+    expect(await promedio()).toBeNull();
+  });
+
+  it("una segunda entrada con otro costo PONDERA, no reemplaza", async () => {
+    await registrar(ctx, {
+      tipo: "apertura",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-b", delta: 10, costoUnitCents: 300 }],
+    });
+    await registrar(ctx, {
+      tipo: "compra",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-b", delta: 10, costoUnitCents: 500 }],
+    });
+
+    // 10 × $3 + 10 × $5 = $80 en 20 unidades: $4 cada una.
+    expect(await promedio()).toMatchObject({ unidades: 20, valor_cents: 8_000 });
+  });
+
+  it("una salida baja su parte proporcional y anota lo que de verdad costó", async () => {
+    await conPromedio(10, 3_000);
+
+    const r = await registrar(ctx, {
+      tipo: "merma",
+      motivo: "promedio: caja mojada",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -3 }],
+    });
+
+    expect(r.ok).toBe(true);
+    // round(3000 × 3 / 10) = 900.
+    expect(await promedio()).toMatchObject({ unidades: 7, valor_cents: 2_100 });
+    // Y queda copiado en el movimiento: un cambio del promedio mañana no
+    // reescribe lo que salió hoy (05-contabilidad §4).
+    expect(await costoDelMovimiento("promedio: caja mojada")).toBe(300);
+  });
+
+  it("una salida sin promedio cargado no lo toca y deja el costo en blanco", async () => {
+    const r = await registrar(ctx, {
+      tipo: "merma",
+      motivo: "promedio: sin costo cargado",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -3 }],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(await promedio()).toBeNull();
+    expect(await costoDelMovimiento("promedio: sin costo cargado")).toBeNull();
+  });
+
+  it("una salida de más unidades que las valoradas no toca el promedio", async () => {
+    // Misma condición y misma decisión que `marcarEntregada`: una parte del
+    // costo no es el costo de esta salida, y repartir lo que hay sería
+    // inventar.
+    await conPromedio(2, 600);
+
+    const r = await registrar(ctx, {
+      tipo: "merma",
+      motivo: "promedio: mas de lo valorado",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -3 }],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(await promedio()).toMatchObject({ unidades: 2, valor_cents: 600 });
+    expect(await costoDelMovimiento("promedio: mas de lo valorado")).toBeNull();
+  });
+
+  it("un TRASLADO no toca el promedio, ni por la salida ni por la entrada", async () => {
+    // El promedio es por VARIANTE, no por bodega: la mercancía no cambió de
+    // dueño ni de costo, solo de estante. Si la salida bajara el promedio y la
+    // entrada no lo subiera —no lleva costo—, cada traslado destruiría valor.
+    await conPromedio(10, 3_000);
+
+    const r = await trasladar(ctx, {
+      codigo: "INV-M",
+      desdeId: "bod-inv-a",
+      haciaId: "bod-inv-b",
+      cantidad: 4,
+      motivo: "promedio: traslado",
+    });
+
+    expect(r.ok).toBe(true);
+    expect(await fisico("INV-M", "bod-inv-a")).toBe(6);
+    expect(await fisico("INV-M", "bod-inv-b")).toBe(4);
+    expect(await promedio()).toMatchObject({ unidades: 10, valor_cents: 3_000 });
+    expect(await costoDelMovimiento("promedio: traslado")).toBeNull();
+  });
+
+  it("dos movimientos de la misma variante en un lote: el segundo cuenta con lo que dejó el primero", async () => {
+    await conPromedio(10, 3_000);
+
+    const r = await aplicar(
+      ctx,
+      [
+        { codigo: "INV-M", bodegaId: "bod-inv-a", delta: -3, tipo: "merma", motivo: "p: uno" },
+        { codigo: "INV-M", bodegaId: "bod-inv-a", delta: -2, tipo: "merma", motivo: "p: dos" },
+      ],
+      { tipo: "merma", id: "ref-promedio-lote" },
+    );
+
+    expect(r.ok).toBe(true);
+    // 10/3000 → −900 → 7/2100 → round(2100×2/7) = 600 → 5/1500.
+    expect(await promedio()).toMatchObject({ unidades: 5, valor_cents: 1_500 });
+    expect(await costoDelMovimiento("p: uno")).toBe(300);
+    expect(await costoDelMovimiento("p: dos")).toBe(300);
+  });
+
+  it("un costo de CERO es una afirmación («fue gratis»), no un «no sé»", async () => {
+    // La diferencia entre el campo ausente y el campo en cero es justo la del
+    // §7 de TRAMPAS, y es la que deja contar bien la mercancía regalada por un
+    // proveedor sin tener que inventarle un precio.
+    const r = await registrar(ctx, {
+      tipo: "compra",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-b", delta: 5, costoUnitCents: 0 }],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(await promedio()).toMatchObject({ unidades: 5, valor_cents: 0 });
+  });
+
+  it("rechaza un costo en una SALIDA en vez de ignorarlo", async () => {
+    // En una salida el costo lo decide el promedio (05-contabilidad §4).
+    // Aceptarlo y no usarlo dejaría a quien lo mandó creyendo que se guardó.
+    const r = await registrar(ctx, {
+      tipo: "merma",
+      motivo: "x",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -2, costoUnitCents: 300 }],
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("entrada_invalida");
+    expect(r.mensaje).toContain("ENTRA");
+    expect(await nuevos()).toBe(0);
+  });
+
+  it("rechaza un costo en una salida que vino por CONTEO, donde el signo aún no se sabía", async () => {
+    // El renglón de un conteo no dice si entra o sale hasta que se resta lo
+    // contado: hay 10 y contó 7, así que es una salida.
+    const r = await registrar(ctx, {
+      tipo: "conteo",
+      motivo: "x",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", contado: 7, costoUnitCents: 300 }],
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("entrada_invalida");
+    expect(await nuevos()).toBe(0);
+  });
+
+  it("un conteo que encuentra MÁS, con su costo, sube el promedio", async () => {
+    await conPromedio(10, 3_000);
+
+    const r = await registrar(ctx, {
+      tipo: "conteo",
+      motivo: "promedio: aparecieron dos cajas",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", contado: 12, costoUnitCents: 300 }],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(await promedio()).toMatchObject({ unidades: 12, valor_cents: 3_600 });
+  });
+
+  it("un costo negativo se dice con palabras, no con un CHECK de la base", async () => {
+    const r = await aplicar(
+      ctx,
+      [
+        {
+          codigo: "INV-M",
+          bodegaId: "bod-inv-b",
+          delta: 5,
+          tipo: "compra",
+          costoUnitCents: -100,
+        },
+      ],
+      { tipo: "compra", id: "ref-costo-negativo" },
+    );
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("entrada_invalida");
+    expect(await nuevos()).toBe(0);
+  });
+});
+
+/**
+ * La fila de control del promedio.
+ *
+ * Es la que impide que dos lotes a la vez se pisen sin que nadie lo note. Mira
+ * las unidades y el valor EXACTOS que este lote esperaba dejar —en absoluto, no
+ * en delta— porque un control sobre el delta comprobaría la resta que la base
+ * acaba de hacer, o sea algo que ya era cierto, y pasaría siempre (TRAMPAS §1).
+ */
+describe("la fila de control del promedio: dos lotes a la vez no se pisan", () => {
+  /** Una base donde otro lote carga una compra justo antes de escribir. */
+  const conCompraEnMedio = {
+    prepare: (q: string) => real.DB.prepare(q),
+    batch: async (enunciados: D1PreparedStatement[]) => {
+      await real.DB.prepare(
+        "UPDATE valor_inventario SET unidades = unidades + 5, valor_cents = valor_cents + 2500 WHERE codigo = 'INV-M'",
+      ).run();
+      return real.DB.batch(enunciados);
+    },
+  } as unknown as D1Database;
+
+  it("si otro lote mueve el promedio en medio, no se escribe NADA", async () => {
+    await conPromedio(10, 3_000);
+
+    const r = await registrar(
+      { db: conCompraEnMedio, actor: "usr-duena", ahora: T },
+      {
+        tipo: "merma",
+        motivo: "promedio: carrera",
+        lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -3 }],
+      },
+    );
+
+    expect(r.ok).toBe(false);
+    // Leyó 10/3000 y calculó un costo de 900; para cuando escribió había
+    // 15/5500 y ese 900 ya no era la parte proporcional de nada. Se cae el
+    // lote entero: ni movimiento, ni físico, ni promedio.
+    expect(await nuevos()).toBe(0);
+    expect(await fisico("INV-M", "bod-inv-a")).toBe(10);
+    expect(await promedio()).toMatchObject({ unidades: 15, valor_cents: 5_500 });
+  });
+
+  it("y lo dice como lo que es, no como «no alcanza el inventario»", async () => {
+    // TRAMPAS §10: un error mal etiquetado manda a buscar al sitio
+    // equivocado. Aquí no hay nada que contar en la bodega.
+    await conPromedio(10, 3_000);
+
+    const r = await aplicar(
+      { db: conCompraEnMedio, actor: "usr-duena", ahora: T },
+      [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -3, tipo: "merma", motivo: "p: carrera 2" }],
+      { tipo: "merma", id: "ref-carrera-2" },
+    );
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.codigo).toBe("conflicto_version");
+    expect(r.mensaje).toContain("costo promedio");
+  });
+});
+
+/**
+ * Deshacer y el promedio.
+ *
+ * Deshacer es escribir lo contrario, nunca borrar. Con el costo eso tiene una
+ * trampa: el contrario de una entrada que NO subió el promedio no puede
+ * bajarlo, o cada «me equivoqué» destruiría valor en silencio.
+ */
+describe("deshacer y el promedio", () => {
+  it("deshacer una salida devuelve exactamente el valor que se llevó", async () => {
+    await conPromedio(10, 3_000);
+
+    const salida = await registrar(ctx, {
+      tipo: "merma",
+      motivo: "promedio: deshacer salida",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -3 }],
+    });
+    expect(salida.ok).toBe(true);
+    if (!salida.ok || salida.datos.deshacerId === null) return;
+    expect(await promedio()).toMatchObject({ unidades: 7, valor_cents: 2_100 });
+
+    const r = await deshacer(ctx, salida.datos.deshacerId);
+    expect(r.ok).toBe(true);
+    // Vuelve con el costo con que salió: 3 × $3 = $9.
+    expect(await promedio()).toMatchObject({ unidades: 10, valor_cents: 3_000 });
+    expect(await fisico("INV-M", "bod-inv-a")).toBe(10);
+  });
+
+  it("deshacer una entrada que entró SIN costo no baja el promedio", async () => {
+    // Esas unidades subieron el físico y no subieron el promedio. Cobrarles
+    // ahora la parte proporcional sacaría de 1301 un valor que nunca entró
+    // ahí, y dejaría más caras las unidades que sí tienen costo.
+    await conPromedio(10, 3_000);
+
+    const entrada = await registrar(ctx, {
+      tipo: "apertura",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-b", delta: 5 }],
+    });
+    expect(entrada.ok).toBe(true);
+    if (!entrada.ok || entrada.datos.deshacerId === null) return;
+    expect(await promedio()).toMatchObject({ unidades: 10, valor_cents: 3_000 });
+
+    const r = await deshacer(ctx, entrada.datos.deshacerId);
+    expect(r.ok).toBe(true);
+    expect(await fisico("INV-M", "bod-inv-b")).toBe(0);
+    expect(await promedio()).toMatchObject({ unidades: 10, valor_cents: 3_000 });
+  });
+
+  it("deshacer un TRASLADO no inventa ni destruye valor", async () => {
+    await conPromedio(10, 3_000);
+
+    const t = await trasladar(ctx, {
+      codigo: "INV-M",
+      desdeId: "bod-inv-a",
+      haciaId: "bod-inv-b",
+      cantidad: 4,
+      motivo: "promedio: traslado a deshacer",
+    });
+    expect(t.ok).toBe(true);
+    if (!t.ok) return;
+
+    const r = await deshacer(ctx, t.datos.deshacerId);
+    expect(r.ok).toBe(true);
+    expect(await fisico("INV-M", "bod-inv-a")).toBe(10);
+    expect(await fisico("INV-M", "bod-inv-b")).toBe(0);
+    expect(await promedio()).toMatchObject({ unidades: 10, valor_cents: 3_000 });
   });
 });
