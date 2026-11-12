@@ -142,7 +142,26 @@ export interface EstadoDePasarela {
 export interface LineaDelLibro {
   readonly id: string;
   readonly pasarela: Pasarela;
-  readonly accion: "credencial_puesta" | "credencial_cambiada" | "modo_cambiado";
+  /**
+   * Las CUATRO que la tabla admite, no tres.
+   *
+   * Faltaba `credencial_quitada`, que la migración 0010 admite en su `CHECK`,
+   * que `quitarCredencial` escribe unas líneas más abajo en este mismo archivo,
+   * y que el panel ya sabía pintar. O sea: el tipo del servidor decía que su
+   * propia tabla no podía devolver una fila que el propio servidor escribe.
+   *
+   * No se veía porque el libro solo se lee para enseñarlo, y en la base de
+   * pruebas nadie había quitado nunca una credencial. El daño del tipo
+   * incompleto no es que se caiga: es que un `switch` sobre esta unión
+   * compilaría sin la rama que falta, y la línea del libro saldría en blanco
+   * el día que alguien quite una credencial de verdad. Un libro que se deja
+   * una línea sin contar no sirve para lo que existe.
+   */
+  readonly accion:
+    | "credencial_puesta"
+    | "credencial_cambiada"
+    | "credencial_quitada"
+    | "modo_cambiado";
   readonly modo: Modo;
   readonly credencial: string | null;
   readonly version: number | null;
