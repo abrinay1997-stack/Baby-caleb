@@ -11,7 +11,9 @@ import {
   meta,
 } from "../asistente/proveedor";
 import { anotarUso } from "../asistente/uso";
+import { crearLlave, llavesDe, revocarLlave } from "../mcp/llaves";
 import { fallo, ok } from "../contrato/resultado";
+import { codigoHttp } from "./estados";
 import { fechaContable } from "../dominio/contabilidad";
 import type { Usuario } from "../seguridad/roles";
 
@@ -194,6 +196,44 @@ export function registrarRutasDelAsistente(
         502,
       );
     }
+  });
+
+  // ---- Las llaves de MCP -------------------------------------------------
+  //
+  // Cada quien ve y maneja SOLO las suyas. Una dueña podría revocar las de
+  // otra, pero eso es una pantalla de administración que nadie ha pedido, y
+  // dárselo a todo el mundo «por si acaso» es cómo se revoca la llave
+  // equivocada un viernes.
+
+  panel.get("/mcp/llaves", async (c) => {
+    const usuario = c.get("usuario");
+    return c.json(ok(await llavesDe(c.env.DB, usuario.id)), 200);
+  });
+
+  /**
+   * Una llave nueva. El token se devuelve UNA vez y no se vuelve a ver.
+   *
+   * No es una molestia de seguridad teatral: en la base solo queda su huella,
+   * así que un volcado de la base no es un llavero. Si se pierde, se revoca y
+   * se crea otra — que es más barato que poder recuperarla.
+   */
+  panel.post("/mcp/llaves", async (c) => {
+    const crudo: unknown = await c.req.json().catch(() => null);
+    const nombre = (crudo as { nombre?: unknown } | null)?.nombre;
+    const usuario = c.get("usuario");
+    const r = await crearLlave(
+      c.env.DB,
+      usuario.id,
+      typeof nombre === "string" ? nombre : "",
+      Date.now(),
+    );
+    return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  panel.post("/mcp/llaves/:id/revocar", async (c) => {
+    const usuario = c.get("usuario");
+    const r = await revocarLlave(c.env.DB, usuario.id, c.req.param("id"), Date.now());
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   /**
