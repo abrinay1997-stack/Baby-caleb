@@ -11,4 +11,9 @@ panel/dist/
 
 # Capturas de la auditoría del panel. Se rehacen con `npm run panel:auditar`
 # y en CI suben como artefacto para enseñárselas a la dueña.
-.capturas/
+# Las capturas del auditor del panel, y las de referencia que alguien saque
+# para comparar antes y después (`.capturas-base/`, `.capturas-antes/`…). Se
+# generan en cada corrida y pesan; versionarlas llenaría el historial de
+# imágenes que nadie va a leer dos veces. El asterisco cubre la familia entera
+# para que la próxima no haya que acordarse de añadirla.
+.capturas*/
