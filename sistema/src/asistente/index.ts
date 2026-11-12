@@ -15,7 +15,10 @@
  *                      le puede contestar a una clienta (precio, talla, peso y
  *                      la etiqueta de si hay), `inventario.ts` es para ir a la
  *                      bodega (el número exacto, por bodega), `entregas.ts` es
+ *                      bodega (el número exacto, por bodega), `pedidos.ts` son
+ *                      comprobantes, el cobro y la portada del negocio.
  *                      el tramo de la bodega a la puerta y `contabilidad.ts`
+ *                      los pedidos y las clientas, y `dinero.ts` la bandeja de
  *                      son los libros.
  *
  * Lo que el asistente NUNCA hace no se comprueba: no existe. No hay forma de
@@ -31,8 +34,10 @@ export * from "./proveedor";
 import { HERRAMIENTAS_DE_AJUSTES } from "./herramientas/ajustes";
 import { HERRAMIENTAS_DE_CATALOGO } from "./herramientas/catalogo";
 import { HERRAMIENTAS_DE_CONTABILIDAD } from "./herramientas/contabilidad";
+import { HERRAMIENTAS_DE_DINERO } from "./herramientas/dinero";
 import { HERRAMIENTAS_DE_ENTREGAS } from "./herramientas/entregas";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
+import { HERRAMIENTAS_DE_PEDIDOS } from "./herramientas/pedidos";
 import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
 import { Registro } from "./registro";
 
@@ -41,12 +46,19 @@ import { Registro } from "./registro";
  *
  * Una herramienta nueva solo entra con su prueba y con su fila en la tabla de
  * 06-asistente §5. Aquí se registra, y desde aquí la ven las tres puertas.
+ *
+ * Registrarla aquí es lo que la vuelve real: sin esta lista, un archivo de
+ * `herramientas/` es una pieza terminada que nadie llama (TRAMPAS §12), y por
+ * MCP no existe (TRAMPAS §13). `node scripts/sin-mcp.mjs` compara esta lista
+ * con las rutas del panel y dice qué falta.
  */
 export function catalogo(): Registro {
   const r = new Registro();
   for (const h of [
     ...HERRAMIENTAS_DE_CATALOGO,
+    ...HERRAMIENTAS_DE_DINERO,
     ...HERRAMIENTAS_DE_INVENTARIO,
+    ...HERRAMIENTAS_DE_PEDIDOS,
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
     ...HERRAMIENTAS_DE_AJUSTES,
     ...HERRAMIENTAS_DE_ENTREGAS,
@@ -63,7 +75,9 @@ export {
   HERRAMIENTAS_DE_AJUSTES,
   HERRAMIENTAS_DE_CATALOGO,
   HERRAMIENTAS_DE_CONTABILIDAD,
+  HERRAMIENTAS_DE_DINERO,
   HERRAMIENTAS_DE_ENTREGAS,
   HERRAMIENTAS_DE_INVENTARIO,
+  HERRAMIENTAS_DE_PEDIDOS,
   HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
 };
