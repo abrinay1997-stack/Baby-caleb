@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { getContentData } from '../data/content';
+import { EnlaceDeConsentimiento } from '../components/BannerConsentimiento';
 
 export default function S20Footer() {
   const { social, legal } = getContentData();
@@ -62,6 +63,10 @@ export default function S20Footer() {
             <Link to="/terminos" className="hover:text-accent-strong transition-colors">
               Términos
             </Link>
+            {/* Cambiar de opinión cuesta lo mismo que decidir: un toque, desde
+                cualquier página. Retirar un permiso que se dio tiene que ser
+                igual de fácil que haberlo dado. */}
+            <EnlaceDeConsentimiento className="hover:text-accent-strong focus-visible:outline-accent-edge rounded-md underline-offset-4 transition-colors hover:underline focus-visible:outline-2" />
           </nav>
         </div>
       </div>

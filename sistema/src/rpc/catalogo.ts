@@ -1,4 +1,6 @@
+import { leerVigentes } from "../db/ajustes";
 import { libresSQL } from "../db/inventario";
+import { esPendiente } from "../dominio/ajustes";
 import { UMBRAL_POCAS, type Disponibilidad, disponibilidad } from "../dominio/existencias";
 
 /**
@@ -59,11 +61,42 @@ export interface Cobertura {
   readonly maximoDisponible?: number;
 }
 
+/**
+ * Una variante en el catálogo de la WEB: lo de siempre más la decisión del
+ * botón de WhatsApp, ya tomada.
+ *
+ * Es un tipo aparte de `VariantePublica` a propósito. `listar` y `buscar` —las
+ * que usa el asistente para contestar un WhatsApp— no necesitan saber nada de
+ * botones, y darles el campo obligaría a leer los ajustes en cada turno del
+ * asistente para rellenar algo que nadie mira.
+ */
+export interface VarianteDelCatalogo extends VariantePublica {
+  /**
+   * Si la web enseña el botón «Pedir por WhatsApp» en este artículo.
+   *
+   * Llega **ya resuelto**: el navegador no combina nada. Es un booleano y no
+   * «el ajuste global más la columna» porque la regla de combinarlos tiene que
+   * tener un solo dueño, y ese dueño es `seEnseniaElBoton` de aquí abajo. Con
+   * las dos piezas sueltas en el navegador, cambiar la regla exigiría
+   * desplegar la web, y un navegador con una versión vieja la combinaría a su
+   * manera.
+   */
+  readonly pedirPorWhatsapp: boolean;
+}
+
 export interface CatalogoPublico {
   /** La versión más alta del catálogo: cambia cuando cambia cualquier variante. */
   readonly version: number;
   readonly generadoEn: number;
-  readonly variantes: VariantePublica[];
+  readonly variantes: VarianteDelCatalogo[];
+  /**
+   * A qué celular van los pedidos por WhatsApp. `null` = no hay ninguno.
+   *
+   * Sale del ajuste `whatsapp_numero` y no de una constante en el código: es un
+   * dato del negocio y cambia cuando la dueña cambia de celular, sin desplegar
+   * nada. Con `null`, ninguna variante trae `pedirPorWhatsapp` en `true`.
+   */
+  readonly whatsapp: { readonly numero: string | null };
 }
 
 interface Fila {
@@ -77,6 +110,95 @@ interface Fila {
   precio_cents: number;
   version: number;
   libres: number | null;
+  /** `null` = «lo que diga Ajustes». Ver `migrations/0013`. */
+  pedir_por_whatsapp?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// El botón de WhatsApp: las dos decisiones, combinadas en UN sitio
+// ---------------------------------------------------------------------------
+
+/** Lo que el negocio ha decidido sobre pedir por WhatsApp, en global. */
+export interface WhatsappDelNegocio {
+  /** El ajuste `whatsapp_pedidos_activo`. */
+  readonly activo: boolean;
+  /** El ajuste `whatsapp_numero`, o `null` si está sin decidir. */
+  readonly numero: string | null;
+}
+
+/** Con el ajuste sin leer, apagado. Un botón que no se sabe no se enseña. */
+const WHATSAPP_APAGADO: WhatsappDelNegocio = { activo: false, numero: null };
+
+/**
+ * ¿Se enseña el botón en ESTE artículo?
+ *
+ * Las tres condiciones, y las tres hacen falta:
+ *
+ *  1. el negocio deja pedir por WhatsApp (`whatsapp_pedidos_activo`);
+ *  2. hay un celular puesto (`whatsapp_numero`);
+ *  3. este artículo no lo tiene apagado en su ficha (`pedir_por_whatsapp`).
+ *
+ * El nulo de la columna es «lo que diga Ajustes», así que NO apaga nada. Y un
+ * `1` en la columna tampoco ENCIENDE nada por su cuenta: si pudiera saltarse
+ * el ajuste global, apagar WhatsApp en Ajustes —lo que la dueña haría si pierde
+ * el celular— dejaría botones vivos apuntando a un número que ya no contesta.
+ * El porqué largo está en `migrations/0013_whatsapp_por_variante.sql`.
+ */
+export function seEnseniaElBoton(
+  negocio: WhatsappDelNegocio,
+  pedirPorWhatsapp: number | null | undefined,
+): boolean {
+  if (!negocio.activo) return false;
+  if (negocio.numero === null) return false;
+  return pedirPorWhatsapp !== 0;
+}
+
+/**
+ * Qué cuenta como un celular usable, de lo que haya guardado.
+ *
+ * Está aparte y exportada por una razón concreta: es la única de las guardas de
+ * este bloque que hoy NO se puede alcanzar desde `whatsappDelNegocio`, porque
+ * `whatsapp_numero` no admite quedarse sin decidir y `leerVigentes` ya rechaza
+ * lo que no sea un número. O sea que una mutación aquí sobrevivía a las pruebas
+ * —comprobado— y eso es una guarda que no defiende nada (trampa §1).
+ *
+ * Sigue estando porque el día que alguien le ponga `admitePendiente: true` a
+ * esa clave, lo guardado sería la palabra «PENDIENTE» y el botón apuntaría a
+ * `wa.me/PENDIENTE`. Así que se prueba por abajo, directamente, que es lo que
+ * manda la trampa §6 cuando una guarda queda detrás de otra capa.
+ */
+export function numeroUsable(valor: unknown): string | null {
+  if (typeof valor !== "string") return null;
+  // «PENDIENTE» es «falta decidirlo», no un número. Tratarlo como «no hay
+  // número» es lo único honesto que se puede hacer con él: deja el botón
+  // fuera, que es mejor que mandar a nadie.
+  if (esPendiente(valor)) return null;
+  const limpio = valor.trim();
+  return limpio === "" ? null : limpio;
+}
+
+/**
+ * Lee del negocio las dos reglas de WhatsApp.
+ *
+ * Pasa por `leerVigentes` y no por una consulta propia a `ajustes` para no
+ * tener dos dueños de «cuánto vale un ajuste ahora mismo»: ahí viven la caída
+ * al valor de fábrica y la regla de que un valor guardado que hoy no se
+ * entiende NO se usa. Una segunda consulta se las saltaría sin que nada
+ * fallara.
+ */
+export async function whatsappDelNegocio(
+  db: D1Database,
+  ahora: number,
+): Promise<WhatsappDelNegocio> {
+  const r = await leerVigentes({ db, ahora });
+  if (!r.ok) return WHATSAPP_APAGADO;
+
+  const de = (clave: string): unknown => r.datos.ajustes.find((a) => a.clave === clave)?.valor;
+
+  return {
+    activo: de("whatsapp_pedidos_activo") === true,
+    numero: numeroUsable(de("whatsapp_numero")),
+  };
 }
 
 /**
@@ -89,6 +211,7 @@ interface Fila {
 const CONSULTA = `
   SELECT v.codigo, p.slug AS slug_producto, v.nombre, v.talla,
          v.peso_min_lb, v.peso_max_lb, v.unidades_por_caja, v.precio_cents, v.version,
+         v.pedir_por_whatsapp,
          -- La regla del combo tiene UN dueño: libresSQL en src/db/inventario.ts,
          -- que es la misma expresión que usan las herramientas del asistente.
          ${libresSQL("v")} AS libres
@@ -147,11 +270,13 @@ function aPublica(f: Fila, cantidad?: number, conNumero = false): VariantePublic
 }
 
 export async function catalogoPublico(db: D1Database, ahora: number): Promise<CatalogoPublico> {
-  const { results } = await db
-    .prepare(`${CONSULTA} ORDER BY p.orden, p.nombre, v.talla, v.codigo`)
-    .all<Fila>();
+  const [{ results }, negocio] = await Promise.all([
+    db.prepare(`${CONSULTA} ORDER BY p.orden, p.nombre, v.talla, v.codigo`).all<Fila>(),
+    whatsappDelNegocio(db, ahora),
+  ]);
 
   return {
+    whatsapp: { numero: negocio.numero },
     // La versión más alta de las variantes publicadas. La web la usa para
     // saber si su copia sirve todavía sin comparar el catálogo entero.
     version: results.reduce((maxima, f) => Math.max(maxima, f.version), 0),
@@ -160,7 +285,10 @@ export async function catalogoPublico(db: D1Database, ahora: number): Promise<Ca
     // `(elemento, indice, array)`, así que el índice se colaba como
     // `cantidad` y la variante de la posición i con menos de i libres salía
     // con `maximoDisponible` —la cantidad exacta— hacia el navegador.
-    variantes: results.map((f) => aPublica(f)),
+    variantes: results.map((f) => ({
+      ...aPublica(f),
+      pedirPorWhatsapp: seEnseniaElBoton(negocio, f.pedir_por_whatsapp),
+    })),
   };
 }
 

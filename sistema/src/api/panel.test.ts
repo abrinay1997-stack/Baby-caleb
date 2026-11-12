@@ -1,5 +1,6 @@
 import { env as real } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
+import { CLAVES } from "../dominio/ajustes";
 import type { RolDePanel, Usuario } from "../seguridad";
 import { type ResolverUsuario, crearPanel, exigeEditar, panel } from "./panel";
 import { Hono } from "hono";
@@ -419,9 +420,15 @@ describe("/ajustes", () => {
       ajustes: { clave: string; origen: string; valor: unknown; pendiente: boolean }[];
     };
 
-    // Las 15 claves, siempre. Una que desaparece de la lista es una que nadie
-    // vuelve a buscar.
-    expect(d.ajustes.length).toBe(15);
+    // TODAS las claves, siempre. Una que desaparece de la lista es una que
+    // nadie vuelve a buscar.
+    //
+    // El número NO se escribe aquí a mano: estaba puesto en 15 y se quedó
+    // viejo al añadir los dos ajustes de WhatsApp, que es la misma trampa §4
+    // del número de pantallas del auditor. Se compara con las claves de verdad
+    // y además se nombran una por una, que es lo que de verdad se quería
+    // comprobar.
+    expect(d.ajustes.map((a) => a.clave).sort()).toEqual([...CLAVES].sort());
     expect(d.ajustes.every((a) => a.origen === "fabrica")).toBe(true);
 
     // Y lo que todavía nadie ha decidido se ve como tal, que no es lo mismo

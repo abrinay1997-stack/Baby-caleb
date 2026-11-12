@@ -10,6 +10,7 @@ import { initSmoothScroll, scrollToTop } from './lib/smooth';
 import S01Nav from './blocks/S01Nav';
 import S20Footer from './blocks/S20Footer';
 import Chatbot from './components/Chatbot';
+import BannerConsentimiento from './components/BannerConsentimiento';
 
 import Home from './pages/Home';
 import Productos from './pages/Productos';
@@ -74,6 +75,10 @@ export default function App() {
         </Routes>
         <Chatbot />
         <S20Footer />
+        {/* Fuera de <Routes> y en todas las páginas: el píxel rastrea el sitio
+            entero, así que el permiso no puede depender de en qué página
+            entró la persona. Va al final para quedar por encima del pie. */}
+        <BannerConsentimiento />
       </div>
       </ProveedorCarrito>
     </BrowserRouter>

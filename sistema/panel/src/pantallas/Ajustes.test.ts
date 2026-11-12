@@ -51,6 +51,8 @@ const UN_VALOR: Record<Clave, unknown> = {
   stock_bajo: 5,
   ferguson_pago_total: true,
   checkout_activo: false,
+  whatsapp_pedidos_activo: true,
+  whatsapp_numero: "50767575065",
   pasarelas_activas: ["yappy"],
   metodos_para_abono: ["yappy", "manual"],
   reserva_minutos_pago_en_linea: 30,

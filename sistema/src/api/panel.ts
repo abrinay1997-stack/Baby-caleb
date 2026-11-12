@@ -399,7 +399,8 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
     // consulta.
     const { results } = await c.env.DB.prepare(
       `SELECT v.codigo, v.nombre, v.talla, v.unidades_por_caja, v.precio_cents,
-              v.tasa_itbms_bp, v.publicado, v.activo, v.version, v.imagen, v.es_combo, p.familia, p.nombre AS producto
+              v.tasa_itbms_bp, v.publicado, v.activo, v.version, v.imagen, v.es_combo,
+              v.pedir_por_whatsapp, p.familia, p.nombre AS producto
               ${conCosto ? ", vi.unidades AS costo_unidades, vi.valor_cents AS costo_valor_cents" : ""}
        FROM variantes v
        JOIN productos p ON p.id = v.producto_id
@@ -491,6 +492,23 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
       return c.json(fallo("entrada_invalida", "falta la versión que se leyó"), 400);
     }
 
+    // El botón de WhatsApp tiene TRES estados y el nulo es uno de ellos:
+    // ausente = «no toques este campo», `null` = «lo que diga Ajustes»,
+    // booleano = decidido en este artículo. Cualquier otra cosa se rechaza con
+    // su propio motivo en vez de interpretarse: un `"si"` tragado como `false`
+    // apagaría el botón de un producto sin que nadie lo pidiera, y la pantalla
+    // diría que guardó bien.
+    const boton = b["pedirPorWhatsapp"];
+    if (boton !== undefined && boton !== null && typeof boton !== "boolean") {
+      return c.json(
+        fallo(
+          "entrada_invalida",
+          "pedirPorWhatsapp solo acepta true, false o null (null = lo que diga Ajustes)",
+        ),
+        400,
+      );
+    }
+
     const r = await editarVariante(
       contextoCatalogo(c),
       c.req.param("codigo"),
@@ -505,6 +523,9 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
           : { precioCents: entero(b["precioCents"]) as number }),
         ...(b["tasaItbmsBp"] === undefined ? {} : { tasaItbmsBp: entero(b["tasaItbmsBp"]) ?? null }),
         ...(typeof b["publicado"] === "boolean" ? { publicado: b["publicado"] } : {}),
+        ...(b["pedirPorWhatsapp"] === undefined
+          ? {}
+          : { pedirPorWhatsapp: b["pedirPorWhatsapp"] as boolean | null }),
         ...(texto(b["motivo"]) === undefined ? {} : { motivo: texto(b["motivo"]) as string }),
       },
       version,

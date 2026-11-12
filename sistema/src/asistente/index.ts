@@ -9,7 +9,9 @@
  *  - `politica.ts`     qué se ejecuta, qué se pregunta y qué no pasa.
  *  - `referencias.ts`  lo que el modelo puede saber de una clienta: una referencia.
  *  - `proveedor.ts`    el cerebro, detrás de una interfaz (guion fijo y Meta).
- *  - `herramientas/`   las herramientas de verdad: `catalogo.ts` es lo que se
+ *  - `herramientas/`   las herramientas de verdad: `ajustes.ts` son las cifras
+ *                      del negocio (la otra puerta de la pantalla de Ajustes,
+ *                      §13 de TRAMPAS), `catalogo.ts` es lo que se
  *                      le puede contestar a una clienta (precio, talla, peso y
  *                      la etiqueta de si hay) e `inventario.ts` es para ir a la
  *                      bodega (el número exacto, por bodega).
@@ -24,6 +26,7 @@ export * from "./politica";
 export * from "./referencias";
 export * from "./proveedor";
 
+import { HERRAMIENTAS_DE_AJUSTES } from "./herramientas/ajustes";
 import { HERRAMIENTAS_DE_CATALOGO } from "./herramientas/catalogo";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
 import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
@@ -41,6 +44,7 @@ export function catalogo(): Registro {
     ...HERRAMIENTAS_DE_CATALOGO,
     ...HERRAMIENTAS_DE_INVENTARIO,
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
+    ...HERRAMIENTAS_DE_AJUSTES,
   ]) {
     r.registrar(h as never);
   }
@@ -49,4 +53,9 @@ export function catalogo(): Registro {
 
 export * from "./ejecutar";
 export * from "./conversar";
-export { HERRAMIENTAS_DE_CATALOGO, HERRAMIENTAS_DE_INVENTARIO, HERRAMIENTAS_DE_PRECIOS_Y_STOCK };
+export {
+  HERRAMIENTAS_DE_AJUSTES,
+  HERRAMIENTAS_DE_CATALOGO,
+  HERRAMIENTAS_DE_INVENTARIO,
+  HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
+};
