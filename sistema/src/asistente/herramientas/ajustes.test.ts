@@ -62,6 +62,36 @@ describe("ver_ajustes", () => {
     const r = await verAjustes.ejecutar(ctx(), {});
     expect(revisar(r)).toEqual([]);
   });
+
+  it("tampoco DESPUÉS de que alguien cambie un ajuste, que es cuando se rompía", async () => {
+    // Esta es la prueba que faltaba, y el hueco por el que se coló el fallo:
+    // `ajustes.cambiado_por` solo tiene valor en los ajustes que alguien tocó,
+    // y en local y en las pruebas la tabla arranca vacía. Así que la guarda de
+    // arriba barría un resultado donde ese campo era null en todas las filas y
+    // pasaba siempre — mientras en producción, con la dueña habiendo cambiado
+    // una sola cifra, `ver_ajustes` devolvía su correo entero, el servidor de
+    // MCP tumbaba el resultado COMPLETO y la herramienta estaba muerta.
+    //
+    // Se descubrió pidiéndola en vivo, no aquí. Ahora se descubre aquí.
+    await cambiarAjuste.ejecutar(ctx(), {
+      clave: "whatsapp_pedidos_activo",
+      valor: false,
+      motivo: "para que quede quién lo cambió",
+    });
+
+    const r = (await verAjustes.ejecutar(ctx(), {})) as {
+      ajustes: { clave: string; origen: string }[];
+    };
+    expect(revisar(r), "ver_ajustes vuelve a filtrar un dato de contacto").toEqual([]);
+    expect(JSON.stringify(r)).not.toContain("@babycaleb.com");
+
+    // El contrapeso: que no salga el correo no puede significar que no salga
+    // NADA. La lista sigue diciendo que esa regla la puso alguien, que es lo
+    // que de verdad hace falta aquí; el quién se pide con
+    // ver_historial_de_ajuste, que es la herramienta de esa pregunta.
+    const tocado = r.ajustes.find((a) => a.clave === "whatsapp_pedidos_activo");
+    expect(tocado?.origen).toBe("guardado");
+  });
 });
 
 describe("cambiar_ajuste", () => {

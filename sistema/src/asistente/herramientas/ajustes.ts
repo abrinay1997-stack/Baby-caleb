@@ -91,6 +91,14 @@ function valorQuePuedeSalir(clave: Clave, valor: unknown): unknown {
   return valor;
 }
 
+/**
+ * El correo recortado antes de la arroba. Contesta «quién» sin dar la dirección.
+ *
+ * Va arriba del todo porque la usan las dos herramientas de este archivo y un
+ * `const` no se iza: definida abajo, `verAjustes` reventaría al cargarse.
+ */
+const quienLoCambio = (correo: string): string => correo.split("@")[0] ?? correo;
+
 export const verAjustes = definir({
   nombre: "ver_ajustes",
   descripcion:
@@ -126,7 +134,25 @@ export const verAjustes = definir({
         sinDecidir: a.pendiente,
         unidad: e.unidad ?? null,
         origen: a.origen,
-        cambiadoPor: a.cambiado_por,
+        // QUIÉN lo cambió NO sale de esta lista, y no es un olvido.
+        //
+        // `ajustes.cambiado_por` guarda el correo de la sesión, y la guarda de
+        // D-20 rechaza cualquier resultado que lleve uno: no sabe —ni puede
+        // saber— si es de una clienta o del equipo. Hasta hoy salía entero, y
+        // el fallo estaba escondido donde no lo veía nadie: en local y en las
+        // pruebas ese campo está vacío en todas las filas (solo lo llevan los
+        // ajustes que alguien tocó), así que esto pasaba verde en todas partes
+        // y estaba MUERTO en producción — el servidor de MCP tumbaba el
+        // resultado entero en cuanto la dueña había cambiado una sola cifra.
+        // Lo destapó pedirlo en vivo por MCP.
+        //
+        // Recortar el correo antes de la arroba —lo que hace el historial— no
+        // arregla la clase, solo la estrecha: de `ana@babycaleb.com` queda
+        // «ana», y con una clienta llamada Ana la guarda vuelve a tumbarlo, con
+        // razón. Así que aquí el campo se quita: en una lista de dieciocho
+        // reglas el quién sobra —`origen` ya dice si está guardado o si es el
+        // valor de arranque— y para el quién está `ver_historial_de_ajuste`,
+        // que es la herramienta que existe para esa pregunta.
         motivo: a.motivo,
         // Un valor guardado que hoy no se puede leer cae al de fábrica y se
         // dice por qué. Callarlo dejaría al modelo contestando con un número
@@ -336,9 +362,6 @@ export const verHistorialDeAjuste = definir({
     };
   },
 });
-
-/** El correo recortado antes de la arroba. Contesta «quién» sin dar la dirección. */
-const quienLoCambio = (correo: string): string => correo.split("@")[0] ?? correo;
 
 export const HERRAMIENTAS_DE_AJUSTES = [
   verAjustes,
