@@ -133,6 +133,12 @@ corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y convie
 | `cerrar_mes` (guiado con la lista de chequeo) | sensible | dueña |
 | `cambiar_ajuste` (abono mínimo, pasarela activa…) | sensible | dueña |
 | `ver_ajustes(clave?)` — cuánto vale cada regla, de dónde sale y cuáles faltan | lectura | dueña |
+| `ver_retiro_variante(codigo)` | lectura | dueña |
+| `crear_producto` (el grupo; sin precio ni existencias) | construcción | dueña |
+| `crear_variante` (nace sin publicar) | construcción | dueña |
+| `dar_de_alta_producto` (producto + primera presentación, de una vez) | construcción | dueña |
+| `editar_variante` (nombre, talla, unidades, ITBMS, publicar) | sensible | dueña |
+| `retirar_variante` (se borra si no tiene historia; si la tiene, se oculta) | sensible | dueña |
 
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
 

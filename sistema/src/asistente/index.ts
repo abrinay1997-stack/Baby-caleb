@@ -14,12 +14,14 @@
  *                      §13 de TRAMPAS), `catalogo.ts` es lo que se
  *                      le puede contestar a una clienta (precio, talla, peso y
  *                      la etiqueta de si hay), `inventario.ts` es para ir a la
- *                      bodega (el número exacto, por bodega), `entregas.ts` es
- *                      bodega (el número exacto, por bodega), `pedidos.ts` son
- *                      comprobantes, el cobro y la portada del negocio.
- *                      el tramo de la bodega a la puerta y `contabilidad.ts`
- *                      los pedidos y las clientas, y `dinero.ts` la bandeja de
- *                      son los libros.
+ *                      bodega (el número exacto, por bodega),
+ *                      `catalogo-escritura.ts` es administrar el catálogo
+ *                      —crear, editar y retirar—, `entregas.ts` es el tramo
+ *                      de la bodega a la puerta, `motorizados.ts` es quién
+ *                      reparte, `pedidos.ts` son los pedidos y las clientas,
+ *                      `dinero.ts` la bandeja de comprobantes, el cobro y la
+ *                      portada del negocio, y `contabilidad.ts` son los
+ *                      libros.
  *
  * Lo que el asistente NUNCA hace no se comprueba: no existe. No hay forma de
  * declarar una herramienta que borre un asiento, cambie un permiso, lea un
@@ -33,6 +35,7 @@ export * from "./proveedor";
 
 import { HERRAMIENTAS_DE_AJUSTES } from "./herramientas/ajustes";
 import { HERRAMIENTAS_DE_CATALOGO } from "./herramientas/catalogo";
+import { HERRAMIENTAS_DE_CATALOGO_ESCRITURA } from "./herramientas/catalogo-escritura";
 import { HERRAMIENTAS_DE_CONTABILIDAD } from "./herramientas/contabilidad";
 import { HERRAMIENTAS_DE_DINERO } from "./herramientas/dinero";
 import { HERRAMIENTAS_DE_ENTREGAS } from "./herramientas/entregas";
@@ -59,6 +62,7 @@ export function catalogo(): Registro {
   const r = new Registro();
   for (const h of [
     ...HERRAMIENTAS_DE_CATALOGO,
+    ...HERRAMIENTAS_DE_CATALOGO_ESCRITURA,
     ...HERRAMIENTAS_DE_DINERO,
     ...HERRAMIENTAS_DE_CHECKOUT,
     ...HERRAMIENTAS_DE_COTIZACIONES,
@@ -80,6 +84,7 @@ export * from "./conversar";
 export {
   HERRAMIENTAS_DE_AJUSTES,
   HERRAMIENTAS_DE_CATALOGO,
+  HERRAMIENTAS_DE_CATALOGO_ESCRITURA,
   HERRAMIENTAS_DE_CONTABILIDAD,
   HERRAMIENTAS_DE_DINERO,
   HERRAMIENTAS_DE_ENTREGAS,
