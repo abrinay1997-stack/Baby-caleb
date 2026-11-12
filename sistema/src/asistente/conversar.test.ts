@@ -80,8 +80,27 @@ const cambiar = definir({
   },
 });
 
+/** Devuelve lo que NUNCA debe llegarle al modelo (D-20). */
+const verClienta = definir({
+  nombre: "ver_clienta",
+  descripcion: "Trae la ficha de una clienta.",
+  parametros: z.object({}),
+  nivel: "lectura",
+  categoria: "inventario",
+  roles: ["duena"],
+  async ejecutar() {
+    ejecutadas.push("ver_clienta");
+    return {
+      nombre: "Rosalinda Quintero",
+      celular: "60001234",
+      correo: "rosalinda@ejemplo.com",
+      debe_cents: 4500,
+    };
+  },
+});
+
 const registro = new Registro();
-for (const h of [mirar, leerMensajes, anotar, cambiar]) registro.registrar(h as never);
+for (const h of [mirar, leerMensajes, anotar, cambiar, verClienta]) registro.registrar(h as never);
 
 const quien = (usuario = duena) => ({ db: real.DB, usuario, ahora: Date.now() });
 
@@ -305,5 +324,82 @@ describe("conversar", () => {
     expect(final.texto).toContain("No pude terminar");
     // La política cortó: nunca se ejecutaron más de los pasos permitidos.
     expect(ejecutadas.length).toBeLessThanOrEqual(TOPES.pasosPorTurno);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-20 · los datos de una clienta no salen hacia el modelo
+// ---------------------------------------------------------------------------
+//
+// `referencias.revisar()` estaba escrito y probado para esto y no lo llamaba
+// nadie. Mientras el asistente no tuvo puerta, la regla no costaba nada
+// incumplirla porque no salía nada. Abrir la puerta es lo que la vuelve real.
+
+describe("lo que sale hacia el modelo", () => {
+  it("no lleva el celular ni el correo de una clienta", async () => {
+    const final = await conversar(
+      quien(),
+      registro,
+      hablar(
+        { texto: "", llamadas: [{ id: "t1", nombre: "ver_clienta", argumentos: {} }] },
+        { texto: "No puedo enseñarle esos datos." },
+      ),
+      pedir("¿quién me debe?"),
+    );
+
+    const resultado = final.historial.find((m) => m.rol === "tool");
+    expect(resultado).toBeDefined();
+
+    // Lo que importa: el dato NO está.
+    expect(resultado?.contenido).not.toContain("60001234");
+    expect(resultado?.contenido).not.toContain("rosalinda@ejemplo.com");
+    // Y se le dice al modelo QUÉ clase de dato era, para que lo explique.
+    expect(resultado?.contenido).toContain("celular");
+    expect(resultado?.contenido).toContain("correo");
+  });
+
+  it("tampoco lleva el nombre, si esa clienta existe en la base", async () => {
+    // Un nombre propio no tiene forma reconocible: la única manera honesta de
+    // cazarlo es preguntarle a la base quién existe.
+    const id = `cli-d20-${Date.now()}`;
+    await real.DB.prepare(
+      "INSERT INTO clientes (id, nombre, creado_en, actualizado_en) VALUES (?, 'Rosalinda', ?, ?)",
+    )
+      .bind(id, Date.now(), Date.now())
+      .run();
+
+    const final = await conversar(
+      quien(),
+      registro,
+      hablar(
+        { texto: "", llamadas: [{ id: "t1", nombre: "ver_clienta", argumentos: {} }] },
+        { texto: "No puedo." },
+      ),
+      pedir(),
+    );
+
+    const resultado = final.historial.find((m) => m.rol === "tool");
+    expect(resultado?.contenido).not.toContain("Rosalinda");
+    expect(resultado?.contenido).toContain("nombre_de_clienta");
+
+    await real.DB.prepare("DELETE FROM clientes WHERE id = ?").bind(id).run();
+  });
+
+  it("un resultado sin datos de nadie pasa entero", async () => {
+    // Si el filtro se pasara de celoso, el asistente dejaría de servir. Las
+    // cifras del negocio SÍ van: eso lo aceptó el dueño del proyecto.
+    const final = await conversar(
+      quien(),
+      registro,
+      hablar(
+        { texto: "", llamadas: [{ id: "t1", nombre: "mirar", argumentos: {} }] },
+        { texto: "Quedan 12." },
+      ),
+      pedir(),
+    );
+
+    const resultado = final.historial.find((m) => m.rol === "tool");
+    expect(resultado?.contenido).toContain("12");
+    expect(resultado?.contenido).not.toContain("no se le pueden enseñar");
   });
 });

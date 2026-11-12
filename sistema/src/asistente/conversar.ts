@@ -1,4 +1,5 @@
 import { ejecutar } from "./ejecutar";
+import { revisar } from "./referencias";
 import { TOPES, TURNO_LIMPIO, type Turno } from "./politica";
 import {
   MAX_TOKENS_POR_OMISION,
@@ -116,6 +117,26 @@ export async function conversar(
     ...TURNO_LIMPIO,
     huboArchivoReciente: peticion.huboArchivoReciente ?? false,
   };
+
+  // Los nombres de las clientas, para que el filtro pueda cazarlos. Un nombre
+  // propio no tiene forma reconocible —«Ana» es una palabra como otra—, así
+  // que la única manera honesta es preguntarle a la base quién existe.
+  //
+  // Se piden UNA vez por turno y solo si de verdad se usa una herramienta: una
+  // conversación que no consulta nada no toca la tabla de clientas.
+  let nombresCache: readonly string[] | null = null;
+  const nombresDeClientas = async (): Promise<readonly string[]> => {
+    if (nombresCache !== null) return nombresCache;
+    const { results } = await quien.db
+      .prepare(
+        "SELECT nombre, apellido FROM clientes WHERE anonimizado_en IS NULL AND (nombre IS NOT NULL OR apellido IS NOT NULL)",
+      )
+      .all<{ nombre: string | null; apellido: string | null }>();
+    nombresCache = results
+      .flatMap((r) => [r.nombre, r.apellido])
+      .filter((n): n is string => typeof n === "string" && n.trim().length >= 3);
+    return nombresCache;
+  };
   let uso: Uso = SIN_USO;
 
   // Una vuelta más que pasos permitidos: la última le deja al modelo contestar
@@ -220,7 +241,18 @@ export async function conversar(
         turno = { ...turno, seLeyoTextoDeFuera: true };
       }
 
-      historial.push(resultadoDe(llamada, hecho.datos.datos));
+      const revisado = resultadoRevisado(llamada, hecho.datos.datos, await nombresDeClientas());
+      if (revisado.filtraciones.length > 0) {
+        // La FORMA, nunca el dato: esto acaba en los registros de Cloudflare.
+        console.warn(
+          JSON.stringify({
+            evento: "asistente_dato_de_clienta",
+            herramienta: llamada.nombre,
+            que: revisado.filtraciones,
+          }),
+        );
+      }
+      historial.push(revisado.mensaje);
       void indice;
     }
 
@@ -248,4 +280,39 @@ export async function conversar(
 
 function resultadoDe(llamada: LlamadaAHerramienta, datos: unknown): Mensaje {
   return { rol: "tool", contenido: comoTexto(datos), llamadaId: llamada.id };
+}
+
+/**
+ * Lo que sale hacia el modelo, revisado (D-20, 06-asistente §7).
+ *
+ * El modelo es un Contributor y Meta entrena con lo que recibe. Las cifras del
+ * negocio van —el dueño lo aceptó—, pero las clientas son terceras personas
+ * que no acordaron nada. `referencias.revisar()` estaba escrito y probado para
+ * esto y NO LO LLAMABA NADIE: mientras el asistente no tuvo puerta, la regla
+ * no costaba nada incumplirla porque nada salía. Abrir la puerta es lo que la
+ * vuelve real, así que se engancha aquí, en el único sitio por donde pasa todo
+ * resultado de herramienta.
+ *
+ * Cuando algo se cuela NO se recorta ni se tacha: se descarta entero y se le
+ * dice al modelo QUÉ clase de dato era, nunca el dato. Tachar invita a afinar
+ * el tachado hasta que algo pase; descartar obliga a arreglar la herramienta.
+ */
+function resultadoRevisado(
+  llamada: LlamadaAHerramienta,
+  datos: unknown,
+  nombres: readonly string[],
+): { mensaje: Mensaje; filtraciones: readonly string[] } {
+  const encontradas = revisar(datos, nombres);
+  if (encontradas.length === 0) {
+    return { mensaje: resultadoDe(llamada, datos), filtraciones: [] };
+  }
+  const clases = [...new Set(encontradas.map((f) => f.que))];
+  return {
+    mensaje: resultadoDe(llamada, {
+      error:
+        "ese resultado traía datos de una clienta y no se le pueden enseñar al modelo; pida la referencia (C-0042) en vez del dato",
+      que: clases,
+    }),
+    filtraciones: clases,
+  };
 }
