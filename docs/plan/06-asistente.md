@@ -140,6 +140,12 @@ corre en el CRM y que el vínculo lo trae su consola. Se hizo distinto, y convie
 | `editar_variante` (nombre, talla, unidades, ITBMS, publicar) | sensible | dueña |
 | `retirar_variante` (se borra si no tiene historia; si la tiene, se oculta) | sensible | dueña |
 
+| `ver_pasarelas` (encendida, modo y qué le falta; **ninguna credencial**) | lectura | dueña |
+| `encender_pasarela` · `apagar_pasarela` | sensible | dueña |
+| `cambiar_modo_de_pasarela` (prueba ↔ real; no con la pasarela encendida) | sensible | dueña |
+| `registrar_reembolso` (es el `reembolsar` de arriba: anota el que YA se hizo, asiento 14) | sensible | dueña |
+| `registrar_contracargo` (lo decide el banco; asiento 15) | sensible | dueña |
+
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
 
 `ver_ajustes` y `cambiar_ajuste` son la otra puerta de la pantalla de Ajustes, y entraron
@@ -171,6 +177,19 @@ qué** — la tabla se escribió antes de que existieran `src/seguridad/roles.ts
   más—, aunque la asistente sí pueda tomar pedidos desde el panel.
 - **`agendar_pedido` sí es construcción**: la mercancía ya estaba apartada desde que se
   creó el pedido, y agendar no mueve ni dinero ni existencias.
+
+Las cinco de pasarelas llaman a la MISMA función de `src/db/` que la ruta del panel
+(`estado`, `encender`, `apagar` y `cambiarModo` de `src/db/pasarelas.ts`;
+`registrarReembolso` y `registrarContracargo` de `src/db/pagos.ts`), así que
+una regla como «no se cambia el modo con la pasarela encendida» se decide en un
+solo sitio para las tres puertas. Viven en `herramientas/pasarelas.ts` y no en
+`dinero.ts` porque tocan la CONFIGURACIÓN del cobro, no el cobro.
+`ver_pasarelas` **recorta** lo que devuelve `GET /pasarelas`: no sale la ficha
+de cada credencial (ni su valor, ni `llave_id`, ni quién la puso), ni el libro
+de la pasarela, ni el historial de encendidas, ni si la llave maestra del
+Worker está puesta — el contexto del asistente no la tiene, y «no la tengo» no
+es «no está». Poner una credencial sigue siendo `solo_panel`: un secreto se
+teclea donde se ve.
 
 ## 6. Modelo, costo y caché
 

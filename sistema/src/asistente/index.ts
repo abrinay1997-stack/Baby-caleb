@@ -20,8 +20,10 @@
  *                      de la bodega a la puerta, `motorizados.ts` es quién
  *                      reparte, `pedidos.ts` son los pedidos y las clientas,
  *                      `dinero.ts` la bandeja de comprobantes, el cobro y la
- *                      portada del negocio, y `contabilidad.ts` son los
- *                      libros.
+ *                      portada del negocio, `pasarelas.ts` son las pasarelas de
+ *                      cobro y el dinero que vuelve —un reembolso, un
+ *                      contracargo— sin una sola credencial, y
+ *                      `contabilidad.ts` son los libros.
  *
  * Lo que el asistente NUNCA hace no se comprueba: no existe. No hay forma de
  * declarar una herramienta que borre un asiento, cambie un permiso, lea un
@@ -41,6 +43,7 @@ import { HERRAMIENTAS_DE_DINERO } from "./herramientas/dinero";
 import { HERRAMIENTAS_DE_ENTREGAS } from "./herramientas/entregas";
 import { HERRAMIENTAS_DE_CHECKOUT } from "./herramientas/checkout";
 import { HERRAMIENTAS_DE_COTIZACIONES } from "./herramientas/cotizaciones";
+import { HERRAMIENTAS_DE_PASARELAS } from "./herramientas/pasarelas";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
 import { HERRAMIENTAS_DE_MOTORIZADOS } from "./herramientas/motorizados";
 import { HERRAMIENTAS_DE_PEDIDOS } from "./herramientas/pedidos";
@@ -64,6 +67,7 @@ export function catalogo(): Registro {
     ...HERRAMIENTAS_DE_CATALOGO,
     ...HERRAMIENTAS_DE_CATALOGO_ESCRITURA,
     ...HERRAMIENTAS_DE_DINERO,
+    ...HERRAMIENTAS_DE_PASARELAS,
     ...HERRAMIENTAS_DE_CHECKOUT,
     ...HERRAMIENTAS_DE_COTIZACIONES,
     ...HERRAMIENTAS_DE_INVENTARIO,
@@ -90,6 +94,7 @@ export {
   HERRAMIENTAS_DE_ENTREGAS,
   HERRAMIENTAS_DE_INVENTARIO,
   HERRAMIENTAS_DE_MOTORIZADOS,
+  HERRAMIENTAS_DE_PASARELAS,
   HERRAMIENTAS_DE_PEDIDOS,
   HERRAMIENTAS_DE_CHECKOUT,
   HERRAMIENTAS_DE_COTIZACIONES,
