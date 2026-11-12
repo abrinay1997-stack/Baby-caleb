@@ -260,6 +260,38 @@ herramienta a escribir, junto a `scripts/controles-que-no-vigilan.mjs`.
 
 ---
 
+## 13. Una capacidad que solo se puede usar desde un sitio
+
+**Cuándo mordió:** el asistente nació con tres puertas en el plan —el panel,
+Telegram y MCP— y durante semanas no tuvo ninguna. Cuando por fin se abrió una,
+se descubrió que `referencias.revisar()` y `asistente_uso` llevaban desde su
+migración sin que nadie los llamara: la puerta es lo que vuelve reales las
+reglas, y sin puerta nadie nota que faltan.
+
+Lo mismo con `/mcp`: lleva meses reservado en `run_worker_first` de los dos
+entornos, apuntando a una ruta que no existe. Y con `checkout_activo`, un
+ajuste que en producción vale `true` y que **ningún código consulta**: la web
+no lo mira en ningún sitio, así que la dueña puede encenderlo y no pasa nada.
+
+**La regla, y la pidió el dueño del proyecto:** un ajuste nuevo, un campo nuevo
+o una capacidad nueva **no están terminados hasta que se pueden usar también
+por MCP**. En el mismo cambio, no en una fase posterior. Lo que hoy no tiene
+MCP también tiene que tenerlo, y **todo plan futuro lo incluye desde el
+principio**: un plan sin MCP está incompleto.
+
+El motivo no es la moda. Una capacidad que solo se alcanza desde una pantalla
+depende de que esa pantalla exista, se despliegue y esté bien escrita — y en
+este repositorio ya se han visto las tres cosas fallar por separado. Con MCP,
+lo mismo se puede pedir, probar y automatizar sin navegador, y un hueco se ve
+de inmediato en vez de dentro de seis semanas.
+
+**Cómo se comprueba:** `node scripts/sin-mcp.mjs` compara el catálogo de
+herramientas del asistente con las rutas del panel y dice qué se puede hacer
+por una puerta y no por la otra. Una capacidad que no esté en las dos es un
+fallo, no una tarea pendiente.
+
+---
+
 ## Lo que este archivo NO es
 
 No es una lista de todo lo que salió mal: la mayoría de los fallos se arreglan

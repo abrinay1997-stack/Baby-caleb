@@ -23,6 +23,23 @@ Fuentes que se leyeron para escribirlo:
 | `juanarrietabusiness-pixel/tommalopty` (Nébula) | Lógica de pedidos, abonos, envíos, motorizados y pagos en TypeScript puro con pruebas |
 | `dcasapty/D_Casa_new_word` (D'Casa) | El criterio: contabilidad, inventario, Brian, seguridad, despliegue y la bitácora de incidentes |
 
+## Una regla que atraviesa todo el plan: MCP
+
+**Todo lleva MCP, y en el mismo cambio.** Un ajuste nuevo, un campo nuevo o una capacidad nueva no
+están terminados hasta que se pueden usar también por MCP. No es una fase posterior: se construye
+en paralelo, en el mismo trabajo. Lo que hoy no tiene MCP también tiene que tenerlo.
+
+Esto vale para **todo documento de este plan y para todo plan futuro**. Una fase que describe una
+capacidad y no dice cómo se pide por MCP está incompleta y hay que devolverla. Si lo que propone no
+tiene sentido por MCP, se escribe el motivo; lo que no se admite es no haberlo pensado.
+
+Lo pidió el dueño del proyecto. El porqué está en [`../TRAMPAS.md`](../TRAMPAS.md) §13, y lo
+comprueba `sistema/scripts/sin-mcp.mjs`, que corre en CI: una ruta nueva sin decidir si MCP la
+cubre pone la ejecución en rojo.
+
+Estado de hoy: **69 capacidades en el panel, 6 alcanzables por MCP, 6 que solo tienen sentido en el
+panel y 57 pendientes.** Ese número tiene que bajar, no subir.
+
 ## Cómo leerlo
 
 | Documento | Qué contiene |
