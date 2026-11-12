@@ -73,12 +73,29 @@ async function varianteNueva(sobre: Record<string, unknown> = {}): Promise<strin
 }
 
 /** `movimientos_inventario` exige que exista la fila de existencias. */
-const conExistencias = (codigo: string, fisico = 0) =>
-  env.DB.prepare(
-    "INSERT INTO existencias (codigo,bodega_id,fisico,reservado) VALUES (?,?,?,0)",
+/**
+ * Pone mercancía en el casillero de esa bodega.
+ *
+ * Es un upsert, y hace falta que lo sea. Desde que crear una presentación le
+ * da su casillero en cada bodega —el fallo que impedía inventariar cualquier
+ * producto dado de alta después de las bodegas—, las variantes creadas por la
+ * función de verdad YA tienen fila y un INSERT a secas chocaría con la llave;
+ * pero las que estas pruebas siembran con SQL directo no la tienen, y un
+ * UPDATE a secas no haría nada. Se comprueba que escribió una fila: un UPDATE
+ * que no casa con nada no falla en D1, y sin esa comprobación esta ayuda
+ * podría no hacer nada y las pruebas que dependen de ella pasarían por el
+ * motivo equivocado.
+ */
+const conExistencias = async (codigo: string, fisico = 0) => {
+  const r = await env.DB.prepare(
+    `INSERT INTO existencias (codigo,bodega_id,fisico,reservado) VALUES (?,?,?,0)
+     ON CONFLICT(codigo,bodega_id) DO UPDATE SET fisico = excluded.fisico, reservado = 0`,
   )
     .bind(codigo, bodegaId, fisico)
     .run();
+  if (r.meta.changes !== 1) throw new Error(`no se pudo poner mercancía en «${codigo}»`);
+  return r;
+};
 
 /**
  * Un movimiento Y NADA MÁS.
