@@ -542,6 +542,47 @@ describe("ajustar_stock con costo: la puerta de MCP al costo promedio", () => {
     const r = await confirmar(quien(), registro, id, "permitir");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(JSON.stringify(r.datos)).not.toContain("250");
+
+    // Se miran los VALORES, no la cadena del JSON entero.
+    //
+    // Esto era `JSON.stringify(r.datos)).not.toContain("250")` y se puso rojo
+    // en CI una vez, pasando en verde en todas partes: el ULID de esa corrida
+    // salió `01M78D2A9Y2BKE250651VC6F6M`, con un «250» dentro por casualidad.
+    // Un identificador aleatorio de 26 caracteres lleva cualquier trío de
+    // dígitos una vez cada pocos miles, así que la prueba iba a volver a
+    // morder sin que nada estuviera roto — y un rojo que no significa nada
+    // enseña a ignorar los rojos (trampa §11).
+    //
+    // La propiedad que vigila sí importa y se queda: el costo entra por el
+    // argumento y NO puede volver en la respuesta, porque lo que vuelve es lo
+    // único que el modelo puede repetirle a alguien después. Así que en vez de
+    // buscar un trozo de texto se recorren los valores, que es lo que de
+    // verdad se quería decir. Sale más estricta: ahora caza un costo bajo
+    // CUALQUIER nombre de campo, y también escrito como «2.50».
+    const numeros: number[] = [];
+    const textos: string[] = [];
+    const nombres: string[] = [];
+    const recorrer = (v: unknown, clave: string): void => {
+      if (typeof v === "number") {
+        numeros.push(v);
+      } else if (typeof v === "string") {
+        // Los identificadores se saltan a propósito: son aleatorios y no
+        // llevan información del negocio. Es la ÚNICA excepción, y por eso va
+        // por el nombre del campo y no por la forma del valor.
+        if (!/id$/i.test(clave)) textos.push(v);
+      } else if (v !== null && typeof v === "object") {
+        for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+          nombres.push(k);
+          recorrer(x, k);
+        }
+      }
+    };
+    recorrer(r.datos, "datos");
+
+    // Ni el número, ni escrito como dinero.
+    expect(numeros).not.toContain(250);
+    for (const t of textos) expect(t).not.toMatch(/250|2[.,]50/);
+    // Ni un campo que invite a ponerlo mañana.
+    for (const nombre of nombres) expect(nombre).not.toMatch(/costo|precio|valor/i);
   });
 });
