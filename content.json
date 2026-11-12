@@ -136,14 +136,21 @@
     {
       "id": "danybaby-aquawipes",
       "name": "Wipes de agua Dany Baby",
-      "description": "Toallitas de agua 99% pura, sin alcohol ni perfumes, ideales para recién nacidos. Caja de 12 paquetes de 50.",
+      "description": "Toallitas de agua 99% pura, sin alcohol ni perfumes, ideales para recién nacidos. Caja de 6 paquetes de 100, o la promo de 2 cajas (1,200 toallitas).",
       "image": "/img/logo-badge.png",
       "variants": [
         {
           "codigo": "DANY-AW600",
           "size": "Caja",
-          "range": "12 paquetes de 50",
+          "range": "6 paquetes de 100",
           "units": "600 toallitas",
+          "image": "/img/logo-badge.png"
+        },
+        {
+          "codigo": "DANY-AW1200",
+          "size": "Promo 2 cajas",
+          "range": "12 paquetes de 100",
+          "units": "1,200 toallitas",
           "image": "/img/logo-badge.png"
         }
       ]
