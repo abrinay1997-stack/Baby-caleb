@@ -80,6 +80,7 @@ import {
   leerFicha as leerFichaDeClienta,
 } from "../db/clientes";
 import type { CambiosEnClienta, CambiosEnDireccion } from "../db/clientes";
+import { type HacerProveedor, registrarRutasDelAsistente } from "./asistente-rutas";
 import { crearPedido } from "../db/pedidos";
 import { agendar as agendarPedido, cancelar as cancelarPedido } from "../db/transiciones";
 import {
@@ -161,7 +162,11 @@ const porAccess: ResolverUsuario = async (request, env) => {
  * real: para saltársela hay que pasar otra cosa a propósito, así que no se
  * puede olvidar — que es la propiedad que importa.
  */
-export function crearPanel(resolver: ResolverUsuario = porAccess) {
+export function crearPanel(
+  resolver: ResolverUsuario = porAccess,
+  /** El cerebro de Caleb. Por omisión el real; las pruebas pasan uno de guion. */
+  hacerProveedor?: HacerProveedor,
+) {
   const panel = new Hono<Entorno>();
 
   panel.use("*", async (c, next) => {
@@ -172,7 +177,7 @@ export function crearPanel(resolver: ResolverUsuario = porAccess) {
     return;
   });
 
-  registrarRutas(panel);
+  registrarRutas(panel, hacerProveedor);
   return panel;
 }
 
@@ -379,7 +384,12 @@ function cambiosDeZona(b: Record<string, unknown>): CambiosEnZona {
 
 // ---------------------------------------------------------------------------
 
-function registrarRutas(panel: Hono<Entorno>): void {
+function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): void {
+  // Caleb, el asistente, en su propio archivo: este ya pasa de las mil líneas
+  // y aquel tiene su propio secreto, su propio proveedor y su propio motivo
+  // para fallar.
+  registrarRutasDelAsistente(panel, hacerProveedor);
+
   panel.get("/yo", (c) => {
     const usuario = c.get("usuario");
     return c.json(ok({ usuario, permisos: permisosDe(usuario.rol) }));
