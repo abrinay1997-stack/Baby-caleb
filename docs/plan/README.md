@@ -37,12 +37,23 @@ Lo pidió el dueño del proyecto. El porqué está en [`../TRAMPAS.md`](../TRAMP
 comprueba `sistema/scripts/sin-mcp.mjs`, que corre en CI: una ruta nueva sin decidir si MCP la
 cubre pone la ejecución en rojo.
 
-Estado de hoy (2026-11-12): **72 capacidades en el panel, 9 alcanzables por MCP, 6 que solo tienen
-sentido en el panel y 57 pendientes.** El número de pendientes tiene que bajar, no subir — las tres
-capacidades nuevas de hoy (las dos de cotizaciones y el veredicto del checkout) entraron con su
-herramienta en el mismo cambio, que es la regla. El guion también comprueba que la herramienta
-nombrada EXISTA: decir que algo se puede por MCP sin que se pueda es peor que decir «PENDIENTE»,
-porque nadie vuelve a mirarlo.
+Estado de hoy (2026-11-12, de madrugada): **84 capacidades en el panel, 66 alcanzables por MCP,
+18 que solo tienen sentido en el panel y CERO pendientes.** Se cerró la deuda entera en una noche,
+con 72 herramientas en el catálogo del asistente.
+
+Dos cosas que aprendimos cerrándola:
+
+- **El guion tenía puntos ciegos.** Su regex no miraba los `PUT` ni toleraba que una ruta se
+  declarara con la ruta en la línea siguiente, así que cuatro rutas de verdad no las contaba
+  nadie: decía 72 y había 76. Lo encontraron dos agentes distintos el mismo día. Un control con
+  un hueco es peor que ninguno, porque se lee como un «está bien».
+- **Las tres rutas de `usuarios` son la única excepción de fondo**, y no es deuda: cambiar un
+  permiso es lo primero de la lista de lo que el asistente nunca hace (06-asistente §3), y una
+  llave de MCP que da de alta usuarios se amplía a sí misma — a partir de ahí, revocarla no
+  revoca nada. Ahora el guion lo vigila leyendo el código, no confiando en los nombres.
+
+El guion también comprueba que la herramienta nombrada EXISTA: decir que algo se puede por MCP
+sin que se pueda es peor que decir «PENDIENTE», porque nadie vuelve a mirarlo.
 
 ## Cómo leerlo
 
