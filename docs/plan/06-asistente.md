@@ -101,6 +101,11 @@ el id de la acción).
 | `anular_pedido` · `reembolsar` | sensible | dueña |
 | `cerrar_mes` (guiado con la lista de chequeo) | sensible | dueña |
 | `cambiar_ajuste` (abono mínimo, pasarela activa…) | sensible | dueña |
+| `ver_historial_de_ajuste(ajuste?)` — quién cambió una cifra, cuándo y por qué | lectura | dueña |
+| `crear_bodega` · `renombrar_bodega` | construcción | dueña |
+| `cambiar_uso_de_bodega` (dejar de surtir desde ahí; una bodega no se borra) | sensible | dueña |
+| `crear_zona` · `cambiar_zona` (la tarifa es dinero; `null` = se cotiza a mano) | sensible | dueña |
+| `corregir_ficha_de_clienta` (por su referencia; no devuelve ningún dato de ella) | construcción | dueña, asistente |
 
 Una herramienta nueva solo entra con su prueba y con su fila en esta tabla.
 

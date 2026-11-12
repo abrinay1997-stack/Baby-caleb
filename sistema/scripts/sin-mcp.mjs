@@ -29,7 +29,7 @@ import { readFileSync } from "node:fs";
 const COBERTURA = {
   "DELETE /catalogo/variantes/:codigo": "PENDIENTE",
   "GET /ajustes": "PENDIENTE",
-  "GET /ajustes/:clave/historial": "PENDIENTE",
+  "GET /ajustes/:clave/historial": "ver_historial_de_ajuste",
   "GET /bodegas": "PENDIENTE",
   "GET /catalogo": "buscar_articulo",
   "GET /catalogo/variantes/:codigo/borrado": "PENDIENTE",
@@ -57,15 +57,15 @@ const COBERTURA = {
   "GET /usuarios": "PENDIENTE",
   "GET /yo": "solo_panel: quién soy lo decide Access, no una herramienta",
   "GET /zonas": "PENDIENTE",
-  "PATCH /bodegas/:id": "PENDIENTE",
+  "PATCH /bodegas/:id": "renombrar_bodega + cambiar_uso_de_bodega",
   "PATCH /catalogo/variantes/:codigo": "cambiar_precio (solo el precio; el resto PENDIENTE)",
-  "PATCH /clientes/:id": "PENDIENTE",
+  "PATCH /clientes/:id": "corregir_ficha_de_clienta (la facturación de una dirección es solo_panel: para tocarla hay que decir CUÁL, y el id de una dirección solo se conoce abriendo la ficha, que es lo que D-20 no deja salir hacia el modelo)",
   "PATCH /usuarios/:id": "PENDIENTE",
-  "PATCH /zonas/:id": "PENDIENTE",
+  "PATCH /zonas/:id": "cambiar_zona",
   "POST /ajustes/:clave": "PENDIENTE",
   "POST /asistente": "solo_panel: es la puerta del propio asistente",
   "POST /asistente/acciones/:id": "solo_panel: es la puerta del propio asistente",
-  "POST /bodegas": "PENDIENTE",
+  "POST /bodegas": "crear_bodega",
   "POST /bodegas/traslados": "trasladar_stock",
   "POST /catalogo/altas": "PENDIENTE",
   "POST /catalogo/productos": "PENDIENTE",
@@ -98,7 +98,7 @@ const COBERTURA = {
   "POST /pedidos/:id/cancelar": "PENDIENTE",
   "POST /pedidos/:id/devolucion": "PENDIENTE",
   "POST /usuarios": "PENDIENTE",
-  "POST /zonas": "PENDIENTE"
+  "POST /zonas": "crear_zona"
 };
 
 const fuentes = ["src/api/panel.ts", "src/api/asistente-rutas.ts"];

@@ -12,7 +12,9 @@
  *  - `herramientas/`   las herramientas de verdad: `catalogo.ts` es lo que se
  *                      le puede contestar a una clienta (precio, talla, peso y
  *                      la etiqueta de si hay) e `inventario.ts` es para ir a la
- *                      bodega (el número exacto, por bodega).
+ *                      bodega (el número exacto, por bodega). `maestros.ts`
+ *                      administra bodegas, zonas de envío y la ficha de una
+ *                      clienta, y `ajustes.ts` cuenta quién cambió una cifra.
  *
  * Lo que el asistente NUNCA hace no se comprueba: no existe. No hay forma de
  * declarar una herramienta que borre un asiento, cambie un permiso, lea un
@@ -24,8 +26,10 @@ export * from "./politica";
 export * from "./referencias";
 export * from "./proveedor";
 
+import { HERRAMIENTAS_DE_AJUSTES } from "./herramientas/ajustes";
 import { HERRAMIENTAS_DE_CATALOGO } from "./herramientas/catalogo";
 import { HERRAMIENTAS_DE_INVENTARIO } from "./herramientas/inventario";
+import { HERRAMIENTAS_DE_MAESTROS } from "./herramientas/maestros";
 import { HERRAMIENTAS_DE_PRECIOS_Y_STOCK } from "./herramientas/precios-y-stock";
 import { Registro } from "./registro";
 
@@ -38,8 +42,10 @@ import { Registro } from "./registro";
 export function catalogo(): Registro {
   const r = new Registro();
   for (const h of [
+    ...HERRAMIENTAS_DE_AJUSTES,
     ...HERRAMIENTAS_DE_CATALOGO,
     ...HERRAMIENTAS_DE_INVENTARIO,
+    ...HERRAMIENTAS_DE_MAESTROS,
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
   ]) {
     r.registrar(h as never);
@@ -49,4 +55,10 @@ export function catalogo(): Registro {
 
 export * from "./ejecutar";
 export * from "./conversar";
-export { HERRAMIENTAS_DE_CATALOGO, HERRAMIENTAS_DE_INVENTARIO, HERRAMIENTAS_DE_PRECIOS_Y_STOCK };
+export {
+  HERRAMIENTAS_DE_AJUSTES,
+  HERRAMIENTAS_DE_CATALOGO,
+  HERRAMIENTAS_DE_INVENTARIO,
+  HERRAMIENTAS_DE_MAESTROS,
+  HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
+};
