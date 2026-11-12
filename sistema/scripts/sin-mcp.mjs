@@ -34,7 +34,7 @@ import { readFileSync } from "node:fs";
  */
 const COBERTURA = {
   "DELETE /catalogo/variantes/:codigo": "PENDIENTE",
-  "GET /ajustes": "PENDIENTE",
+  "GET /ajustes": "ver_ajustes",
   "GET /ajustes/:clave/historial": "PENDIENTE",
   "GET /bodegas": "PENDIENTE",
   "GET /catalogo": "buscar_articulo",
@@ -68,7 +68,7 @@ const COBERTURA = {
   "PATCH /clientes/:id": "PENDIENTE",
   "PATCH /usuarios/:id": "PENDIENTE",
   "PATCH /zonas/:id": "PENDIENTE",
-  "POST /ajustes/:clave": "PENDIENTE",
+  "POST /ajustes/:clave": "cambiar_ajuste",
   "POST /asistente": "solo_panel: es la puerta del propio asistente",
   "POST /asistente/acciones/:id": "solo_panel: es la puerta del propio asistente",
   "POST /bodegas": "PENDIENTE",
