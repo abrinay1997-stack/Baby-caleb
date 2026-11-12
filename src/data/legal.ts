@@ -475,7 +475,7 @@ export const PRIVACIDAD: DocumentoLegal = {
             "y hasta que usted diga que sí su navegador no contacta a Meta por esta página. Si " +
             "dice que no, no se carga: ni ese día ni después. Si dice que sí y luego cambia de " +
             "opinión, abra «Cookies y rastreo» al final de cualquier página y elija «No " +
-            "permitir» — desde ese momento deja de cargarse.",
+            "permitir» — la página se recarga y desde ese momento deja de cargarse.",
         },
         {
           tipo: "nota",

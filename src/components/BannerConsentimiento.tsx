@@ -8,7 +8,7 @@ import {
   leerDecision,
   type Decision,
 } from '../consentimiento/consentimiento';
-import { activarPixel, entornoDelNavegador } from '../consentimiento/pixel';
+import { activarPixel, entornoDelNavegador, pixelYaCargado } from '../consentimiento/pixel';
 
 /**
  * El banner del consentimiento: la única puerta por la que carga el píxel.
@@ -65,13 +65,32 @@ export default function BannerConsentimiento() {
   }, []);
 
   function decidir(decision: Decision) {
+    const entorno = entornoDelNavegador();
+    // Se mira ANTES de guardar: es lo que distingue «nunca cargó» de «está
+    // cargado y la persona acaba de retirar el permiso».
+    const yaEstaba = pixelYaCargado(entorno.documento);
+
     guardarDecision(decision);
     // El píxel se activa AQUÍ y en ningún otro sitio de este archivo: la
     // guarda de `activarPixel` vuelve a mirar la decisión, así que un «no»
     // que llegue por error tampoco carga nada.
-    activarPixel(decision, entornoDelNavegador());
+    activarPixel(decision, entorno);
     setAbierto(false);
     window.dispatchEvent(new CustomEvent(EVENTO_DECIDIDO, { detail: decision }));
+
+    /**
+     * Retirar el permiso con el píxel ya cargado RECARGA la página.
+     *
+     * Es brusco y es lo único que de verdad lo apaga: un `<script>` que ya
+     * corrió no se desejecuta quitando su etiqueta, y `fbq` se queda definido
+     * con su cola dentro. Sin esto, el «no» no empezaría a valer hasta la
+     * siguiente recarga y Meta seguiría recibiendo durante el resto de la
+     * visita — o sea, rechazar no significaría rechazar.
+     *
+     * Solo cuando estaba cargado: recargar la página a quien dice «no» la
+     * primera vez sería un salto sin ningún motivo.
+     */
+    if (decision === 'rechazado' && yaEstaba) window.location.reload();
   }
 
   if (!abierto) return null;

@@ -130,6 +130,26 @@ export function idDelPixelDe(documento: DocumentoDelPixel): string | null {
 }
 
 /**
+ * Si el píxel ya está colgado en ESTA página.
+ *
+ * Hace falta para que retirar el permiso signifique algo de verdad. El caso:
+ * alguien aceptó, el `fbevents.js` de Meta ya está cargado y corriendo, y
+ * entonces abre «Cookies y rastreo» y elige «No permitir». Guardar el «no»
+ * impide que vuelva a cargar mañana, pero NO descarga lo que ya está en la
+ * página: un `<script>` no se puede desejecutar quitando su etiqueta, y `fbq`
+ * sigue definido con su cola dentro.
+ *
+ * O sea que sin esto, «rechazar» no empezaría a valer hasta la siguiente
+ * recarga, y durante el resto de la visita Meta seguiría recibiendo. Quien lo
+ * acaba de rechazar no tiene por qué saber que hay que recargar.
+ *
+ * Lo que se hace con esto está en `BannerConsentimiento`: recargar la página.
+ * Es brusco y es lo único que de verdad lo apaga.
+ */
+export const pixelYaCargado = (documento: DocumentoDelPixel): boolean =>
+  documento.getElementById(ID_DEL_SCRIPT) !== null;
+
+/**
  * Carga el píxel de Meta, si y solo si se puede.
  *
  * Esta es la guarda. Todo lo que decide si Meta se entera de que alguien pasó
@@ -163,7 +183,7 @@ export function activarPixel(decision: Decision | null, entorno: EntornoDelPixel
 
   // Colgarlo dos veces contaría dos visitas por una. Pasa al aceptar en la
   // misma pestaña en la que ya se había aceptado antes de recargar.
-  if (entorno.documento.getElementById(ID_DEL_SCRIPT) !== null) {
+  if (pixelYaCargado(entorno.documento)) {
     return { cargado: false, motivo: "ya_estaba" };
   }
 

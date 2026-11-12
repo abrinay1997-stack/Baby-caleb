@@ -6,6 +6,7 @@ import {
   activarPixel,
   esIdDePixel,
   idDelPixelDe,
+  pixelYaCargado,
   type DocumentoDelPixel,
   type EntornoDelPixel,
   type ScriptDelPixel,
@@ -186,5 +187,31 @@ describe('el identificador del píxel se mira antes de usarlo', () => {
     // queda si alguien escribe la variable de configuración en blanco.
     expect(idDelPixelDe(navegadorFalso('').documento)).toBeNull();
     expect(idDelPixelDe(navegadorFalso('   ').documento)).toBeNull();
+  });
+});
+
+describe('retirar el permiso con el píxel ya cargado', () => {
+  /**
+   * `pixelYaCargado` es lo que distingue «nunca cargó» de «está corriendo y la
+   * persona acaba de decir que no». El banner recarga la página en el segundo
+   * caso, porque un `<script>` que ya corrió no se desejecuta quitando su
+   * etiqueta y `fbq` se queda definido con su cola dentro: sin eso, el «no» no
+   * empezaría a valer hasta la siguiente recarga y Meta seguiría recibiendo
+   * durante el resto de la visita.
+   */
+  it('se sabe que está cargado solo después de cargarlo', () => {
+    const falso = navegadorFalso();
+    expect(pixelYaCargado(falso.documento)).toBe(false);
+
+    activarPixel('aceptado', falso);
+    expect(pixelYaCargado(falso.documento)).toBe(true);
+  });
+
+  it('y una página que lo rechazó desde el principio nunca lo tuvo', () => {
+    // El contrapeso: si `pixelYaCargado` dijera `true` siempre, el banner
+    // recargaría la página a quien dice «no» la primera vez, sin motivo.
+    const falso = navegadorFalso();
+    activarPixel('rechazado', falso);
+    expect(pixelYaCargado(falso.documento)).toBe(false);
   });
 });
