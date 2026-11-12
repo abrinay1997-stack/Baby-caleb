@@ -1022,8 +1022,11 @@ const RESPUESTAS = {
       ajuste("checkout_activo", true, {
         origen: "guardado", version: 1, vigente_desde: Date.now() - 40 * dia,
         cambiado_por: "duena@babycaleb.com", motivo: "Para poder cobrar en la página",
+      }),
       ajuste("whatsapp_pedidos_activo", true),
       ajuste("whatsapp_numero", "50767575065", {
+        origen: "guardado", version: 1, vigente_desde: Date.now() - 30 * dia,
+        cambiado_por: "duena@babycaleb.com", motivo: "El celular de siempre del negocio",
       }),
       ajuste("pasarelas_activas", []),
       ajuste("metodos_para_abono", ["yappy", "manual"]),
