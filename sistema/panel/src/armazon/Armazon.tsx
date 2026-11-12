@@ -6,6 +6,7 @@ import { ETIQUETAS_ROL, type Permiso } from "../permisos";
 import { BarraInferior } from "./BarraInferior";
 import { Cajon } from "./Cajon";
 import { destinoDe, destinosDeLaBarra, seccionesVisibles } from "./navegacion";
+import { Caleb } from "../pantallas/Caleb";
 
 /**
  * El armazón del panel: lo que se ve en todas las pantallas.
@@ -103,6 +104,13 @@ export function Armazon({ yo }: { yo: Yo }) {
           </main>
         </div>
       </div>
+
+      {/* Caleb va en el armazón y no en cada pantalla: la pregunta aparece
+          mientras se está haciendo otra cosa. «¿Cuánto queda de la M?» se
+          pregunta estando en Pedidos, no yendo a una pantalla de asistente.
+          Y se le pasa dónde está quien pregunta, porque sin eso «esto» y
+          «aquí» no significan nada. */}
+      <Caleb {...(actual?.nombre === undefined ? {} : { pantalla: actual.nombre })} />
 
       <BarraInferior
         destinos={deLaBarra}

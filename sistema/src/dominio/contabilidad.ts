@@ -1444,6 +1444,14 @@ export interface Hueco {
 
 export const HUECOS: readonly Hueco[] = [
   {
+    clave: "tarifa_del_modelo",
+    que: "Cuánto cuesta un millón de fichas del modelo que usa el asistente, de entrada y de salida.",
+    quien: "Sale de la factura o la página de precios de Meta. Lo mira quien lleva la cuenta de IA.",
+    sinEsto:
+      "El asistente ANOTA las fichas que gasta, que es un hecho medible, pero el costo queda en cero y el tope mensual en dólares no puede frenar nada. No se pone una tarifa aproximada a propósito: un costo inventado se vuelve el costo real del informe del mes siguiente y nadie vuelve a preguntarse de dónde salió.",
+    fuente: "06-asistente §6",
+  },
+  {
     clave: "itbms",
     que: "Si los pañales, los wipes y los fulares llevan ITBMS, y a qué tasa cada uno.",
     quien: "La contadora.",

@@ -766,6 +766,24 @@ const RESPUESTAS = {
   }),
 
   /**
+   * `/asistente`: un turno de Caleb.
+   *
+   * Contesta SIEMPRE lo mismo y sin llamar a ningún modelo: lo que el auditor
+   * mide aquí es la hoja —sus burbujas, su campo de escribir y sus botones de
+   * permiso—, no si el asistente acierta. Un modelo de verdad haría que la
+   * auditoría costara dinero y diera una captura distinta cada vez.
+   */
+  "/api/asistente": ok({
+    clase: "dijo",
+    texto: "De la talla M quedan 30 cajas en la bodega principal y ninguna en la casa.",
+    historial: [
+      { rol: "user", contenido: "¿cuánto queda de la M?" },
+      { rol: "assistant", contenido: "De la talla M quedan 30 cajas." },
+    ],
+    pasos: 1,
+  }),
+
+  /**
    * `/clientes`: el buscador de la pantalla de Clientas.
    *
    * Gente inventada, y que se note. La forma es la de `ClientaEnLista`
