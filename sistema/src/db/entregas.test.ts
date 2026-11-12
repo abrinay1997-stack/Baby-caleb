@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { token, ulid } from "../ids";
+import { registrar as registrarMovimientos } from "./inventario";
 import { crearPedido } from "./pedidos";
 import { agendar } from "./transiciones";
 import { guardar as guardarAjuste } from "./ajustes";
@@ -2020,6 +2021,51 @@ describe("los asientos que deja una entrega", () => {
       { codigo: "1301", debe: 0, haber: 600 },
       { codigo: "5101", debe: 600, haber: 0 },
     ]);
+  });
+
+  it("el círculo se cierra: el costo que se carga por el panel es el que fija la entrega", async () => {
+    // Las demás pruebas de aquí siembran `valor_inventario` a mano, porque
+    // hasta hoy NO HABÍA otra forma: la tabla se leía al entregar y nadie la
+    // llenaba nunca. Esta entra por la puerta de verdad —la misma función que
+    // llama `POST /existencias/movimientos`— y es la que demuestra que una
+    // entrega deja de salir con `costoDesconocido` sin que nadie toque la base
+    // por detrás.
+    const codigo = await variante(0);
+
+    // La compra que llega a la bodega, con lo que costó cada unidad.
+    const carga = await registrarMovimientos(
+      { db: env.DB, actor: "yarielis@babycaleb.com", ahora: ahora() },
+      { tipo: "compra", lineas: [{ codigo, bodegaId, delta: 10, costoUnitCents: 200 }] },
+    );
+    expect(carga.ok, JSON.stringify(carga)).toBe(true);
+
+    const e = await enLaCalle({ cantidad: 3, codigo });
+    const r = await marcarEntregada(ctx(), {
+      idempotencia: id("idem"),
+      envioId: e.envioId,
+      motorizadoId: e.motorizado.id,
+      metodoCobro: "efectivo",
+    });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+
+    // Lo que antes de este cambio era imposible: la entrega SABE lo que costó.
+    expect(r.datos.costoDesconocido).toBe(false);
+
+    const costo = (await asientosDe(e.pedidoId)).find((a) => a.hecho === "3b");
+    expect(costo, "falta el asiento 3b").toBeDefined();
+    expect(await lineasDe(costo!.id)).toEqual([
+      { codigo: "1301", debe: 0, haber: 600 },
+      { codigo: "5101", debe: 600, haber: 0 },
+    ]);
+
+    // Y el promedio quedó bajado por la entrega: 7 unidades por $14.00.
+    const valor = await env.DB.prepare(
+      "SELECT unidades, valor_cents FROM valor_inventario WHERE codigo = ?",
+    )
+      .bind(codigo)
+      .first<{ unidades: number; valor_cents: number }>();
+    expect(valor).toEqual({ unidades: 7, valor_cents: 1400 });
   });
 
   it("todos los asientos de la entrega cuadran y llevan la fecha de Panamá", async () => {
