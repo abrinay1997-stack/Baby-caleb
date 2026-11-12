@@ -96,7 +96,7 @@ el id de la acción).
 | `registrar_compra` (borrador) · `poner_tiempo_de_llegada` | construcción | dueña |
 | `asignar_motorizado` · `programar_entrega` | construcción | dueña, asistente |
 | `confirmar_abono` · `registrar_cobro` | sensible | dueña |
-| `cambiar_precio` · `ajustar_stock` · `registrar_merma` · `trasladar_stock` | sensible | dueña |
+| `cambiar_precio` · `ajustar_stock(…, costo_unitario_cents?)` · `registrar_merma` · `trasladar_stock` | sensible | dueña |
 | `recibir_compra` | sensible | dueña |
 | `anular_pedido` · `reembolsar` | sensible | dueña |
 | `cerrar_mes` (guiado con la lista de chequeo) | sensible | dueña |

@@ -99,12 +99,33 @@ export const cambiarPrecio = definir({
 export const ajustarStock = definir({
   nombre: "ajustar_stock",
   descripcion:
-    "Corrige las existencias de un artículo en una bodega después de un conteo. «fijar» pone el número que se contó; «sumar» y «restar» mueven por la diferencia. Ejemplo: ajustar_stock con codigo «NAT-M», bodega «Bodega Ciudad de Panamá», modo «fijar» y cantidad 12.",
+    "Corrige las existencias de un artículo en una bodega después de un conteo. «fijar» pone el número que se contó; «sumar» y «restar» mueven por la diferencia. Si aparece mercancía y se sabe lo que costó, se dice con costo_unitario_cents y así entra también al costo promedio. Ejemplo: ajustar_stock con codigo «NAT-M», bodega «Bodega Ciudad de Panamá», modo «fijar» y cantidad 12.",
   parametros: z.object({
     codigo,
     bodega: z.string().min(1).max(60).describe("El nombre de la bodega, tal como aparece en el panel."),
     modo: z.enum(["sumar", "restar", "fijar"]).describe("«fijar» es lo que se usa tras un conteo."),
     cantidad: z.number().int().min(0).max(1_000_000),
+    /**
+     * La puerta de MCP al costo promedio (TRAMPAS §13: una capacidad que solo
+     * se alcanza desde una pantalla no está terminada).
+     *
+     * Solo cuando el ajuste hace ENTRAR mercancía: en una salida el costo lo
+     * decide el promedio, no quien la pide (05-contabilidad §4). Si no se
+     * manda, el promedio no se toca y el costo de esas unidades queda sin
+     * saberse — que es la verdad. Un cero diría que fue gratis.
+     *
+     * Se llama `..._cents` para que la confirmación que lee la dueña lo
+     * enseñe en dólares: `resumir()` convierte toda clave que acabe así.
+     */
+    costo_unitario_cents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .optional()
+      .describe(
+        "Lo que costó CADA unidad que entra, en centavos: $3.50 son 350. Solo cuando entra mercancía. Sin esto, el costo promedio no se toca y la ganancia de lo que se venda de este artículo seguirá sin poderse calcular.",
+      ),
     motivo,
   }),
   nivel: "sensible",
@@ -130,13 +151,36 @@ export const ajustarStock = definir({
 
     if (delta === 0) throw new Error(`${args.codigo} ya está en ${args.cantidad} en «${args.bodega}»`);
 
+    // Se dice en vez de ignorarse: un costo que se acepta y no se usa deja a
+    // quien lo mandó creyendo que el promedio se cargó.
+    if (args.costo_unitario_cents !== undefined && delta < 0) {
+      throw new Error(
+        `el costo se dice cuando ENTRA mercancía, y este ajuste saca ${-delta} de ${args.codigo}; en una salida el costo lo decide el costo promedio`,
+      );
+    }
+
     const r = await aplicar(
       { db: ctx.db, actor: ctx.usuario.id, ahora: ctx.ahora },
-      [{ codigo: args.codigo, bodegaId: bodega.id, delta, tipo: "ajuste", motivo: args.motivo }],
+      [
+        {
+          codigo: args.codigo,
+          bodegaId: bodega.id,
+          delta,
+          tipo: "ajuste",
+          motivo: args.motivo,
+          ...(args.costo_unitario_cents === undefined
+            ? {}
+            : { costoUnitCents: args.costo_unitario_cents }),
+        },
+      ],
       { tipo: "ajuste", id: ulid(ctx.ahora) },
     );
     if (!r.ok) throw new Error(r.mensaje);
 
+    // El costo NO vuelve en la respuesta, ni cuando lo mandó quien pregunta:
+    // el costo sale del asistente por una sola puerta, que es ninguna
+    // (`asistente/fronteras.test.ts`). Lo que vuelve es lo que hay en el
+    // estante.
     return { codigo: args.codigo, bodega: bodega.nombre, antes: fila.fisico, ahora: fila.fisico + delta, deshacerId: r.datos.deshacerId };
   },
 });

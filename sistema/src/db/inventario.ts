@@ -1,5 +1,5 @@
 import { fallo, ok } from "../contrato/resultado";
-import type { Resultado } from "../contrato/resultado";
+import type { Fallo, Resultado } from "../contrato/resultado";
 import { ulid } from "../ids";
 
 /**
@@ -121,12 +121,207 @@ export interface Movimiento {
    * persona dijo que entró o salió, no una diferencia contra una lectura.
    */
   readonly quedaEn?: number;
+  /**
+   * Estas unidades NUNCA estuvieron valoradas: el promedio no se toca.
+   *
+   * No es «no sé lo que costó» —eso ya lo dice un `costoUnitCents` ausente—
+   * sino «ya se sabe que estas unidades no están en el promedio».
+   *
+   * Lo pone `deshacer()` y solo él, para el contrario de una ENTRADA que entró
+   * sin costo. Esas unidades subieron el físico sin subir el promedio, así que
+   * al deshacerlas hay que bajar el físico y NO bajar el promedio: cobrarles
+   * el promedio sería sacar de `1301` un valor que nunca entró ahí, y encima
+   * dejaría más caras las unidades que sí tienen costo.
+   *
+   * También es lo que hace que deshacer un traslado no invente ni destruya
+   * valor: la entrada del traslado no lleva costo, así que su contrario entra
+   * por aquí.
+   */
+  readonly fueraDelPromedio?: boolean;
 }
 
 export interface Contexto {
   readonly db: D1Database;
   readonly actor: string;
   readonly ahora: number;
+}
+
+// ---------------------------------------------------------------------------
+// El costo promedio (`valor_inventario`) · 05-contabilidad §4
+// ---------------------------------------------------------------------------
+
+/**
+ * El promedio ponderado POR VARIANTE, y el que lo llena.
+ *
+ * `valor_inventario` llevaba desde la migración 0001 siendo leída al entregar,
+ * bajada al entregar y subida al devolver — y **nadie la llenaba nunca**. No
+ * había un solo INSERT en todo `src/`. Consecuencia: toda entrega salía con
+ * `costoDesconocido`, sin asiento 3b, y la ganancia bruta no se podía calcular.
+ * El sistema se portaba bien —se negaba a escribir un cero, que es una cifra
+ * inventada (TRAMPAS §7)— pero no había por dónde cargar el costo. Esto es esa
+ * puerta.
+ *
+ * ## Qué es `unidades`, y por qué no es el físico
+ *
+ * `unidades` son las unidades **valoradas**: las que se sabe lo que costaron.
+ * NO es la suma de `existencias.fisico`, y no tiene que serlo. Una entrada sin
+ * costo sube el físico y no sube el promedio, así que
+ * `unidades <= Σ fisico` y la diferencia es, literalmente, «unidades cuyo
+ * costo nadie sabe». Esa diferencia es lo que enseña el hueco «costos de
+ * apertura» del panel (`db/contabilidad.ts`, `huecosAbiertos`), y la que se
+ * cierra cargando el costo.
+ *
+ * ## Quién toca el promedio y quién no
+ *
+ * - **`traslado_salida` y `traslado_entrada`: NUNCA.** El promedio es por
+ *   variante, no por bodega: la salida y la entrada se anulan. Tocarlo
+ *   inventaría valor en la entrada y lo destruiría en la salida, en cada
+ *   traslado, y el promedio quedaría corrompido cuadrando igual — que es lo
+ *   peor que puede pasar.
+ * - **Entradas (`delta > 0`) con costo: suben.** `unidades += q`,
+ *   `valor_cents += q × costo`. Es la aritmética del §4, sobre un costo que
+ *   escribió la dueña.
+ * - **Entradas sin costo: no tocan nada.** Las unidades existen físicamente y
+ *   no se sabe qué costaron. Un cero diría que no costaron nada y pondría el
+ *   margen en 100 % (TRAMPAS §7).
+ * - **Salidas (`delta < 0`): bajan su parte proporcional**
+ *   (`round(valor × q / unidades)`), que es lo que el §4 manda y lo mismo que
+ *   ya hace `marcarEntregada`. Vale para `venta`, `merma`, `muestra`,
+ *   `regalo`, y para un `ajuste` o un `conteo` que encuentra MENOS de lo
+ *   anotado: en todos, la mercancía se fue y su costo se tiene que ir con
+ *   ella, o el inventario queda valiendo más de lo que hay y el costo de las
+ *   ventas siguientes sale inflado.
+ * - **Salidas sin promedio que alcance (`unidades < q`): no tocan nada**, y el
+ *   movimiento guarda `costo_unit_cents` nulo. Misma condición y misma
+ *   decisión que `marcarEntregada`: una parte del costo no es el costo de esta
+ *   salida, y repartir lo que hay sería inventar.
+ * - **En una salida el costo no lo decide quien la pide: lo decide el
+ *   promedio.** Un `costoUnitCents` en una salida se ignora para el promedio y
+ *   el movimiento anota lo que de verdad salió (§4: «el costo de la salida
+ *   queda copiado en el movimiento»).
+ *
+ * La venta por la entrega NO pasa por aquí: `marcarEntregada` escribe su
+ * propio lote y baja el promedio ella misma, porque tiene que bajar el físico
+ * y lo reservado a la vez. Así que esto no la cuenta dos veces. La `venta` que
+ * sí pasa por aquí es la del CRM (`rpc/crm.ts`, `registrarVenta`), que no pasa
+ * por pedidos.
+ */
+interface Promedio {
+  unidades: number;
+  valorCents: number;
+}
+
+/** Los dos tipos que no tocan el promedio por lo que SON, no por sus datos. */
+const NO_TOCAN_EL_PROMEDIO: ReadonlySet<string> = new Set([
+  "traslado_salida",
+  "traslado_entrada",
+]);
+
+/** Lo que un movimiento le hace al promedio, ya decidido. */
+interface Efecto {
+  /** Si hay que escribir en `valor_inventario`. */
+  readonly toca: boolean;
+  /** Cuánto sube (+) o baja (−) `unidades`. */
+  readonly unidades: number;
+  /** Cuánto sube (+) o baja (−) `valor_cents`. */
+  readonly valorCents: number;
+  /** Lo que se anota en `movimientos_inventario.costo_unit_cents`. */
+  readonly costoUnitCents: number | null;
+}
+
+const NO_TOCA = (costoUnitCents: number | null): Efecto => ({
+  toca: false,
+  unidades: 0,
+  valorCents: 0,
+  costoUnitCents,
+});
+
+/**
+ * Qué le hace este movimiento al promedio que tiene AHORA esa variante.
+ *
+ * `Math.round` y no un redondeo propio: es exactamente lo que hace
+ * `marcarEntregada`, y dos caminos hacia el mismo promedio con dos redondeos
+ * distintos discreparían por un centavo de vez en cuando — y el que se
+ * equivocara sería el que nadie revisa.
+ */
+function efectoEnElPromedio(m: Movimiento, ahora: Promedio): Efecto {
+  if (NO_TOCAN_EL_PROMEDIO.has(m.tipo)) return NO_TOCA(m.costoUnitCents ?? null);
+  if (m.fueraDelPromedio === true) return NO_TOCA(null);
+
+  if (m.delta > 0) {
+    if (m.costoUnitCents === undefined) return NO_TOCA(null);
+    return {
+      toca: true,
+      unidades: m.delta,
+      valorCents: m.delta * m.costoUnitCents,
+      costoUnitCents: m.costoUnitCents,
+    };
+  }
+
+  const q = -m.delta;
+  if (ahora.unidades <= 0 || ahora.unidades < q) return NO_TOCA(null);
+
+  const costo = Math.round((ahora.valorCents * q) / ahora.unidades);
+  return {
+    toca: true,
+    unidades: -q,
+    valorCents: -costo,
+    // Por unidad, que es lo que guarda la columna. El residuo del redondeo lo
+    // limpia el asiento 18 cuando las unidades llegan a cero; aquí no se
+    // inventa nada para taparlo.
+    costoUnitCents: Math.round(costo / q),
+  };
+}
+
+/**
+ * El promedio de cada variante que vaya a tocarse, antes de escribir.
+ *
+ * De una sola consulta: un conteo de tres bodegas son decenas de renglones y
+ * una consulta por renglón convierte una pantalla en una espera. Las variantes
+ * sin fila salen en cero, que aquí no es una cifra inventada sino la verdad —
+ * no hay nada valorado todavía.
+ */
+async function leerPromedios(
+  db: D1Database,
+  codigos: readonly string[],
+): Promise<Map<string, Promedio>> {
+  const leido = new Map<string, Promedio>(codigos.map((c) => [c, { unidades: 0, valorCents: 0 }]));
+  if (codigos.length === 0) return leido;
+
+  const { results } = await db
+    .prepare(
+      `SELECT codigo, unidades, valor_cents FROM valor_inventario
+        WHERE codigo IN (${codigos.map(() => "?").join(",")})`,
+    )
+    .bind(...codigos)
+    .all<{ codigo: string; unidades: number; valor_cents: number }>();
+
+  for (const v of results) leido.set(v.codigo, { unidades: v.unidades, valorCents: v.valor_cents });
+  return leido;
+}
+
+/**
+ * ¿Se movió el promedio de alguna de estas variantes desde que se leyó?
+ *
+ * Se pregunta SOLO en el camino del fallo, y existe por TRAMPAS §10: sin esto,
+ * un lote que se cae porque otro cambió el promedio en medio contestaría «no
+ * alcanza el inventario», y quien lo lea se pondría a contar cajas que están
+ * perfectamente. Son dos causas distintas y cada una nombra la suya.
+ */
+async function promedioQueCambio(
+  db: D1Database,
+  leido: Map<string, Promedio>,
+): Promise<string | null> {
+  const codigos = [...leido.keys()];
+  if (codigos.length === 0) return null;
+
+  const ahora = await leerPromedios(db, codigos);
+  for (const [codigo, antes] of leido) {
+    const hoy = ahora.get(codigo);
+    if (hoy === undefined) continue;
+    if (hoy.unidades !== antes.unidades || hoy.valorCents !== antes.valorCents) return codigo;
+  }
+  return null;
 }
 
 /**
@@ -155,11 +350,54 @@ export async function aplicar(
       // palabras, para que el mensaje sirva de algo.
       return fallo("entrada_invalida", `un movimiento de «${m.tipo}» necesita motivo`);
     }
+    if (m.costoUnitCents !== undefined && !Number.isSafeInteger(m.costoUnitCents)) {
+      return fallo("entrada_invalida", `el costo de ${m.codigo} no puede ser ${m.costoUnitCents}`);
+    }
+    if (m.costoUnitCents !== undefined && m.costoUnitCents < 0) {
+      // Un costo negativo metido en el promedio lo deja debajo de cero y lo
+      // tumba el CHECK de la tabla; mejor decirlo con palabras.
+      return fallo("entrada_invalida", `el costo de ${m.codigo} no puede ser negativo`);
+    }
+  }
+
+  // El promedio de ahora, para los movimientos que lo vayan a tocar. Se lee
+  // antes del lote porque el costo de una salida se calcula con él; si otro
+  // lote lo mueve en medio, la fila de control de más abajo lo caza y no se
+  // escribe nada.
+  const codigosConPromedio = [
+    ...new Set(
+      movimientos
+        .filter((m) => !NO_TOCAN_EL_PROMEDIO.has(m.tipo) && m.fueraDelPromedio !== true)
+        .map((m) => m.codigo),
+    ),
+  ];
+  const leido = await leerPromedios(ctx.db, codigosConPromedio);
+
+  // Lo que ESTE lote va a dejar en `valor_inventario`, en absoluto. Arranca en
+  // lo leído y se va acumulando movimiento a movimiento, así que dos
+  // movimientos de la misma variante en el mismo lote salen bien: el segundo
+  // calcula sobre lo que dejó el primero.
+  const corriendo = new Map<string, Promedio>([...leido].map(([c, p]) => [c, { ...p }]));
+  const tocadas = new Map<string, Promedio>();
+  const plan: { efecto: Efecto; despues: Promedio }[] = [];
+
+  for (const m of movimientos) {
+    const antes = corriendo.get(m.codigo) ?? { unidades: 0, valorCents: 0 };
+    const efecto = efectoEnElPromedio(m, antes);
+    const despues = {
+      unidades: antes.unidades + efecto.unidades,
+      valorCents: antes.valorCents + efecto.valorCents,
+    };
+    plan.push({ efecto, despues });
+    if (!efecto.toca) continue;
+    corriendo.set(m.codigo, despues);
+    tocadas.set(m.codigo, leido.get(m.codigo) ?? { unidades: 0, valorCents: 0 });
   }
 
   const enunciados: D1PreparedStatement[] = [];
 
-  for (const m of movimientos) {
+  for (const [i, m] of movimientos.entries()) {
+    const { efecto, despues } = plan[i] as { efecto: Efecto; despues: Promedio };
     enunciados.push(
       ctx.db
         .prepare(
@@ -174,7 +412,11 @@ export async function aplicar(
           m.bodegaId,
           m.delta,
           m.tipo,
-          m.costoUnitCents ?? null,
+          // En una entrada es el costo que mandó quien la pide; en una salida,
+          // lo que de verdad salió del promedio (§4: «el costo de la salida
+          // queda copiado en el movimiento»), para que un cambio posterior del
+          // promedio no reescriba lo que ya pasó.
+          efecto.costoUnitCents,
           referencia.tipo,
           referencia.id,
           m.motivo ?? null,
@@ -220,11 +462,94 @@ export async function aplicar(
           ctx.ahora,
         ),
     );
+
+    if (!efecto.toca) continue;
+
+    /**
+     * El promedio, en el MISMO lote que su movimiento. Es el punto: el libro y
+     * el promedio no se pueden separar ni por un fallo en medio.
+     *
+     * **El UPDATE SUMA, nunca escribe un absoluto.** Con un absoluto se
+     * pisaría lo que otro lote hubiera hecho en medio y la fila de control
+     * pasaría tan contenta, porque habría escrito justo lo que esperaba. Es
+     * exactamente el error que ya se evitó en los asientos de devolución.
+     *
+     * **En la ENTRADA, el `ON CONFLICT` es lo que FALTABA.** Sin él, una
+     * variante sin fila —todas, hoy— no tiene qué actualizar: el UPDATE no
+     * casa con nada, no falla, y el costo se perdería en silencio. Con él, la
+     * primera entrada crea la fila y las siguientes suman.
+     *
+     * **En la SALIDA no se puede usar el mismo enunciado, y se comprobó.**
+     * SQLite evalúa los CHECK de la fila que PROPONE el INSERT antes de
+     * resolver el `ON CONFLICT`, así que un upsert con cantidades negativas
+     * muere en `CHECK (unidades >= 0)` aunque la fila exista y la suma final
+     * sea positiva (probado: «CHECK constraint failed: unidades >= 0»). Una
+     * salida va con un UPDATE relativo, como el de `marcarEntregada`. No le
+     * hace falta crear nada: si no hay unidades valoradas, no toca el
+     * promedio, así que cuando llega aquí la fila existe — y si alguien la
+     * borró en medio, el UPDATE no casa, no falla, y lo caza la fila de
+     * control de abajo, que cuenta cero.
+     */
+    enunciados.push(
+      efecto.unidades > 0
+        ? ctx.db
+            .prepare(
+              `INSERT INTO valor_inventario (codigo, unidades, valor_cents) VALUES (?,?,?)
+                 ON CONFLICT(codigo) DO UPDATE SET unidades = unidades + excluded.unidades,
+                                                   valor_cents = valor_cents + excluded.valor_cents`,
+            )
+            .bind(m.codigo, efecto.unidades, efecto.valorCents)
+        : ctx.db
+            .prepare(
+              `UPDATE valor_inventario SET unidades = unidades - ?, valor_cents = valor_cents - ?
+                WHERE codigo = ?`,
+            )
+            .bind(-efecto.unidades, -efecto.valorCents, m.codigo),
+      /**
+       * La fila de control del promedio: las unidades y el valor EXACTOS que
+       * este lote esperaba dejar, en absoluto y no en delta.
+       *
+       * En absoluto es lo único que sirve. Un control que comprobara el delta
+       * comprobaría la resta que acaba de hacer la base —algo que ya era
+       * cierto— y pasaría siempre (TRAMPAS §1). Así, si otro lote movió el
+       * promedio entre la lectura y esta escritura, el resultado no es el que
+       * se esperaba, `ok` sale 0, el `CHECK (ok = 1)` tumba el lote entero
+       * —movimiento, existencias y promedio— y nadie se queda con un promedio
+       * a medias.
+       */
+      ctx.db
+        .prepare(
+          `INSERT INTO controles (id, regla, ok, creado_en)
+           VALUES (?, ?, (SELECT COUNT(*) FROM valor_inventario
+                          WHERE codigo = ? AND unidades = ? AND valor_cents = ?), ?)`,
+        )
+        .bind(
+          ulid(ctx.ahora),
+          `promedio:${m.tipo}:${m.codigo}`,
+          m.codigo,
+          despues.unidades,
+          despues.valorCents,
+          ctx.ahora,
+        ),
+    );
   }
 
   try {
     await ctx.db.batch(enunciados);
   } catch (e) {
+    // Dos causas distintas, dos mensajes distintos (TRAMPAS §10): que no
+    // alcanzara la mercancía, o que el promedio se moviera en medio. Sin
+    // separarlas, una carrera del promedio mandaría a contar cajas que están
+    // perfectamente. Se pregunta AQUÍ, en el camino del fallo, para no pagar
+    // una consulta más en el camino bueno; el lote no escribió nada, así que
+    // cualquier diferencia es de otro.
+    const carrera = await promedioQueCambio(ctx.db, tocadas);
+    if (carrera !== null) {
+      return fallo(
+        "conflicto_version",
+        `el costo promedio de ${carrera} cambió mientras se escribía: no se escribió nada, vuelva a intentarlo`,
+      );
+    }
     // `sin_stock` y no un código inventado: los doce del contrato son los
     // que hay (03-contratos §5), y el que llega aquí casi siempre es que
     // no alcanzaba.
@@ -266,7 +591,19 @@ export interface LineaDelPanel {
   readonly delta?: number;
   /** Lo que se contó en el estante. El delta sale de la diferencia. */
   readonly contado?: number;
-  /** Con qué costo entra, para el asiento. Solo tiene sentido al entrar. */
+  /**
+   * Con qué costo entra cada unidad, en centavos.
+   *
+   * Es por donde se carga el costo promedio: una entrada con costo lo sube
+   * (`unidades += n`, `valor_cents += n × costo`). Si no viene, el promedio no
+   * se toca —las unidades existen y no se sabe qué costaron— y la entrega de
+   * esa variante sigue saliendo con `costoDesconocido`. Un cero NO es «no sé»:
+   * un cero aquí afirma que la mercancía fue gratis (TRAMPAS §7).
+   *
+   * **Solo al entrar.** En una salida el costo lo decide el promedio, no quien
+   * la pide (05-contabilidad §4), así que mandarlo en una salida se rechaza en
+   * vez de ignorarse en silencio.
+   */
   readonly costoUnitCents?: number;
 }
 
@@ -373,8 +710,27 @@ export async function registrar(
 
   const movimientos: Movimiento[] = [];
 
+  /**
+   * El costo solo se dice al ENTRAR.
+   *
+   * En una salida el costo lo decide el promedio (05-contabilidad §4), así que
+   * un costo en una salida no se puede cumplir. Ignorarlo en silencio dejaría
+   * a quien lo mandó creyendo que se guardó, que es el fallo que menos se nota
+   * de los dos. Se comprueba contra el delta YA calculado, porque el renglón
+   * de un conteo no dice si entra o sale hasta que se resta lo contado.
+   */
+  const costoSoloAlEntrar = (l: LineaDelPanel, delta: number): Fallo | null =>
+    l.costoUnitCents !== undefined && delta < 0
+      ? fallo(
+          "entrada_invalida",
+          `${l.codigo}: el costo se dice cuando ENTRA mercancía; en una salida lo decide el costo promedio`,
+        )
+      : null;
+
   for (const l of peticion.lineas) {
     if (l.contado === undefined) {
+      const mal = costoSoloAlEntrar(l, l.delta as number);
+      if (mal !== null) return mal;
       movimientos.push({
         codigo: l.codigo,
         bodegaId: l.bodegaId,
@@ -396,6 +752,9 @@ export async function registrar(
 
     const delta = l.contado - antes;
     if (delta === 0) continue; // Contó y cuadra. No pasó nada, y eso está bien.
+
+    const mal = costoSoloAlEntrar(l, delta);
+    if (mal !== null) return mal;
 
     movimientos.push({
       codigo: l.codigo,
@@ -653,6 +1012,26 @@ export async function deshacer(
     motivo: `deshace ${deshacerId}`,
     revierteId: m.id,
     ...(m.costo_unit_cents === null ? {} : { costoUnitCents: m.costo_unit_cents }),
+    /**
+     * Deshacer una ENTRADA que entró sin costo no baja el promedio.
+     *
+     * Esas unidades subieron el físico y no subieron el promedio, así que al
+     * deshacerlas hay que bajar el físico y nada más. Sin esto, el contrario
+     * sería una salida como cualquier otra y se llevaría su parte proporcional
+     * del promedio: sacaría de `1301` un valor que nunca entró ahí y dejaría
+     * más caras las unidades que sí tienen costo. Es destruir valor en
+     * silencio, y cuadra igual.
+     *
+     * Es también lo que hace que **deshacer un traslado no invente ni
+     * destruya nada**: la entrada del traslado no lleva costo, su contrario
+     * entra por aquí, y la salida del traslado vuelve como una entrada sin
+     * costo, que tampoco toca el promedio. Las dos mitades siguen anulándose.
+     *
+     * El caso contrario —deshacer una SALIDA que salió sin costo— no necesita
+     * marca: el contrario es una entrada sin `costoUnitCents`, y una entrada
+     * sin costo ya no toca el promedio.
+     */
+    ...(m.delta > 0 && m.costo_unit_cents === null ? { fueraDelPromedio: true } : {}),
   }));
 
   const r = await aplicar(ctx, contrarios, { tipo: "deshacer", id: ulid(ctx.ahora) });
