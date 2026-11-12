@@ -1,5 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { env } from "cloudflare:workers";
 
 // Prueba el Worker entero, no los módulos sueltos: que la puerta esté cerrada
 // de verdad y que ninguna respuesta salga sin sus cabeceras. Las pruebas de la
@@ -74,5 +75,65 @@ describe("HSTS", () => {
     // confirmado que todo subdominio sirve HTTPS.
     const r = await panel("/salud");
     expect(r.headers.get("Strict-Transport-Security")).toBeNull();
+  });
+});
+
+/**
+ * El webhook de Telegram, probado sobre el Worker ENTERO.
+ *
+ * Las pruebas de `src/api/telegram-rutas.test.ts` montan la puerta sola, y eso
+ * no dice si está enchufada: una puerta perfecta que `src/index.ts` no monta
+ * —o que monta DETRÁS de Access— se vería exactamente igual en verde (trampa
+ * nº 12). Lo que se comprueba aquí es que existe, que Telegram puede llegar
+ * sin sesión de Access y que responde con sus cabeceras como todo lo demás.
+ */
+describe("el webhook de Telegram está montado y fuera de Access", () => {
+  // El secreto sale del binding de pruebas (`vitest.config.ts`), no de una
+  // copia escrita aquí: así lo que se manda en la cabecera y lo que el Worker
+  // tiene configurado no pueden separarse. Y si el código leyera otra
+  // variable, esto se pondría rojo en vez de pasar por casualidad.
+  const SECRETO = env.TELEGRAM_WEBHOOK_SECRET ?? "";
+
+  const entregar = (cabeceras: Record<string, string>, cuerpo: unknown) =>
+    SELF.fetch("https://panel.babycaleb.com/telegram/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...cabeceras },
+      body: JSON.stringify(cuerpo),
+    });
+
+  it("con el secreto correcto contesta 200, SIN pasar por Access", async () => {
+    // El contraste es lo que importa: `/api/yo` contesta 403 «Access: sin
+    // configurar» y esto no, porque Telegram no inicia sesión en nada. Si
+    // alguna vez quedara detrás de Access, esta prueba se pone roja en vez de
+    // que el bot se quede mudo en producción sin un error a la vista.
+    const r = await entregar(
+      { "X-Telegram-Bot-Api-Secret-Token": SECRETO },
+      { update_id: 1, algo_que_no_entendemos: true },
+    );
+
+    expect(r.status).toBe(200);
+    expect(await (await panel("/api/yo")).json()).toMatchObject({
+      mensaje: "Access: sin configurar",
+    });
+  });
+
+  it("sin el secreto, la ruta se comporta como si no existiera", async () => {
+    const r = await entregar({}, { update_id: 2 });
+    expect(r.status).toBe(404);
+    expect(await r.json()).toMatchObject({ ok: false, codigo: "no_encontrado" });
+  });
+
+  it("y con otro secreto, lo mismo", async () => {
+    const r = await entregar({ "X-Telegram-Bot-Api-Secret-Token": "otro" }, { update_id: 3 });
+    expect(r.status).toBe(404);
+  });
+
+  it("tampoco sale sin cabeceras de seguridad", async () => {
+    const r = await entregar(
+      { "X-Telegram-Bot-Api-Secret-Token": SECRETO },
+      { update_id: 4 },
+    );
+    expect(r.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(r.headers.get("X-Robots-Tag")).toContain("noindex");
   });
 });

@@ -24,7 +24,22 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: "./wrangler.jsonc" },
         miniflare: {
-          bindings: { MIGRACIONES: migraciones },
+          bindings: {
+            MIGRACIONES: migraciones,
+            // El secreto del webhook de Telegram, SOLO para las pruebas.
+            //
+            // Sin él, el webhook falla cerrado y todo lo que se le mande
+            // contesta 404, así que no habría forma de comprobar con `SELF`
+            // que la ruta está montada y que NO está detrás de Access — que es
+            // justo la propiedad que importa y la que una prueba de módulo
+            // suelto no puede ver (trampa nº 12: una pieza terminada que nadie
+            // llama). La prueba lo lee de `env`, no de aquí, así que este
+            // valor y el que se manda en la cabecera no pueden separarse.
+            //
+            // El de verdad es un secreto del Worker (`wrangler secret put`) y
+            // no vive en ningún archivo de este repositorio.
+            TELEGRAM_WEBHOOK_SECRET: "secreto-de-pruebas-no-es-el-de-verdad",
+          },
         },
       }),
     ],

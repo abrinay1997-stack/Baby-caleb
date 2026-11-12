@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { panel } from "./api/panel";
+import { puertaDeTelegram } from "./api/telegram-rutas";
 import { vencerPendientes } from "./asistente/ejecutar";
 import { barrer } from "./db/archivos";
 import { MANEJADORES, atrasados, consumir, publicarPendientes } from "./eventos";
@@ -73,6 +74,23 @@ app.get("/salud", async (c) => {
  * `api/panel.ts` corre antes que cualquiera de sus rutas.
  */
 app.route("/api", panel);
+
+/**
+ * El webhook de Telegram, y va FUERA de `/api` a propósito.
+ *
+ * Access es una puerta para personas con navegador y Telegram no inicia sesión
+ * en ninguna parte: detrás de Access, Cloudflare le contestaría a Telegram con
+ * la pantalla de login y el bot quedaría mudo sin que nadie viera un error. Su
+ * puerta es otra y está en `api/telegram-rutas.ts`: el `secret_token` del
+ * webhook comparado en tiempo constante, y el `chat_id` cruzado con
+ * `usuarios`. De cualquier chat que no esté ahí no sale ninguna respuesta.
+ *
+ * Esta ruta va además en `run_worker_first` de los dos entornos desplegados:
+ * sin eso, el servidor de estáticos del panel podría contestar antes que el
+ * Worker (trampa nº 8 — la lista de configuración que alguien tiene que
+ * acordarse de tocar; `run_worker_first` ya mordió una vez).
+ */
+app.route("/telegram", puertaDeTelegram);
 
 app.all("*", (c) => c.json({ ok: false, codigo: "no_encontrado", mensaje: "ruta desconocida" }, 404));
 
