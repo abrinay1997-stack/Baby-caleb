@@ -9,9 +9,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit && tsc --noEmit -p worker",
-    "contraste": "node scripts/auditar-contraste.mjs",
     "test": "vitest run && vitest run --config vitest.node.config.ts",
-    "catalogo:respaldo": "node scripts/catalogo-respaldo.mjs"
+    "catalogo:respaldo": "node scripts/catalogo-respaldo.mjs",
+    "auditar:web": "node scripts/auditar-la-web.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
