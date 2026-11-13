@@ -1478,8 +1478,14 @@ const RESPUESTAS = {
           {
         codigo: "BC-COMBO-1", producto: "Combo recién nacido", nombre: "Combo recién nacido",
         talla: null, unidades_por_caja: 1, precio_cents: 3500, tasa_itbms_bp: 0,
-        publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 1, familia: "Combos",
+        publicado: 0, activo: 1, version: 1, imagen: null, es_combo: 1, familia: "Combos",
         pedir_por_whatsapp: 0,
+        // Despublicado, para que se vea el cuarto estado («Solo interno») con
+        // su explicación. Estaba como `publicado: 1` con este mismo motivo, y
+        // la fila se contradecía: la pastilla decía «Publicado, pero no en la
+        // web» y el renglón de abajo «No está publicada». Un dato de muestra
+        // que no puede existir de verdad enseña a arreglar la pantalla al
+        // revés.
         saleEnLaTienda: false, porQueNoSale: "No está publicada. Publíquela para que la tienda pueda enseñarla.",
         costo_unidades: null, costo_valor_cents: null,
       },

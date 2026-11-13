@@ -174,17 +174,26 @@ export function Catalogo() {
                       <Pastilla tono="neutro">Descatalogado</Pastilla>
                     ) : v.saleEnLaTienda === true ? (
                       <Pastilla tono="bien">En la web</Pastilla>
-                    ) : v.publicado === 1 ? (
+                    ) : (
+                      // La pastilla y el motivo salen de los MISMOS hechos, así
+                      // que no pueden decir cosas distintas. Separados —la
+                      // pastilla mirando `publicado` aquí y el motivo escrito
+                      // en el sistema— una fila llegó a decir «Publicado, pero
+                      // no en la web» con «No está publicada» justo debajo.
+                      // Imposible con datos de verdad, pero una pantalla que
+                      // PUEDE contradecirse acaba contradiciéndose.
                       <>
-                        <Pastilla tono="aviso">Publicado, pero no en la web</Pastilla>
+                        {v.publicado === 1 ? (
+                          <Pastilla tono="aviso">Publicado, pero no en la web</Pastilla>
+                        ) : (
+                          <Pastilla tono="neutro">Solo interno</Pastilla>
+                        )}
                         {v.porQueNoSale ? (
                           <span className="mt-1 block text-[12px] font-normal text-muted">
                             {v.porQueNoSale}
                           </span>
                         ) : null}
                       </>
-                    ) : (
-                      <Pastilla tono="neutro">Solo interno</Pastilla>
                     )}
                   </Celda>
                 </Fila>

@@ -186,6 +186,56 @@ export function destinosDeLaBarra(puede: (p: Permiso) => boolean): Destino[] {
   );
 }
 
+/**
+ * Los atajos que el Resumen enseña arriba, con icono grande y palabra corta.
+ *
+ * ## Por qué existen
+ *
+ * La barra de abajo lleva tres destinos y no catorce, y lo que no cabe se va
+ * al cajón: dos toques y quince renglones que leer. Eso está bien para lo que
+ * se abre una vez al mes y mal para lo que se abre cada día — y lo de cada día
+ * que no cupo en la barra se quedó sin ningún camino corto.
+ *
+ * ## El criterio, que no es «lo importante»
+ *
+ * Entra aquí lo que se abre TODOS LOS DÍAS para contestarle a una clienta o
+ * para mover plata, **y que la barra de abajo no lleva ya**. Las dos
+ * condiciones, y la segunda es la que hace que esto no sea decorado: repetir
+ * aquí «Pedidos» y «Entregas» sería gastar la mitad de la fila en dos sitios
+ * que ya están a un toque, y dejar fuera los que están a tres.
+ *
+ * Por eso quedan estos cuatro:
+ *
+ *  - **Cobros** — llega el comprobante por WhatsApp y hay que mirarlo. Es
+ *    dinero y es de hoy.
+ *  - **Catálogo** — «¿cuánto cuesta?». CONSULTAR un precio es diario aunque
+ *    CAMBIARLO sea de vez en cuando, que es lo que dice el comentario de
+ *    `RUTAS_BARRA`: ahí se decidía quién se queda con uno de los tres sitios
+ *    fijos de la barra, y eso es una pelea mucho más cara que un atajo.
+ *  - **Existencias** — «¿todavía tienen la 0-3m?». Es la otra mitad de la
+ *    misma conversación.
+ *  - **Clientas** — «soy la que compró la semana pasada».
+ *
+ * Y NO entran Bodegas, Zonas, Quién reparte, Contabilidad, Ajustes, Pasarelas,
+ * Llaves ni Usuarios: se tocan cuando algo cambia, no cada mañana. Un atajo a
+ * todo es un menú, y el menú ya está.
+ *
+ * ## Lo que no reemplaza
+ *
+ * Las tarjetas de «Hay que atender» del Resumen también llevan a sitios, pero
+ * solo APARECEN cuando hay algo pendiente: el día que todo está atendido no
+ * queda un solo enlace en la pantalla. Estos cuatro están siempre, pase lo que
+ * pase con los datos — por eso se pintan fuera de `Carga`, y se ven incluso si
+ * el resumen no carga.
+ */
+export const RUTAS_ATAJOS = ["/cobros", "/catalogo", "/existencias", "/clientas"] as const;
+
+export function atajosDelResumen(puede: (p: Permiso) => boolean): Destino[] {
+  return RUTAS_ATAJOS.map((r) => TODOS_LOS_DESTINOS.find((d) => d.ruta === r)).filter(
+    (d): d is Destino => d !== undefined && (d.permiso === null || puede(d.permiso)),
+  );
+}
+
 export function seccionesVisibles(puede: (p: Permiso) => boolean): Seccion[] {
   return SECCIONES.map((s) => ({
     ...s,

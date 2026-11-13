@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { dinero, fecha as comoFecha, useCarga } from "../api";
+import { Link, useOutletContext } from "react-router-dom";
+import { ICONOS } from "../armazon/Iconos";
+import { atajosDelResumen } from "../armazon/navegacion";
+import type { Permiso } from "../permisos";
+import { type Yo, dinero, fecha as comoFecha, useCarga } from "../api";
 import {
   Carga,
   Cifra,
@@ -499,6 +502,72 @@ function Numero({
   );
 }
 
+/**
+ * Los atajos de arriba: icono grande y una palabra.
+ *
+ * Cuáles son y por qué esos cuatro está en `armazon/navegacion.ts`, junto al
+ * resto del mapa del panel, para que no nazca una segunda lista que diga otra
+ * cosa. Aquí solo está la geometría.
+ *
+ * ## Las medidas, y de dónde salen
+ *
+ * Una sola fila en el teléfono, no una rejilla de dos por dos: es la misma
+ * forma que la barra de abajo —dibujo encima, palabra debajo—, y esa barra es
+ * justo la parte del panel que ya funciona. Repetirla hace que la fila se
+ * entienda sin aprenderla. En 390 px, con los 14 px de relleno de `.contenido`
+ * y 8 px de hueco, cada celda queda en 84 px: de sobra para los 44 px del §7a
+ * y para una palabra de once letras a 12 px.
+ *
+ * Reparto con `flex-1` y no con `grid-cols-4`, por la misma razón por la que
+ * la barra de abajo lo hace así: el número de celdas DEPENDE DEL ROL. Quien no
+ * ve cobros tiene tres atajos, y en una rejilla de cuatro columnas esos tres
+ * dejan un hueco a la derecha que parece una celda que no cargó. Con `flex-1`
+ * se reparten el ancho sean los que sean.
+ *
+ * En computadora la celda pasa de 84 px a casi 300, y un dibujo diminuto
+ * centrado en una tarjeta ancha se ve perdido. Ahí la celda se vuelve
+ * horizontal —dibujo y palabra uno al lado del otro—, que es lo que hace ya
+ * la barra lateral con sus renglones.
+ *
+ * No va dentro de `Carga` a propósito: si el resumen no carga, estos cuatro
+ * enlaces son lo único que queda en la pantalla, y entonces es cuando más
+ * falta hacen.
+ */
+function Atajos({ puede }: { puede: (p: Permiso) => boolean }) {
+  const destinos = atajosDelResumen(puede);
+  if (destinos.length === 0) return null;
+
+  return (
+    /* `nav` con su nombre y NO un `<h2>`: un rótulo de menú no es un
+       encabezado del documento (§7k), y además este bloque va ANTES del
+       primer `<h2>` de la pantalla. Puesto como encabezado, el esquema del
+       Resumen empezaría por la navegación. */
+    <nav aria-label="Atajos">
+      <ul className="m-0 flex list-none items-stretch gap-2 p-0">
+        {destinos.map((d) => {
+          const Icono = ICONOS[d.ruta];
+          return (
+            <li key={d.ruta} className="min-w-0 flex-1">
+              <Link
+                to={d.ruta}
+                className="tactil flex h-full flex-col items-center justify-center gap-1 rounded-[14px] border border-line bg-surface px-1 py-2 text-center no-underline md:flex-row md:gap-2 md:px-3"
+              >
+                {/* El dibujo es decorativo: la palabra de al lado ya nombra el
+                    enlace, y un lector que leyera las dos cosas diría
+                    «Cobros, Cobros». El `aria-hidden` lo pone `Iconos`. */}
+                {Icono ? <Icono className="h-7 w-7 shrink-0 text-accent-strong" /> : null}
+                <span className="min-w-0 break-words text-[12px] font-bold leading-tight text-fg">
+                  {d.nombre}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section>
@@ -515,9 +584,21 @@ function Seccion({ titulo, children }: { titulo: string; children: React.ReactNo
 export function Resumen() {
   const [periodo, setPeriodo] = useState<NombrePeriodo>("hoy");
   const estado = useCarga<Datos>(`/api/resumen?periodo=${periodo}`, [periodo]);
+  // El rol baja por el `Outlet` del armazón, que ya lo pidió una vez al abrir.
+  // Los atajos lo necesitan para no ofrecer un botón que va a responder 403.
+  const yo = useOutletContext<Yo>();
 
   return (
     <div className="grid gap-5">
+      {/* Los atajos van ARRIBA DEL TODO, antes incluso del selector de
+          periodo: no son parte del informe —no cambian con «hoy» o «esta
+          semana»— sino el camino corto a lo que se hace cada día. Cuestan una
+          fila; lo que ahorran es abrir el menú y leer quince renglones.
+
+          Y siguen estando por encima de «hay que atender», que es la regla 1
+          de esta pantalla, porque son UNA fila y no una rejilla de ocho. */}
+      <Atajos puede={(p) => yo.permisos[p] !== "no"} />
+
       {/* El selector va fuera de `Carga` para que al cambiar de periodo no
           desaparezca junto con el contenido: si se va, no hay con qué volver. */}
       <div role="group" aria-label="Qué periodo se mira" className="flex gap-2">
