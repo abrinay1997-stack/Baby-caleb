@@ -65,7 +65,7 @@ export default function FichaProducto() {
     // inventar un producto. El Worker ya marcó la página noindex si el slug no
     // está, así que esto no deja basura en Google.
     return (
-      <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
+      <main id="main-content" className="pt-32 md:pt-24 min-h-dvh flex flex-col">
         <Section variant="bg">
           <h1 className="text-3xl text-fg mb-4">No encontramos ese producto</h1>
           <p className="text-muted mb-8 max-w-prose">
@@ -85,7 +85,7 @@ export default function FichaProducto() {
   const url = `${window.location.origin}/productos/${variante.slug}`;
 
   return (
-    <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
+    <main id="main-content" className="pt-32 md:pt-24 min-h-dvh flex flex-col">
       <Seo
         ruta={`/productos/${variante.slug}`}
         meta={metaDeProducto(variante)}
@@ -103,12 +103,29 @@ export default function FichaProducto() {
 
         <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-start">
           {foto !== undefined && (
-            <div className="bg-sage/15 border border-line rounded-lg overflow-hidden flex items-center justify-center">
+            // `aspect-[4/3]`: la MISMA caja que usan las tarjetas del catálogo
+            // en `S09Products`, y por la misma razón — reserva el sitio antes
+            // de que la foto llegue.
+            //
+            // Sin ella, en un teléfono (una sola columna: foto arriba, datos
+            // debajo) la columna de la derecha saltaba 223 px hacia abajo en
+            // cuanto cargaba la imagen. Medido con la red a 400 kbps: CLS de
+            // 0.194 en la ficha, que es la pantalla donde se decide la compra
+            // — el precio y el botón se mueven justo cuando el pulgar va a
+            // tocarlos. El umbral de «bien» es 0.1.
+            //
+            // `object-contain` ya estaba y se queda: las cajas no tienen todas
+            // la misma proporción y recortarlas para cuadrarlas sería enseñar
+            // media caja.
+            <div className="bg-sage/15 border border-line rounded-lg overflow-hidden flex aspect-[4/3] items-center justify-center">
               <img
                 src={foto}
-                alt={variante.nombre}
+                alt={`Caja de ${variante.nombre}`}
                 className="w-full h-full object-contain p-6"
+                // Es la imagen más grande de la pantalla y la que decide cuándo
+                // se ve «cargada»: se pide antes que el resto.
                 loading="eager"
+                fetchPriority="high"
                 decoding="async"
               />
             </div>

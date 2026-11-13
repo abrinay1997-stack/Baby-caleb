@@ -44,7 +44,7 @@ export default function S18Coverage() {
             <div className="flex gap-4">
               <Phone className="w-6 h-6 text-sage-strong flex-shrink-0" />
               <div>
-                <h4 className="font-bold text-fg mb-1">Teléfono / WhatsApp</h4>
+                <h3 className="font-bold text-fg mb-1">Teléfono / WhatsApp</h3>
                 <a
                   href={`tel:${nap.phone.replace(/ /g, '')}`}
                   className="text-muted hover:text-accent-strong transition-colors"
@@ -57,7 +57,7 @@ export default function S18Coverage() {
             <div className="flex gap-4">
               <Clock className="w-6 h-6 text-sage-strong flex-shrink-0" />
               <div>
-                <h4 className="font-bold text-fg mb-1">Horario</h4>
+                <h3 className="font-bold text-fg mb-1">Horario</h3>
                 {nap.hours.map((h, i) => (
                   <p key={i} className="text-muted">
                     {h}
@@ -69,7 +69,7 @@ export default function S18Coverage() {
             <div className="flex gap-4">
               <MapPin className="w-6 h-6 text-sage-strong flex-shrink-0" />
               <div>
-                <h4 className="font-bold text-fg mb-1">Cobertura</h4>
+                <h3 className="font-bold text-fg mb-1">Cobertura</h3>
                 <p className="text-muted">{nap.address}</p>
               </div>
             </div>

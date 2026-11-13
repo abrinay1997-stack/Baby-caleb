@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, ShoppingBag, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -11,6 +11,77 @@ export default function S01Nav() {
   const location = useLocation();
   const { unidades } = useCarrito();
   const whatsappLink = WHATSAPP_URL;
+
+  /**
+   * El menú del teléfono es un diálogo, y hasta hoy solo lo decía.
+   *
+   * Llevaba `role="dialog" aria-modal="true"` y ninguna de las tres cosas que
+   * eso promete. Medido con teclado el 2026-11-13:
+   *
+   *  · Al abrirlo, el foco se quedaba en el botón «Abrir menú» — que queda
+   *    DEBAJO de la capa que acaba de abrirse. Un foco escondido detrás de
+   *    otra cosa es WCAG 2.4.11 (*Focus Not Obscured*), que es AA y entró con
+   *    la 2.2.
+   *  · Tabulando nueve veces se salía del menú y se seguía por los enlaces de
+   *    la página de detrás, que no se ven. `aria-modal="true"` además le dice
+   *    al lector de pantalla que eso NO existe, así que quien tabula oye cosas
+   *    que el navegador dice que no están.
+   *  · Escape no cerraba.
+   *  · Y al cerrar, el foco volvía al principio del documento.
+   *
+   * Lo que hay debajo: el foco entra al cerrar («Cerrar menú»), da la vuelta
+   * dentro, sale con Escape y vuelve al botón que lo abrió.
+   */
+  const menuRef = useRef<HTMLDivElement>(null);
+  const botonMenuRef = useRef<HTMLButtonElement>(null);
+  const cerrarRef = useRef<HTMLButtonElement>(null);
+  /** Para no robarle el foco a nadie en la primera pintada. */
+  const seAbrioAlguna = useRef(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) {
+      // Al cerrar, el foco vuelve de donde salió. Solo si el menú llegó a
+      // abrirse: en la primera pintada esto correría y movería el foco de
+      // quien esté leyendo la página.
+      if (seAbrioAlguna.current) botonMenuRef.current?.focus();
+      return;
+    }
+    seAbrioAlguna.current = true;
+    cerrarRef.current?.focus();
+
+    const alTeclear = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (e.key !== 'Tab') return;
+
+      // La vuelta: del último al primero y del primero al último. Se calcula
+      // en el momento porque la lista cambia —el contador del carrito aparece
+      // y desaparece— y una lista guardada se queda vieja sin avisar.
+      const caja = menuRef.current;
+      if (!caja) return;
+      const focos = [...caja.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')].filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+      if (focos.length === 0) return;
+      const primero = focos[0];
+      const ultimo = focos[focos.length - 1];
+      const activo = document.activeElement;
+
+      if (e.shiftKey && (activo === primero || !caja.contains(activo))) {
+        e.preventDefault();
+        ultimo.focus();
+      } else if (!e.shiftKey && (activo === ultimo || !caja.contains(activo))) {
+        e.preventDefault();
+        primero.focus();
+      }
+    };
+
+    document.addEventListener('keydown', alTeclear);
+    return () => document.removeEventListener('keydown', alTeclear);
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -71,7 +142,7 @@ export default function S01Nav() {
       {unidades > 0 ? (
         <span
           aria-hidden="true"
-          className="absolute top-0 right-0 grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-[11px] font-bold text-accent-fg"
+          className="absolute top-0 right-0 grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-xs font-bold text-accent-fg"
         >
           {unidades > 99 ? '99+' : unidades}
         </span>
@@ -137,12 +208,13 @@ export default function S01Nav() {
         <div className="flex items-center gap-1 lg:hidden">
           {botonCarrito()}
           <button
-            className="p-3 -m-3 focus-visible:outline-accent-edge rounded-sm"
+            ref={botonMenuRef}
+            className="grid h-11 w-11 place-items-center rounded-full focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4"
             onClick={() => setMobileMenuOpen(true)}
             aria-label="Abrir menú"
             aria-expanded={mobileMenuOpen}
           >
-            <Menu className="w-6 h-6 text-fg" />
+            <Menu className="w-6 h-6 text-fg" aria-hidden="true" />
           </button>
         </div>
       </header>
@@ -155,7 +227,8 @@ export default function S01Nav() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ y: -20 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed inset-0 z-[10000] bg-bg flex flex-col pt-24 px-6 pb-12"
+            ref={menuRef}
+            className="fixed inset-0 z-[10000] bg-bg flex flex-col pt-24 px-6 pb-12 overflow-y-auto"
             role="dialog"
             aria-modal="true"
             aria-label="Menú de navegación"
@@ -166,11 +239,12 @@ export default function S01Nav() {
             }}
           >
             <button
-              className="absolute top-6 right-6 p-2 focus-visible:outline-accent-edge rounded-sm"
+              ref={cerrarRef}
+              className="absolute top-4 right-4 grid h-11 w-11 place-items-center rounded-full focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2"
               onClick={() => setMobileMenuOpen(false)}
               aria-label="Cerrar menú"
             >
-              <X className="w-8 h-8 text-fg" />
+              <X className="w-8 h-8 text-fg" aria-hidden="true" />
             </button>
             <nav 
               className="flex flex-col gap-6 mt-12 flex-grow"

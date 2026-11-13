@@ -17,7 +17,7 @@ export default function FAQ() {
   };
 
   return (
-    <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
+    <main id="main-content" className="pt-32 md:pt-24 min-h-dvh flex flex-col">
       <Seo ruta="/faq" jsonLd={faqJsonLd} />
       <h1 className="sr-only">Preguntas frecuentes</h1>
       <div className="flex-grow">

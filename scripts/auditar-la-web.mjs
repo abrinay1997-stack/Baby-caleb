@@ -74,25 +74,86 @@ await new Promise(r => servidor.listen(8098, r));
 // color calculado y el fondo efectivo (subiendo por los ancestros hasta
 // encontrar uno opaco) y mide el contraste WCAG.
 const auditar = () => {
+  /**
+   * El color que sale, sea cual sea la sintaxis con que se escribió.
+   *
+   * ANTES ERA UN `rgba?\(…\)` A MANO, Y SE LE ESCAPABA LA MITAD DE LA MARCA.
+   * Tailwind v4 compila `bg-sage/20` a `color-mix(…)`, y Chrome lo CALCULA
+   * como `oklab(0.786 -0.072 0.035 / 0.2)`. Esa expresión no la reconoce
+   * ningún `rgba(` — así que el fondo verde al 20 % devolvía `null`, el bucle
+   * seguía subiendo hasta el crema opaco y medía contra un fondo que no era
+   * el que se ve.
+   *
+   * Qué costaba: el 2026-11-13 este archivo decía «sin fallos de contraste»
+   * en las siete páginas mientras axe-core encontraba 18 nodos malos. Entre
+   * ellos la insignia de los testimonios (4.16 contra el mínimo de 4.5). O
+   * sea, la trampa §1: un control que aprueba siempre no es un control.
+   *
+   * Ahora lo convierte el propio navegador: se pinta el color en un lienzo de
+   * un píxel y se lee el píxel. Eso entiende `rgb`, `oklab`, `oklch`, `lab`,
+   * `color(srgb …)`, `color-mix`, los nombres y lo que Chrome añada mañana,
+   * sin que nadie tenga que venir a enseñarle una sintaxis nueva.
+   */
+  const lienzo = document.createElement('canvas');
+  lienzo.width = 1; lienzo.height = 1;
+  const pincel = lienzo.getContext('2d', { willReadFrequently: true });
   const aRgb = (s) => {
-    const m = /rgba?\(([^)]+)\)/.exec(s); if (!m) return null;
-    const p = m[1].split(',').map(x => parseFloat(x.trim()));
-    return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 };
+    if (!s) return null;
+    if (s === 'transparent') return { r: 0, g: 0, b: 0, a: 0 };
+    pincel.clearRect(0, 0, 1, 1);
+    pincel.fillStyle = '#000';
+    pincel.fillStyle = s;
+    // `fillStyle` se queda en negro si el valor no se entiende. Un negro de
+    // verdad también sale negro, así que se comprueba aparte.
+    if (pincel.fillStyle === '#000000' && !/^(#000|black|rgba?\(0,\s*0,\s*0)/i.test(s.trim())) return null;
+    pincel.fillRect(0, 0, 1, 1);
+    const d = pincel.getImageData(0, 0, 1, 1).data;
+    return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 };
   };
   const mezclar = (f, b) => ({ r: f.r*f.a + b.r*(1-f.a), g: f.g*f.a + b.g*(1-f.a), b: f.b*f.a + b.b*(1-f.a), a: 1 });
   const lum = (c) => { const f = [c.r, c.g, c.b].map(v => { const s = v/255; return s <= 0.03928 ? s/12.92 : Math.pow((s+0.055)/1.055, 2.4); });
     return 0.2126*f[0] + 0.7152*f[1] + 0.0722*f[2]; };
   const ratio = (a, b) => { const L1 = lum(a), L2 = lum(b); const [hi, lo] = L1 > L2 ? [L1, L2] : [L2, L1]; return (hi+0.05)/(lo+0.05); };
 
-  const fondoDe = (el) => {
+  /**
+   * El fondo que de verdad hay detrás, y cuánta opacidad lleva encima.
+   *
+   * DOS ARREGLOS, Y LOS DOS SALIERON DE UN FALLO REAL:
+   *
+   * 1. **Los fondos traslúcidos se COMPONEN, no se saltan.** Antes se subía
+   *    hasta encontrar uno con alfa > 0.95 y se ignoraba todo lo de en medio.
+   *    Un `bg-sage/20` sobre crema no es crema: es el crema teñido de verde, y
+   *    es más claro — o sea, el texto contrasta MENOS de lo que decía la
+   *    medida. Así se le escapó la insignia de los testimonios.
+   *
+   * 2. **La `opacity` de los ancestros cuenta.** Antes solo se descartaba el
+   *    nodo si su propia opacidad bajaba de 0.1. Pero `opacity` es del
+   *    ancestro y se hereda al pintar: una fila con `opacity-60` deja su texto
+   *    al 60 % contra el fondo, y eso baja el contraste de verdad. En la lista
+   *    de presentaciones agotadas eso daba 2.35 donde el mínimo es 4.5, y esta
+   *    auditoría lo daba por bueno porque medía el color declarado.
+   *
+   * Devuelve el fondo ya compuesto y el producto de todas las opacidades.
+   */
+  const fondoYOpacidad = (el) => {
+    const capas = [];
+    let opac = 1;
     let n = el;
     while (n && n !== document.documentElement) {
-      const bg = aRgb(getComputedStyle(n).backgroundColor);
-      if (bg && bg.a > 0.95) return bg;
+      const cs = getComputedStyle(n);
+      const o = parseFloat(cs.opacity);
+      opac *= Number.isFinite(o) ? o : 1;
+      const bg = aRgb(cs.backgroundColor);
+      if (bg && bg.a > 0) capas.push(bg);
+      if (bg && bg.a >= 0.999) break;
       n = n.parentElement;
     }
     const raizBg = aRgb(getComputedStyle(document.body).backgroundColor);
-    return raizBg && raizBg.a > 0.5 ? raizBg : { r: 255, g: 255, b: 255, a: 1 };
+    let fondo = raizBg && raizBg.a >= 0.999 ? raizBg : { r: 255, g: 255, b: 255, a: 1 };
+    // De la capa más lejana a la más cercana: cada una se pinta sobre la
+    // anterior. Al revés daría un color plausible y equivocado.
+    for (let i = capas.length - 1; i >= 0; i--) fondo = mezclar(capas[i], fondo);
+    return { fondo, opac };
   };
 
   const fallos = [];
@@ -105,14 +166,17 @@ const auditar = () => {
     const el = nodo.parentElement;
     if (!el) continue;
     const cs = getComputedStyle(el);
-    if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) < 0.1) continue;
+    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
     const caja = el.getBoundingClientRect();
     if (caja.width < 2 || caja.height < 2) continue;
 
     const frenteCrudo = aRgb(cs.color);
     if (!frenteCrudo) continue;
-    const fondo = fondoDe(el);
-    const frente = mezclar(frenteCrudo, fondo);
+    const { fondo, opac } = fondoYOpacidad(el);
+    // Por debajo de 0.1 no se mide: eso ya no es texto apagado, es texto
+    // escondido, y exigirle contraste a algo invisible es ruido.
+    if (opac < 0.1) continue;
+    const frente = mezclar({ ...frenteCrudo, a: frenteCrudo.a * opac }, fondo);
     const r = ratio(frente, fondo);
 
     const px = parseFloat(cs.fontSize);
@@ -121,12 +185,13 @@ const auditar = () => {
     const minimo = grande ? 3.0 : 4.5;
 
     if (r < minimo) {
-      const clave = `${cs.color}|${cs.backgroundColor}|${el.className}|${px}`;
+      const clave = `${cs.color}|${cs.backgroundColor}|${opac}|${el.className}|${px}`;
       if (vistos.has(clave)) continue;
       vistos.add(clave);
       fallos.push({
         texto: texto.slice(0, 48), ratio: Math.round(r*100)/100, minimo,
-        color: cs.color, fondo: `rgb(${Math.round(fondo.r)}, ${Math.round(fondo.g)}, ${Math.round(fondo.b)})`,
+        color: cs.color + (opac < 0.999 ? ` al ${Math.round(opac * 100)} %` : ''),
+        fondo: `rgb(${Math.round(fondo.r)}, ${Math.round(fondo.g)}, ${Math.round(fondo.b)})`,
         px, peso, clases: String(el.className).slice(0, 70),
       });
     }
@@ -223,6 +288,75 @@ async function abrirNavegador() {
 
 const navegador = await abrirNavegador();
 
+// ---------------------------------------------------------------------------
+// Antes de mirar la web: la regla del contraste se prueba a sí misma
+// ---------------------------------------------------------------------------
+// `docs/design-system.md` lo pide con todas las letras, y esta regla es el
+// caso que lo justifica: durante días dijo «sin fallos» en siete páginas
+// mientras axe-core encontraba 18 nodos malos, porque no sabía leer un fondo
+// `oklab(… / α)` ni aplicar la opacidad de un ancestro. Un control que aprueba
+// siempre no es un control, es un permiso (`docs/TRAMPAS.md` §1).
+//
+// Las dos muestras que suspenden son EXACTAMENTE los dos casos que se le
+// escapaban. Si alguien vuelve a simplificar la lectura del color o el paseo
+// por los ancestros, esto se para aquí y no llega a la web.
+{
+  const MUESTRAS = [
+    {
+      nombre: 'fondo traslúcido: verde de marca sobre verde al 20 %',
+      debe: 'suspender',
+      html: `<div style="background:#F2EFE5;padding:8px">
+               <span style="background:color-mix(in oklab, #91C9A2 20%, transparent);color:#53735C;font-size:12px;font-weight:700">
+                 Cero alergias
+               </span>
+             </div>`,
+    },
+    {
+      nombre: 'opacidad heredada: texto bueno dentro de un ancestro al 60 %',
+      debe: 'suspender',
+      html: `<div style="background:#F9F6ED;opacity:0.6;padding:8px">
+               <span style="color:#985D2F;font-size:12px;font-weight:700">$45</span>
+             </div>`,
+    },
+    {
+      nombre: 'el par de siempre: navy sobre crema',
+      debe: 'aprobar',
+      html: `<div style="background:#F9F6ED;padding:8px">
+               <span style="color:#1B3246;font-size:14px">Pañales Nateen</span>
+             </div>`,
+    },
+    {
+      nombre: 'el par de los botones: navy sobre el naranja de marca',
+      debe: 'aprobar',
+      html: `<div style="background:#EE924A;padding:8px">
+               <span style="color:#1B3246;font-size:14px;font-weight:700">Pedir por WhatsApp</span>
+             </div>`,
+    },
+  ];
+
+  const ctx = await navegador.newContext({ viewport: { width: 900, height: 600 } });
+  const p = await ctx.newPage();
+  const rotas = [];
+  for (const m of MUESTRAS) {
+    await p.setContent(`<!doctype html><html lang="es"><body style="background:#F9F6ED;margin:0">${m.html}</body></html>`);
+    const fallos = await p.evaluate(auditar);
+    const suspende = fallos.length > 0;
+    if (suspende !== (m.debe === 'suspender')) {
+      rotas.push(`  ${m.nombre}: tenía que ${m.debe} y ${suspende ? 'suspendió' : 'aprobó'}`);
+    }
+  }
+  await ctx.close();
+  if (rotas.length > 0) {
+    console.error('\nLa regla del contraste dejó de señalar su propia muestra:');
+    for (const r of rotas) console.error(r);
+    console.error('\nNo se midió la web: un control que no caza su propio caso no dice nada de lo demás.');
+    await navegador.close();
+    servidor.close();
+    process.exit(1);
+  }
+  console.log(`✓ la regla del contraste caza sus ${MUESTRAS.length} muestras`);
+}
+
 let totalFallos = 0;
 const delSeptimo = [];
 
@@ -252,7 +386,14 @@ for (const [nombreVista, tamano] of VISTAS) {
     // cosa que pasó fue un clic o nada, y sin él la regla del aro de foco
     // acusa a toda la página. Está contado en `docs/TRAMPAS.md` §14.
     await p.keyboard.press('Tab');
-    for (const f of await p.evaluate(medir)) {
+    // Las dianas de la tienda se miden con la WCAG 2.5.8 —24 px o separación
+    // suficiente—, no con los 44 px del panel. Los 44 son el contrato del
+    // panel, que se usa con una mano y con prisa; la tienda es otra cosa y su
+    // pie de página es una lista densa de enlaces, separados de sobra. Con la
+    // norma del panel salían 434 fallas y ninguna incumplía la 2.5.8: 434
+    // rojos que un revisor descarta con razón, y una regla así deja de
+    // leerse (`docs/TRAMPAS.md` §14).
+    for (const f of await p.evaluate(medir, { tactilMinimo: 24, exencionPorSeparacion: true })) {
       delSeptimo.push({ vista: nombreVista, pagina, ...f });
     }
   }

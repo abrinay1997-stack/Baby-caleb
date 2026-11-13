@@ -102,7 +102,7 @@ function Paso({
       onClick={onClick}
       disabled={disabled}
       aria-label={etiqueta}
-      className="grid h-11 w-11 place-items-center rounded-full border border-line text-lg font-bold text-fg transition-colors hover:bg-surface disabled:opacity-40"
+      className="grid h-11 w-11 place-items-center rounded-full border border-line text-lg font-bold text-fg transition-colors hover:bg-surface focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-40"
     >
       {children}
     </button>
@@ -149,7 +149,7 @@ export default function Carrito() {
 
   if (carrito.lineas.length === 0) {
     return (
-      <main id="main-content" className="min-h-screen pt-32 md:pt-24">
+      <main id="main-content" className="min-h-dvh pt-32 md:pt-24">
         <Seo ruta="/carrito" meta={META} />
         <Section>
           <h1 className="font-display text-3xl font-bold md:text-4xl">Tu carrito</h1>
@@ -157,7 +157,10 @@ export default function Carrito() {
             Todavía no has agregado nada. Mira el catálogo y arma tu pedido: te
             vamos guardando la lista en este teléfono.
           </p>
-          <Link to="/productos" className={buttonVariants({ className: 'mt-8' })}>
+          {/* `size: 'lg'`: es el único botón de la pantalla y medía 36 px de
+              alto. El carrito vacío es donde se decide si se sigue mirando o
+              se cierra la pestaña. */}
+          <Link to="/productos" className={buttonVariants({ size: 'lg', className: 'mt-8' })}>
             Ver los productos
           </Link>
         </Section>
@@ -166,7 +169,7 @@ export default function Carrito() {
   }
 
   return (
-    <main id="main-content" className="min-h-screen pt-32 md:pt-24">
+    <main id="main-content" className="min-h-dvh pt-32 md:pt-24">
       <Seo ruta="/carrito" meta={META} />
       <Section>
         <h1 className="font-display text-3xl font-bold md:text-4xl">Tu carrito</h1>
@@ -230,7 +233,7 @@ export default function Carrito() {
                   <button
                     type="button"
                     onClick={() => quitar(l.codigo)}
-                    className="h-11 rounded-full px-4 text-sm font-bold text-muted underline transition-colors hover:text-fg"
+                    className="h-11 rounded-full px-4 text-sm font-bold text-muted underline transition-colors hover:text-fg focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     Quitar
                   </button>

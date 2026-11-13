@@ -124,7 +124,13 @@ export default function S09Products() {
                   href={whatsappCon(`Hola Baby Caleb, me interesa: ${product.name}`)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`Pedir ${product.name} por WhatsApp`}
+                  // El nombre accesible EMPIEZA por el texto visible. Decía
+                  // «Pedir <producto> por WhatsApp», y entonces «Pedir por
+                  // WhatsApp» —lo que se lee en la pantalla— no estaba dentro
+                  // del nombre: quien dicta por voz «pulsa Pedir por WhatsApp»
+                  // no acertaba el botón. Es WCAG 2.5.3, Nivel A, y axe lo
+                  // marcaba en las cuatro tarjetas.
+                  aria-label={`Pedir por WhatsApp: ${product.name}`}
                   className={buttonVariants({ variant: 'outline', className: 'w-full mt-auto' })}
                 >
                   Pedir por WhatsApp

@@ -55,12 +55,79 @@
   --font-mono: 'Montserrat', sans-serif;
 }
 
+/* ---------------------------------------------------------------------------
+   PENDIENTE · el salto de la portada cuando llega Montserrat
+   ---------------------------------------------------------------------------
+   Montserrat se carga con `display=swap`: el texto sale enseguida con la letra
+   del sistema y se cambia cuando llega la de verdad. Nunca hay texto
+   invisible, que es lo que se quería, pero tiene un precio medido el
+   2026-11-13 con la red a 400 kbps —que es como entra buena parte de quien
+   compra aquí—:
+
+     la portada da CLS 0.134, y el salto es de 42 px en el bloque del hero. O
+     sea que el botón de «Pedir por WhatsApp» se mueve hacia abajo justo
+     cuando el pulgar va a tocarlo. El umbral de «bien» de Google es 0.1.
+
+   La causa está atribuida, no supuesta: las tres piezas que se mueven son
+   `.hero-float`, `.hero-blob` y `.hero-cta`, y se mueven todas a la vez
+   cuando el titular reescribe sus líneas con la letra nueva.
+
+   LA SOLUCIÓN CONOCIDA, Y POR QUÉ NO ESTÁ PUESTA: una cara de reserva con las
+   medidas de Montserrat (`@font-face` con `size-adjust` y los `-override`,
+   apuntando a la letra del sistema con `local()`). Se escribió, se midieron
+   los números en un navegador —ancho Montserrat/Arial 110.1 % en peso 400 y
+   109.1 % en 700; alto de línea 1.0609— y **se quitó**, porque en esta máquina
+   `local('Arial')` NO resuelve: la cara quedaba en estado `error` y el texto
+   salía con una letra de último recurso, más estrecha que la del sistema. O
+   sea que el arreglo no se pudo comprobar, y sin comprobar podría empeorar el
+   salto en vez de quitarlo.
+
+   Lo que falta para cerrarlo, y hace falta un teléfono de verdad: medir Arial
+   en iPhone y Roboto en Android —son dos caras distintas, con dos juegos de
+   números distintos— y comprobar el CLS después en los dos. Los números de
+   arriba sirven para la primera; los de Roboto están sin medir y no se
+   inventan.
+   --------------------------------------------------------------------------- */
+
 body {
   background-color: var(--bg);
   color: var(--fg);
   font-family: var(--font-body);
   line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------------
+   El aro de foco: UNA regla para todo el sitio
+   ---------------------------------------------------------------------------
+   Antes cada componente ponía el suyo, y la mitad no ponía ninguno. Medido con
+   teclado a 390 px el 2026-11-13: de 24 paradas de tabulación en la portada,
+   14 se quedaban con el aro de fábrica del navegador porque nadie les había
+   puesto uno — los nueve enlaces del pie, los dos legales, el teléfono de
+   cobertura. Funcionaba por casualidad: el aro de fábrica es visible, pero no
+   es el del sitio y cambia con el navegador.
+
+   Y había un segundo fallo, más callado: varios sitios escriben
+   `focus-visible:outline-accent-edge` SIN `outline-2`. Eso solo cambia el
+   color del aro; el grosor se queda en `auto`, y con `outline-style: auto` el
+   navegador pinta el suyo e ignora el color. O sea: una clase escrita a
+   propósito que no hacía nada.
+
+   Por qué el navy y no el naranja de marca: este aro tiene que verse sobre
+   TODOS los fondos del sitio, y el borde naranja sobre un botón naranja no se
+   ve. El navy está medido contra los cuatro (bg 12.21 · surface 11.47 ·
+   accent 5.56 · sage 6.96) y AA pide 3:1 para un aro.
+
+   Va en `@layer base` A PROPÓSITO: las utilidades de Tailwind viven en
+   `@layer utilities`, que gana, así que un componente que de verdad quiera
+   otro aro lo pone con sus clases y este se aparta. Al revés —sin capa— esta
+   regla le ganaría a todas y el componente no tendría forma de decidir.
+   --------------------------------------------------------------------------- */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
+  }
 }
 
 h1, h2, h3, h4, h5, h6 {

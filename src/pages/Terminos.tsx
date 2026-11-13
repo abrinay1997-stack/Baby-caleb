@@ -11,7 +11,7 @@ import { PRIVACIDAD, TERMINOS } from '../data/legal';
  */
 export default function Terminos() {
   return (
-    <main id="main-content" className="pt-32 md:pt-24 min-h-screen flex flex-col">
+    <main id="main-content" className="pt-32 md:pt-24 min-h-dvh flex flex-col">
       <Seo ruta={TERMINOS.ruta} />
       <div className="flex-grow">
         <DocumentoLegal

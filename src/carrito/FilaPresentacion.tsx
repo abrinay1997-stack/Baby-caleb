@@ -29,6 +29,59 @@ import { MAXIMO_POR_LINEA } from './carrito';
 
 const AVISO_MS = 2000;
 
+/**
+ * La palabra que explica por qué una fila está como está.
+ *
+ * ## Por qué es una función exportada y no un ternario dentro del JSX
+ *
+ * Por lo mismo que `mensajeDePedido` en `PedirPorWhatsapp.tsx`: dentro del JSX
+ * haría falta un navegador para leerla, y las pruebas de la web corren en
+ * Node. Lo que hay que vigilar aquí no es cómo se pinta la fila — es que
+ * ninguna combinación acabe diciendo algo falso.
+ *
+ * ## Qué pasó cuando esto vivía escondido
+ *
+ * La palabra estaba en un `sr-only`, así que una rama equivocada no la veía
+ * nadie. Al sacarla a la vista salió el hueco: una presentación cuyo código no
+ * está en el catálogo —retirada, o con el código cambiado— caía en la última
+ * rama y la fila decía **«Agregar»** sin dejarse tocar. Es la peor respuesta
+ * posible: invita a hacer justo lo que no va a funcionar.
+ *
+ * ## El orden importa, y este es el orden
+ *
+ * 1. `cargando` manda sobre todo: mientras no se sabe, no se afirma nada.
+ * 2. `agregado` es el acuse de lo que la persona acaba de hacer.
+ * 3. **Estar en el catálogo** va antes que «agotado»: sin ficha en el
+ *    catálogo no sabemos si hay existencias, y decir «Agotado» sería afirmar
+ *    algo que nadie ha comprobado (`docs/TRAMPAS.md` §7: el cero no es «no sé»).
+ * 4. Agotado, lleno, y por fin «Agregar».
+ *
+ * «Pregúntanos» y no «Consultar»: el precio de esa misma fila ya dice
+ * «Consultar» cuando no hay ficha, y las dos juntas se leían
+ * «ConsultarConsultar». La palabra del estado dice qué HACER.
+ */
+export function motivoDeLaFila({
+  cargando,
+  agregado,
+  enElCatalogo,
+  agotado,
+  lleno,
+}: {
+  readonly cargando: boolean;
+  readonly agregado: boolean;
+  /** `false` si el código de esta presentación no está en el catálogo. */
+  readonly enElCatalogo: boolean;
+  readonly agotado: boolean;
+  readonly lleno: boolean;
+}): string {
+  if (cargando) return 'Un momento…';
+  if (agregado) return 'Agregado';
+  if (!enElCatalogo) return 'Pregúntanos';
+  if (agotado) return 'Agotado';
+  if (lleno) return 'Máximo';
+  return 'Agregar';
+}
+
 export function FilaPresentacion({
   codigo,
   talla,
@@ -74,15 +127,7 @@ export function FilaPresentacion({
    */
   const precio = variante === undefined ? 'Consultar' : dolares(variante.precioCents);
 
-  const dice = cargando
-    ? 'Un momento…'
-    : agregado
-      ? 'Agregado'
-      : agotado
-        ? 'Agotado'
-        : lleno
-          ? 'Máximo'
-          : 'Agregar';
+  const dice = motivoDeLaFila({ cargando, agregado, enElCatalogo: variante !== undefined, agotado, lleno });
 
   const contenido = (
     <>
@@ -96,13 +141,11 @@ export function FilaPresentacion({
       <span className="flex shrink-0 items-center gap-2">
         <span className="font-bold text-accent-strong tabular-nums">{precio}</span>
         {cargando ? (
-          // Donde iría el «+», un punto que late. Dice «todavía no sé si hay»
-          // sin afirmar que no hay — que es lo que haría salir el botón
-          // apagado y encenderse solo.
-          <span
-            aria-hidden="true"
-            className="inline-block h-2 w-2 animate-pulse rounded-full bg-muted"
-          />
+          // Nada: donde iría el «+» va la palabra «Un momento…», que la pinta
+          // la rama de abajo. Aquí hubo un punto que latía, y con la palabra
+          // delante eran dos señales de lo mismo en una fila de 390 px — y una
+          // de las dos, la que de verdad se entiende, llegaba segunda.
+          null
         ) : agregado ? (
           <Check className="h-4 w-4 text-accent-strong" aria-hidden="true" />
         ) : sePuede ? (
@@ -115,14 +158,34 @@ export function FilaPresentacion({
   const clases =
     'flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-line bg-bg px-3 py-2 text-xs transition-colors';
 
+  /**
+   * LA FILA QUE NO SE PUEDE TOCAR DICE POR QUÉ, Y LO DICE A LA VISTA.
+   *
+   * Antes esta rama hacía dos cosas mal a la vez, y las dos se midieron:
+   *
+   *  1. `opacity-60` sobre toda la fila dejaba el texto en 2.35, 2.39 y 3.73
+   *     contra el mínimo de 4.5 de AA. La auditoría de contraste no lo veía
+   *     porque no aplicaba la opacidad de los ancestros; axe sí.
+   *  2. La palabra —«Agotado», «Máximo», «Un momento…»— vivía en un
+   *     `sr-only`. O sea: quien usa lector de pantalla se enteraba y quien
+   *     MIRA la pantalla, no. Veía una fila apagada, sin el «+», y sin nada
+   *     que explicara si no hay existencias, si ya llenó el máximo o si la
+   *     página todavía está cargando. Eso es comunicar con el color —aquí,
+   *     con la opacidad— y nada más, que es WCAG 1.4.1.
+   *
+   * Ahora el motivo se escribe donde iba el «+»: en el mismo sitio donde la
+   * fila que sí se puede tocar pone su señal de que se puede tocar. El texto
+   * se queda a plena fuerza; lo que baja de tono es el borde y el fondo, que
+   * no llevan información.
+   */
   if (!sePuede) {
     return (
       <div
-        className={`${clases} ${cargando ? '' : 'opacity-60'}`}
+        className={`${clases} ${cargando ? '' : 'border-dashed bg-surface'}`}
         aria-busy={cargando ? true : undefined}
       >
         {contenido}
-        <span className="sr-only">{dice}</span>
+        <span className="shrink-0 font-bold text-muted">{dice}</span>
       </div>
     );
   }

@@ -4,6 +4,7 @@ import { gsap } from 'gsap';
 import SplitType from 'split-type';
 import { getContentData } from '../data/content';
 import { useCatalogo, desdeDe } from '../hooks/useCatalogo';
+import { prefiereMenosMovimiento } from '../lib/movimiento';
 
 export default function S02Hero() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,6 +34,15 @@ export default function S02Hero() {
   const desdeElPanal = desdeDe(catalogo, (panales?.variants ?? []).map((v) => v.codigo));
 
   useEffect(() => {
+    // Quien pidió menos movimiento no recibe NADA de esto, y aquí importa más
+    // que en ningún otro bloque: `.hero-float` lleva `repeat: -1`, o sea que
+    // oscila mientras la pestaña esté abierta. Movimiento automático de más de
+    // cinco segundos sin forma de pararlo es WCAG 2.2.2, Nivel A.
+    //
+    // Y todas las demás son `.from(...)`: no ejecutarlas deja cada pieza donde
+    // el diseño la puso. Ver `src/lib/movimiento.ts`.
+    if (prefiereMenosMovimiento()) return;
+
     let h1Split: SplitType;
     const ctx = gsap.context(() => {
       h1Split = new SplitType(h1Ref.current!, { types: 'lines,words' });
@@ -138,7 +148,7 @@ export default function S02Hero() {
                 className="w-16 h-16 object-contain rounded-lg bg-sage/20"
               />
               <div>
-                <span className="block mono text-[10px] text-sage-strong">Desde talla RN</span>
+                <span className="block mono text-sage-strong">Desde talla RN</span>
                 <span className="block font-bold text-fg leading-tight">Pañal Nateen</span>
                 <span className="block text-xs text-muted">{desdeElPanal}</span>
               </div>
