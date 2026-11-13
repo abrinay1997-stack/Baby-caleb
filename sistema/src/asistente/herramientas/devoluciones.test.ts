@@ -581,7 +581,20 @@ describe("cancelar_ruta", () => {
 
   it("una ruta de otro día se alcanza con fecha", async () => {
     const e = await enLaCalle();
-    const ayer = new Date(ahora() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    // El día se calcula con la MISMA función que usa el código, no con
+    // `toISOString()`.
+    //
+    // `toISOString()` da el día en UTC y el sistema trabaja en hora de Panamá,
+    // cinco horas antes. Entre las 7 de la tarde y la medianoche de allá —o
+    // sea, de 00:00 a 05:00 UTC— los dos días no coinciden, y el «ayer» que
+    // calculaba la prueba ERA el «hoy» del código: la ruta sí se encontraba
+    // sin fecha y la prueba se ponía roja.
+    //
+    // Cinco horas rojas cada noche, verde el resto del día. Nadie lo veía
+    // porque nadie corre la suite de madrugada; lo destapó correrla a las
+    // 23:28 de Panamá. Una prueba que calcula una fecha de otra manera que el
+    // código no está probando el código: está probando otro sistema parecido.
+    const ayer = fechaDePanama(ahora() - 24 * 60 * 60 * 1000);
     await env.DB.prepare("UPDATE rutas SET fecha = ? WHERE id = ?").bind(ayer, e.rutaId).run();
 
     // Sin fecha no la encuentra: busca la de hoy, que es lo que se espera.
