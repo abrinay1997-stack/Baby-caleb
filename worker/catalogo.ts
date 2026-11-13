@@ -24,6 +24,13 @@ import type { VarianteParaFicha } from "../src/seo/producto";
  * Lo que NUNCA sale por aquí es lo mismo que no sale por el RPC: el costo y la
  * cantidad exacta. Eso lo decide `SistemaWeb`, no esta función, y así hay un
  * solo sitio donde equivocarse.
+ *
+ * Lo que SÍ sale desde hoy, además del precio: la FOTO de cada artículo, la que
+ * la dueña sube desde su panel, como ruta relativa (`/foto/<clave>`) que sirve
+ * `worker/imagenes.ts` en este mismo dominio. Pasa por aquí sin tocarse —esta
+ * función no mira los campos, los reenvía— y qué forma puede tener lo decide
+ * `fotoPublica` del lado del sistema, por el mismo motivo que el costo: un
+ * filtro repetido en dos sitios acaba discrepando.
  */
 
 /** 60 s: el compromiso entre «el precio nuevo ya se ve» y «no una consulta por visita». */

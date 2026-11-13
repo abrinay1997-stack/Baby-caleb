@@ -717,3 +717,96 @@ describe("un movimiento no se deshace dos veces", () => {
     expect(await nuevos()).toBe(antes + 3);
   });
 });
+
+describe("una merma deja su huella en los libros", () => {
+  /**
+   * El asiento 12 —Debe 5201 «Mermas, muestras y regalos» · Haber 1301— estaba
+   * escrito, probado y documentado en `dominio/contabilidad.ts`, y la cuenta
+   * existía en el plan desde la migración 0011. **No lo llamaba nadie.**
+   *
+   * Lo que costaba: la caja desaparecía del inventario y su costo se quedaba
+   * dentro del valor del inventario. El balance cuadraba igual —el promedio
+   * bajaba— pero el gasto no existía en ninguna parte, así que la ganancia
+   * salía más alta de lo que fue.
+   */
+  const asientosDe = async (hecho: string) =>
+    (
+      await real.DB.prepare("SELECT COUNT(*) AS n FROM asientos WHERE hecho = ?")
+        .bind(hecho)
+        .first<{ n: number }>()
+    )?.n ?? 0;
+
+  it("escribe el asiento 12, con el costo que de verdad salió", async () => {
+    // Entra con costo conocido: 10 unidades a $2.00.
+    const entrada = await registrar(ctx, {
+      tipo: "compra",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: 10, costoUnitCents: 200 }],
+    });
+    expect(entrada.ok).toBe(true);
+
+    const antes = await asientosDe("12");
+    const r = await registrar(ctx, {
+      tipo: "merma",
+      motivo: "se mojaron dos cajas en la bodega",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -2 }],
+    });
+    expect(r.ok).toBe(true);
+    expect(await asientosDe("12")).toBe(antes + 1);
+
+    // Y por el monto correcto: 2 × $2.00, el costo del promedio, no el precio
+    // de venta ni un número inventado.
+    //
+    // Se busca por el MOVIMIENTO, no por «el último asiento 12»: `creado_en`
+    // es una constante en este archivo, así que ordenar por fecha devolvía el
+    // asiento de otra prueba y la comprobación pasaba o fallaba por un motivo
+    // que no era el suyo.
+    const mov = await real.DB.prepare(
+      "SELECT id FROM movimientos_inventario WHERE referencia_id = ? AND tipo = 'merma'",
+    )
+      .bind(r.ok ? r.datos.deshacerId : "")
+      .first<{ id: string }>();
+    expect(mov?.id).toBeDefined();
+
+    const linea = await real.DB.prepare(
+      `SELECT l.debe_cents FROM asiento_lineas l
+         JOIN asientos a ON a.id = l.asiento_id
+         JOIN cuentas c ON c.id = l.cuenta_id
+        WHERE a.hecho = '12' AND a.referencia_id = ? AND c.codigo = '5201'`,
+    )
+      .bind(mov?.id ?? "")
+      .first<{ debe_cents: number }>();
+    expect(linea?.debe_cents).toBe(400);
+  });
+
+  it("sin costo conocido no se inventa un asiento, y se dice", async () => {
+    // Nadie dijo lo que costó: el promedio no alcanza. Un cero diría que no
+    // costó nada y pondría el margen en 100 % (TRAMPAS §7).
+    const antes = await asientosDe("12");
+    const r = await aplicar(
+      ctx,
+      [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -1, tipo: "merma", motivo: "se rompió" }],
+      { tipo: "prueba", id: `mrm-${T}-sincosto` },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.datos.sinAsiento).toContain("INV-M");
+    expect(await asientosDe("12")).toBe(antes);
+  });
+
+  it("un ajuste o un conteo NO van a la cuenta de mermas", async () => {
+    // Un conteo que encuentra menos no es una pérdida del negocio: es que lo
+    // anotado estaba mal, y eso tiene su propio asiento. Mezclarlos haría que
+    // los libros no distinguieran «se me rompió» de «la cuenta estaba mal».
+    await registrar(ctx, {
+      tipo: "compra",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: 10, costoUnitCents: 200 }],
+    });
+    const antes = await asientosDe("12");
+    const r = await registrar(ctx, {
+      tipo: "ajuste",
+      motivo: "se contó mal el lunes",
+      lineas: [{ codigo: "INV-M", bodegaId: "bod-inv-a", delta: -1 }],
+    });
+    expect(r.ok).toBe(true);
+    expect(await asientosDe("12")).toBe(antes);
+  });
+});

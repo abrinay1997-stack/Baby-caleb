@@ -9,7 +9,7 @@ import {
   marcarEntregada,
   marcarFallida,
   sugerirParaEnvio,
-} from "../../db/entregas";
+  reintentarEnvio,} from "../../db/entregas";
 import type { ContextoEntrega, ParadaDelDia } from "../../db/entregas";
 import { comoSeEscribe, referenciaDe } from "../referencias";
 import { definir } from "../registro";
@@ -769,6 +769,43 @@ export const marcarFallidaLaParada = definir({
   },
 });
 
+export const reintentarLaParada = definir({
+  nombre: "reintentar_entrega",
+  descripcion:
+    "Una entrega que falló vuelve a la cola para intentarla otra vez: sale de la ruta de ayer y se queda sin motorizado, lista para la próxima. La mercancía sigue apartada, porque sigue siendo de esa clienta. Ejemplo: reintentar_entrega con envioId tras una fallida de «no había nadie».",
+  parametros: z.object({
+    envioId: z.string().min(1).max(40).describe("El id de la parada fallida. Sale de ver_entregas."),
+    motivo: z
+      .string()
+      .min(3)
+      .max(300)
+      .optional()
+      .describe("Opcional: por qué se vuelve a intentar. Queda en la bitácora."),
+  }),
+  // Ni dinero ni existencias: lo apartado no se toca. Solo devuelve la parada
+  // a la cola, que es la transición que la máquina de estados ya permitía y
+  // que no podía hacer nadie.
+  nivel: "construccion",
+  categoria: "entregas",
+  roles: ["duena", "asistente"],
+
+  async ejecutar(ctx, args) {
+    const r = await reintentarEnvio(contextoDeEntrega(ctx), {
+      idempotencia: claveDelIntento("reintentar", args.envioId),
+      envioId: args.envioId,
+      motivo: args.motivo,
+    });
+    if (!r.ok) throw new Error(r.mensaje);
+
+    return {
+      envioId: r.datos.envioId,
+      yaEstaba: r.datos.yaEstaba,
+      aviso:
+        "Volvió a la cola, sin ruta y sin motorizado. Métala en la próxima ruta con armar_ruta.",
+    };
+  },
+});
+
 export const HERRAMIENTAS_DE_ENTREGAS = [
   verEntregas,
   sugerirMotorizado,
@@ -779,4 +816,5 @@ export const HERRAMIENTAS_DE_ENTREGAS = [
   despacharLaRuta,
   marcarEntregadaLaParada,
   marcarFallidaLaParada,
+  reintentarLaParada,
 ] as const;

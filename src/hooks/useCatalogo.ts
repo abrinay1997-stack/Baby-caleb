@@ -41,6 +41,28 @@ export interface VariantePublica {
    * sistema caído no se promete un canal de pedidos que nadie va a leer.
    */
   readonly pedirPorWhatsapp?: boolean;
+  /**
+   * La foto que la dueña subió desde el panel, o `null` si no subió ninguna.
+   *
+   * **Desde hoy la foto tiene un solo dueño y es el sistema.** La tienda la
+   * sacaba de `content.json` —un archivo de este repositorio— mientras la
+   * dueña subía fotos en su panel que no se veían en ninguna parte: llegaban a
+   * R2, quedaban guardadas y el catálogo público no traía el campo, así que la
+   * tienda ni se enteraba. La de `content.json` sigue ahí y sigue sirviendo,
+   * pero como RESPALDO: si hay foto del sistema, manda la del sistema; si no,
+   * se enseña la de siempre. Quién gana se decide en `FotoDeProducto.tsx`, en
+   * un solo sitio.
+   *
+   * Es una ruta RELATIVA (`/foto/<clave>`) y se pide al propio dominio de la
+   * tienda a propósito: con el dominio del panel delante, la foto no se ve
+   * nunca —Access por un lado y la CSP del panel por el otro—. El sistema no
+   * deja salir otra cosa (`fotoPublica`, en `sistema/src/rpc/catalogo.ts`).
+   *
+   * Opcional porque la copia del build puede haberse generado antes de que
+   * este campo existiera. Ausente cuenta igual que `null`: la foto de
+   * `content.json`, que es lo que se enseñaba ayer.
+   */
+  readonly imagen?: string | null;
 }
 
 /**

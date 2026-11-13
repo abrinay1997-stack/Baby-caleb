@@ -14,6 +14,7 @@ import { getContentData } from '../data/content';
 import { useCarrito } from '../carrito/useCarrito';
 import { CompartirProducto } from '../components/CompartirProducto'
 import { PedirPorWhatsapp } from '../components/PedirPorWhatsapp'
+import { FotoDeProducto, fotoDeVariante } from '../components/FotoDeProducto'
 
 /** Cuánto se queda el «Agregado» antes de volver a su texto normal. */
 const AVISO_MS = 2000;
@@ -22,8 +23,10 @@ const AVISO_MS = 2000;
  * La ficha de una variante: `/productos/<slug>` (F3.7).
  *
  * Todo lo que se ve —nombre, talla, peso, unidades, precio, si hay o no hay—
- * sale del catálogo del sistema. Lo único que viene de `content.json` es la
- * foto, que es lo que `content.json` sigue siendo dueño de decir.
+ * sale del catálogo del sistema, la foto incluida desde hoy: la que la dueña
+ * sube en su panel manda, y la de `content.json` queda como respaldo para los
+ * artículos que todavía no tienen foto subida (hoy, todos) y para cuando la
+ * del sistema no cargue. Quién gana lo decide `fotoDeVariante`, en un sitio.
  *
  * No hay diseño nuevo: usa `Section` y los botones que ya existen. Una ficha
  * de producto que se vea distinta al resto del sitio no es una mejora, es una
@@ -54,10 +57,15 @@ export default function FichaProducto() {
 
   const variante = slug === undefined ? undefined : [...catalogo.values()].find((v) => v.slug === slug);
 
-  // La foto sigue en content.json: se busca por el código de la variante.
-  const foto = getContentData()
-    .products.flatMap((p) => p.variants.map((v) => ({ codigo: v.codigo, image: v.image })))
-    .find((v) => v.codigo === variante?.codigo)?.image;
+  // La del sistema si la hay; si no, la de `content.json`, que se sigue
+  // buscando por el código de la variante. Las dos salen de aquí y el relevo
+  // —si la del sistema no carga— lo pone `FotoDeProducto`.
+  const foto = fotoDeVariante(
+    variante,
+    getContentData()
+      .products.flatMap((p) => p.variants.map((v) => ({ codigo: v.codigo, image: v.image })))
+      .find((v) => v.codigo === variante?.codigo)?.image,
+  );
 
   if (variante === undefined) {
     // El catálogo puede estar cargando todavía, o el slug puede no existir. En
@@ -118,15 +126,14 @@ export default function FichaProducto() {
             // la misma proporción y recortarlas para cuadrarlas sería enseñar
             // media caja.
             <div className="bg-sage/15 border border-line rounded-lg overflow-hidden flex aspect-[4/3] items-center justify-center">
-              <img
-                src={foto}
+              <FotoDeProducto
+                foto={foto}
                 alt={`Caja de ${variante.nombre}`}
                 className="w-full h-full object-contain p-6"
                 // Es la imagen más grande de la pantalla y la que decide cuándo
                 // se ve «cargada»: se pide antes que el resto.
                 loading="eager"
                 fetchPriority="high"
-                decoding="async"
               />
             </div>
           )}

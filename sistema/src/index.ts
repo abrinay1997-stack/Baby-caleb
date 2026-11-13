@@ -1,3 +1,4 @@
+import { soltarVencidos } from "./db/vencidos";
 import { Hono } from "hono";
 import { panel } from "./api/panel";
 import { puertaDeTelegram } from "./api/telegram-rutas";
@@ -231,6 +232,27 @@ export default {
     const vencidas = await vencerPendientes(env.DB, ahora);
     if (vencidas > 0) {
       console.log(JSON.stringify({ evento: "cron_acciones_vencidas", cuantas: vencidas }));
+    }
+
+    // Las reservas que se vencieron sueltan su mercancía.
+    //
+    // Hasta ahora, cumplido el plazo no pasaba NADA: el pedido seguía
+    // `por_abonar` y sus cajas seguían apartadas para siempre. La métrica ya
+    // los contaba y el panel ya enseñaba el número, pero contar no es actuar:
+    // la dueña veía «agotado» en algo que tenía en la bodega.
+    //
+    // Los que tienen un abono no se tocan — ese dinero lo decide una persona,
+    // y el ajuste que lo gobierna sigue en PENDIENTE.
+    const v = await soltarVencidos({ db: env.DB, ahora, actor: "cron" });
+    if (v.soltados.length > 0 || v.conAbono.length > 0 || v.atascados.length > 0) {
+      console.log(
+        JSON.stringify({
+          evento: "cron_reservas_vencidas",
+          soltados: v.soltados.length,
+          con_abono: v.conAbono.length,
+          atascados: v.atascados.length,
+        }),
+      );
     }
 
     // Los archivos que cumplieron su margen se van de R2 de verdad. Esto es lo

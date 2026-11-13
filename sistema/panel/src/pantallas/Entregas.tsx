@@ -961,10 +961,31 @@ function HojaDeParada({
 
       {parada.estado === "fallido" && puedeDespachar ? (
         <>
+          {/*
+              Este texto decía «se puede volver a intentar armándola en otra
+              ruta», y no se podía: `armarRuta` solo admite paradas
+              `pendiente`, y una fallida no volvía ahí nunca. La transición
+              existía en la máquina de estados desde el primer día y no la
+              llamaba nadie, así que la única salida real era devolver y
+              cancelar la venta. El botón de abajo es la salida que faltaba.
+          */}
           <p className="m-0 mb-3 text-muted">
-            Esta parada no se pudo entregar. Se puede volver a intentar armándola en otra ruta, o
+            Esta parada no se pudo entregar. Puede volver a la cola para intentarla otra vez, o
             devolverla: al devolverla se cancela el pedido y su mercancía vuelve a estar a la venta.
           </p>
+          <button
+            type="button"
+            disabled={guardando}
+            className={`${SUAVE} mb-4 w-full`}
+            onClick={() =>
+              mandar(`/api/entregas/${parada.envioId}/reintentar`, {
+                idempotencia: claveDeIntento(),
+                ...(motivo.trim() === "" ? {} : { motivo: motivo.trim() }),
+              })
+            }
+          >
+            Volver a intentar
+          </button>
           <Campo etiqueta="Por qué se devuelve">
             <input
               type="text"

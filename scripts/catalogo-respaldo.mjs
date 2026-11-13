@@ -47,6 +47,16 @@ if (!Array.isArray(datos.variantes) || datos.variantes.length === 0) {
 }
 
 const anterior = JSON.parse(readFileSync(DESTINO, "utf8"));
+// La FOTO de cada variante sí viaja en la copia, y es la decisión contraria a
+// la del celular de aquí abajo. Viaja porque no hay que hacer nada para que
+// viaje —`datos.variantes` se guarda entero, que es el punto de este guion— y
+// porque el riesgo es de otro tamaño: un número de teléfono congelado manda a
+// una clienta a escribirle a nadie y nada avisa, mientras que una clave de
+// foto que ya no está en R2 la ve fallar el propio navegador, y entonces la
+// tienda vuelve sola a la foto de `content.json` (`FotoDeProducto.tsx`). Lo
+// peor que puede pasar con una foto vieja aquí es que se enseñe la que se
+// enseñaba ayer; lo peor que puede pasar con un celular viejo es un pedido que
+// nadie lee.
 // `whatsapp` NO se copia aquí, y es una decisión: el celular de los pedidos
 // sale del ajuste `whatsapp_numero`, que la dueña puede cambiar o apagar
 // cualquier día. Congelado en el paquete del sitio, un día con el sistema caído
