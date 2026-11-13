@@ -71,9 +71,9 @@ const VISTAS = [
  * acusa a todos los botones de no tenerlo. Va aquí, en un solo sitio, para
  * que no se pueda olvidar en una de las quince llamadas.
  */
-async function medirAhora(pagina) {
+async function medirAhora(pagina, opciones = {}) {
   await pagina.keyboard.press("Tab");
-  return pagina.evaluate(medir);
+  return pagina.evaluate(medir, opciones);
 }
 
 /**
@@ -139,7 +139,7 @@ async function autoprueba() {
       ["cumple", false],
     ]) {
       await pagina.setContent(prueba[caso], { waitUntil: "load" });
-      const fallas = await medirAhora(pagina);
+      const fallas = await medirAhora(pagina, prueba.opciones ?? {});
       const señalada = fallas.some((f) => f.regla === prueba.regla);
       if (señalada !== esperaFalla) {
         roto.push(

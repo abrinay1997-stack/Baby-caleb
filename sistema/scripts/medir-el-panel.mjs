@@ -21,8 +21,26 @@ export /**
  * Va como una función que se serializa al navegador, así que no puede usar
  * nada de fuera: todo lo que necesita entra por argumento o se declara aquí.
  */
-function medir() {
+function medir(opciones = {}) {
   const fallas = [];
+
+  // Qué tan grande tiene que ser lo que se toca, y con qué norma.
+  //
+  // El panel pide 44 px: es su contrato (§7a), y está justificado porque se
+  // usa con una mano, con prisa y a veces al sol. La TIENDA no se rige por el
+  // contrato del panel, se rige por la WCAG 2.5.8 (AA, nueva en la 2.2), que
+  // pide 24×24 px **o** separación suficiente: una diana pequeña cumple si su
+  // círculo de 24 px no toca el de ninguna otra.
+  //
+  // La diferencia no es un detalle. Medir la tienda con los 44 px del panel
+  // daba 434 fallas, y al comprobarlas una por una resultó que **ninguna**
+  // incumple la 2.5.8: son listas densas de enlaces de pie y de navegación,
+  // separadas de sobra. Son 434 rojos que un revisor con criterio descarta, y
+  // a una regla a la que se le descartan los rojos se deja de leer entera
+  // (`docs/TRAMPAS.md` §14). Así que cada superficie se mide con su norma, y
+  // el informe dice con cuál.
+  const tactilMinimo = opciones.tactilMinimo ?? 44;
+  const porSeparacion = opciones.exencionPorSeparacion === true;
   const visible = (el) => {
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return false;
@@ -39,15 +57,79 @@ function medir() {
     return `<${el.tagName.toLowerCase()}>${t ? ` «${t}»` : ""}`;
   };
 
-  // 7a - 44 px de alto en todo lo que se toca. Un enlace dentro de un párrafo
-  // no cuenta: lo táctil es lo que existe para tocarse.
-  for (const el of document.querySelectorAll("button, a[href], [role='button'], summary")) {
-    if (!visible(el)) continue;
-    if (el.closest("p")) continue;
-    const r = el.getBoundingClientRect();
-    if (r.height < 44 - 0.5) {
-      fallas.push({ regla: "44px táctil", detalle: `${donde(el)} mide ${r.height.toFixed(1)}px de alto` });
+  // 7a - Lo que se toca tiene que poder tocarse. Un enlace dentro de un
+  // párrafo no cuenta: lo táctil es lo que existe para tocarse.
+  const dianas = [
+    ...document.querySelectorAll("button, a[href], [role='button'], summary"),
+  ].filter((el) => visible(el) && !el.closest("p"));
+
+  /**
+   * La excepción de separación de la WCAG 2.5.8.
+   *
+   * Una diana por debajo del mínimo cumple igual si está lo bastante sola: se
+   * le dibuja un círculo del diámetro mínimo centrado en ella y, si no toca el
+   * círculo de ninguna otra diana, nadie va a pulsar la de al lado por error.
+   * Es la razón por la que un pie con veinte enlaces de 20 px bien espaciados
+   * es correcto, y una fila de botones pegados no lo es.
+   */
+  const tieneSitio = (el, r) => {
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    for (const otra of dianas) {
+      if (otra === el) continue;
+      const o = otra.getBoundingClientRect();
+      const ox = o.left + o.width / 2;
+      const oy = o.top + o.height / 2;
+      // Dos círculos de radio `tactilMinimo / 2` se tocan cuando sus centros
+      // están a menos de `tactilMinimo`.
+      if (Math.hypot(cx - ox, cy - oy) < tactilMinimo) return false;
     }
+    return true;
+  };
+
+  /**
+   * Una diana TAPADA no es una diana.
+   *
+   * Se comprueba preguntándole al navegador qué hay de verdad en su centro.
+   * Si lo que contesta no es ella ni algo suyo, hay otra capa encima y quien
+   * toque ahí no la va a pulsar — así que exigirle tamaño no significa nada.
+   *
+   * Hizo falta por un caso concreto: en la tienda, el aviso de permisos es
+   * una capa fija abajo, y con el aviso abierto su enlace «Leer la política
+   * de privacidad» (316×44) se queda ENCIMA de los enlaces legales del pie.
+   * La regla de separación veía ese enlace como un vecino a 19 px del
+   * «Términos» de 16 px de alto y lo cantaba como falla de la 2.5.8 en las
+   * doce páginas. No era eso: era una capa tapando a otra.
+   *
+   * Y que algo quede tapado no se deja de vigilar por esto: lo mira su propia
+   * regla, la de la burbuja, que es la que sabe distinguir «tapado a
+   * propósito mientras hay un diálogo» de «tapado siempre».
+   */
+  const estaTapada = (el, r) => {
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) return false;
+    const encima = document.elementFromPoint(cx, cy);
+    if (encima === null) return false;
+    return encima !== el && !el.contains(encima);
+  };
+
+  for (const el of dianas) {
+    const r = el.getBoundingClientRect();
+    if (estaTapada(el, r)) continue;
+    // En el panel manda el ALTO: las filas ocupan el ancho entero y lo que se
+    // queda corto es siempre la altura. La 2.5.8 mide los dos lados.
+    const corta = porSeparacion
+      ? r.width < tactilMinimo - 0.5 || r.height < tactilMinimo - 0.5
+      : r.height < tactilMinimo - 0.5;
+    if (!corta) continue;
+    if (porSeparacion && tieneSitio(el, r)) continue;
+    fallas.push({
+      regla: porSeparacion ? `${tactilMinimo}px táctil (WCAG 2.5.8)` : `${tactilMinimo}px táctil`,
+      detalle: porSeparacion
+        ? `${donde(el)} mide ${r.width.toFixed(1)}×${r.height.toFixed(1)}px y tiene otra diana a menos de un diámetro`
+        : `${donde(el)} mide ${r.height.toFixed(1)}px de alto`,
+    });
   }
 
   // 7b - 16 px en los campos. Con menos, iOS hace zoom al enfocar y la
@@ -526,7 +608,9 @@ function medir() {
  * contraste salta también la de 44 px, y da igual — lo que se comprueba es que
  * ESA regla señala su fallo y no señala lo que está bien.
  *
- * `ancho` solo hace falta donde la regla únicamente aplica en el teléfono.
+ * `ancho` solo hace falta donde la regla únicamente aplica en el teléfono, y
+ * `opciones` donde la regla se mide con otra norma —la tienda usa la WCAG
+ * 2.5.8 para las dianas y el panel su propio contrato de 44 px—.
  *
  * `seccion` es el apartado del §7 que esta regla hace cumplir
  * (`docs/design-system.md`). No es decoración: `test/node/el-septimo-se-mide.test.ts`
@@ -541,6 +625,30 @@ export const PRUEBAS = [
     seccion: "7a",
     rompe: `<button style="height:30px">Confirmar</button>`,
     cumple: `<button style="height:44px">Confirmar</button>`,
+  },
+  {
+    // La misma regla con la norma de la TIENDA: 24 px, o separación
+    // suficiente. La muestra que aprueba es una diana de 20 px **sola**, que
+    // cumple por la excepción; la que suspende son dos pegadas, que es cuando
+    // de verdad se pulsa la de al lado. Sin estas dos, el cambio de norma
+    // sería una afirmación sin comprobar.
+    regla: "24px táctil (WCAG 2.5.8)",
+    seccion: "7a",
+    opciones: { tactilMinimo: 24, exencionPorSeparacion: true },
+    rompe: `<button style="width:20px;height:20px"></button><button style="width:20px;height:20px"></button>`,
+    cumple: `<button style="width:20px;height:20px"></button>`,
+  },
+  {
+    // Una diana tapada no es una diana: las mismas dos de 20 px pegadas, pero
+    // con una capa opaca encima, no se cantan. Es el caso del aviso de
+    // permisos de la tienda sentado sobre los enlaces del pie.
+    regla: "24px táctil (WCAG 2.5.8)",
+    seccion: "7a",
+    opciones: { tactilMinimo: 24, exencionPorSeparacion: true },
+    rompe: `<button style="width:20px;height:20px"></button><button style="width:20px;height:20px"></button>`,
+    cumple:
+      `<button style="width:20px;height:20px"></button><button style="width:20px;height:20px"></button>` +
+      `<div style="position:fixed;inset:0;background:#fff"></div>`,
   },
   {
     regla: "16px en campos",

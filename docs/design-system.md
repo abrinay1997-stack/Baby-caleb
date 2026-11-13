@@ -27,6 +27,25 @@ tocarse, no una palabra subrayada en medio de una frase.
 > Un `<summary>` es un botón aunque parezca texto. Se cayó por esto una vez,
 > con 21 px.
 
+**Los 44 px son el contrato DEL PANEL, no una norma universal.** La WCAG 2.5.8
+(AA, nueva en la 2.2) pide 24×24 px **o** separación suficiente: una diana más
+pequeña cumple igual si el círculo de 24 px centrado en ella no toca el de
+ninguna otra. El panel pide casi el doble a propósito — se usa con una mano,
+con prisa, a veces al sol y con el teléfono en la otra mano.
+
+La **tienda** se mide con la 2.5.8, no con esto. Medirla con los 44 px del
+panel daba 434 fallas, y al comprobarlas una por una **ninguna** incumplía la
+2.5.8: eran listas densas de enlaces de pie y de navegación, separadas de
+sobra. Un informe de 434 rojos que un revisor con criterio descarta no se lee:
+se descarta entero (`docs/TRAMPAS.md` §14). Cada superficie con su norma, y el
+informe dice con cuál — el mismo medidor, con `opciones`.
+
+Y en las dos: **una diana tapada no es una diana.** Se le pregunta al navegador
+qué hay de verdad en su centro, y si hay otra capa encima no se le exige
+tamaño, porque nadie la va a pulsar. Que algo quede tapado lo vigila su propia
+regla, la 7d, que es la que sabe distinguir «tapado mientras hay un diálogo
+abierto» de «tapado siempre».
+
 ### 7b · 16 px en los campos
 
 `input`, `select`, `textarea`. Con menos, iOS hace zoom al enfocar y la
