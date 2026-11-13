@@ -28,13 +28,13 @@ const repo = join(sistema, "..");
 /** Los apartados escritos en el contrato: `### 7a · …` */
 function delContrato(): string[] {
   const doc = readFileSync(join(repo, "docs", "design-system.md"), "utf8");
-  return [...doc.matchAll(/^### (7[a-z]) · /gm)].map((m) => m[1]);
+  return [...doc.matchAll(/^### (7[a-z]) · /gm)].flatMap((m) => (m[1] ? [m[1]] : []));
 }
 
 /** Los apartados que alguna regla dice hacer cumplir: `seccion: "7a"` */
 function delAuditor(): string[] {
   const medidor = readFileSync(join(sistema, "scripts", "medir-el-panel.mjs"), "utf8");
-  return [...medidor.matchAll(/^    seccion: "(7[a-z])",$/gm)].map((m) => m[1]);
+  return [...medidor.matchAll(/^    seccion: "(7[a-z])",$/gm)].flatMap((m) => (m[1] ? [m[1]] : []));
 }
 
 describe("el §7 escrito y el §7 medido son el mismo", () => {
