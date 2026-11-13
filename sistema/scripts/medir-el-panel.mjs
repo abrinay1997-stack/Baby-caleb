@@ -477,6 +477,44 @@ function medir(opciones = {}) {
     }
   }
 
+  // 7m - El contorno de un control se ve (WCAG 1.4.11).
+  //
+  // La regla del contraste mide TEXTO. El borde de un campo no es texto, y era
+  // lo único que decía dónde empieza el campo: estaba a 1.24:1 en TODOS los
+  // campos del panel, porque `--line` hacía dos trabajos distintos —separar
+  // tarjetas, donde está bien, y dibujar un control, donde no—. Nadie lo
+  // medía: ni la prueba de los tokens, que los compara sueltos, ni esta
+  // auditoría, que solo miraba letras.
+  //
+  // Se mide contra el fondo que hay DETRÁS del control, que es lo que pide la
+  // 1.4.11 y lo mismo que comprueba `panel/src/contraste-del-panel.test.ts`
+  // sobre el token. La diferencia es que aquí se comprueba que la regla de CSS
+  // de verdad se aplique: un token correcto que no llega al elemento se ve
+  // exactamente igual que no tenerlo.
+  for (const el of document.querySelectorAll("input, select, textarea")) {
+    if (!visible(el)) continue;
+    if (el.type === "hidden" || el.type === "range" || el.type === "color") continue;
+    // Un control apagado está exento, igual que en el contraste del texto.
+    if (el.closest(":disabled, [aria-disabled='true']")) continue;
+
+    const e = getComputedStyle(el);
+    const grosor = parseFloat(e.borderTopWidth);
+    // Sin borde no hay nada que medir: el campo se marcará con su propio
+    // fondo, y eso lo juzga otra cosa.
+    if (!(grosor > 0) || e.borderTopStyle === "none") continue;
+
+    const borde = aRgb(e.borderTopColor);
+    if (!borde) continue;
+    const { fondo } = fondoYOpacidad(el.parentElement ?? el);
+    const r = contraste(mezclar(borde, fondo), fondo);
+    if (r < 3) {
+      fallas.push({
+        regla: "el contorno de un control se ve",
+        detalle: `${donde(el)} tiene el borde a ${r.toFixed(2)}:1 y necesita 3:1`,
+      });
+    }
+  }
+
   // 7g - Todo lo que se enfoca, se VE enfocado.
   //
   // Quien navega con teclado —o con el teclado del teléfono abierto— pierde
@@ -727,6 +765,13 @@ export const PRUEBAS = [
     seccion: "7h",
     rompe: `<div style="background:#fff"><span style="color:#555;opacity:0.5;font-size:15px">PayPal</span></div>`,
     cumple: `<div style="background:#fff"><button disabled style="height:44px"><span style="color:#555;opacity:0.5;font-size:15px">PayPal</span></button></div>`,
+  },
+  {
+    // El borde de un campo: lo que estaba a 1.24:1 en todo el panel.
+    regla: "el contorno de un control se ve",
+    seccion: "7m",
+    rompe: `<div style="background:#F9F6ED"><input style="font-size:16px;border:1px solid #efe9da" aria-label="Celular"></div>`,
+    cumple: `<div style="background:#F9F6ED"><input style="font-size:16px;border:1px solid #1b3246" aria-label="Celular"></div>`,
   },
   {
     regla: "el foco se ve",

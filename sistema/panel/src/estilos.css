@@ -20,6 +20,28 @@
   --muted: rgba(27, 50, 70, 0.7);
   --line: rgba(27, 50, 70, 0.12);
 
+  /* ---------------------------------------------------------------------
+     El borde de lo que se RELLENA o se TOCA. No es el mismo que `--line`.
+
+     `--line` separa: el canto de una tarjeta, la raya entre dos filas. Ahí un
+     gris de 1.24:1 está bien, porque si no se ve no se pierde nada.
+
+     El borde de un campo no separa: es lo ÚNICO que dice dónde empieza el
+     campo. Medido sobre el crema, `--line` daba 1.24:1 — la WCAG 2.2 pide
+     3:1 para el contorno de un control (1.4.11), y el ojo pide más. En las
+     capturas del teléfono, las cajas de «Nombre», «Talla», «Precio» y
+     «Unidades por caja» no se ven: se adivinan por el relleno, un punto más
+     claro que la tarjeta. Al sol, de pie, eso no está.
+
+     Vale lo mismo para los botones de contorno, que son los que dicen
+     «Cancelar», «Borrar», «No cuadra» y «Quitar»: ahí el borde es lo único
+     que los hace botón.
+
+     El valor se midió, no se eligió a ojo: es el navy de la marca al 55 %
+     sobre el crema, 3.26:1. Más oscuro convertía cada formulario en una
+     parrilla de cajas negras. */
+  --control: rgba(27, 50, 70, 0.55);
+
   /* Relleno. Nunca texto ni borde. */
   --accent: #ee924a;
   --sage: #91c9a2;
@@ -44,21 +66,17 @@
   --radio: 14px;
 
   /* ---------------------------------------------------------------------
-     Lo que flota sobre el contenido en el teléfono, escrito UNA vez.
+     Lo ÚNICO que flota sobre el contenido en el teléfono, escrito una vez.
 
-     Son dos cosas fijas (`position: fixed`), así que ninguna empuja nada: si
-     el contenido no les reserva su alto, la última fila se queda DEBAJO
-     (§7f). La barra ya estaba reservada; la burbuja de Caleb no, y tapaba
-     «Confirmar: el dinero entró» en Cobros, dos filas de Existencias, una
-     zona, una de Pedidos y una de Catálogo.
+     Es fija (`position: fixed`), así que no empuja nada: si el contenido no
+     le reserva su alto, la última fila se queda DEBAJO de ella (§7f).
 
-     El alto de la burbuja se declara aquí y la burbuja se obliga a medirlo
-     (`.burbuja-caleb`), así que el hueco y la burbuja no pueden separarse:
-     medía 47 px con el relleno y el hueco se calculaba con 44.
+     Aquí había también el alto de la burbuja de Caleb, por el mismo motivo.
+     Ya no hace falta: Caleb dejó de flotar y se acopló a esta misma barra,
+     que es lo único que de verdad arregla que tapara botones de dinero. Una
+     medida menos que mantener de acuerdo con otra.
      --------------------------------------------------------------------- */
   --barra-telefono: calc(var(--tactil) + 28px);
-  --burbuja: var(--tactil);
-  --aire-burbuja: 8px;
 }
 
 @theme inline {
@@ -113,6 +131,33 @@ select {
   font-family: inherit;
 }
 
+/* ---------------------------------------------------------------------------
+   El contorno de los controles, a 3:1 (§7j / WCAG 1.4.11).
+
+   Va aquí, en una regla por tipo de elemento, y NO cambiando `border-line` en
+   cada sitio: `border-line` aparece 123 veces en 29 archivos y la mayoría son
+   cantos de tarjeta, que deben seguir siendo discretos. Además hay OCHO copias
+   de la constante `ENTRADA` repartidas por las pantallas; con una regla por
+   clase habría que acertar en las ocho, y la novena que alguien escriba mañana
+   volvería a nacer con el borde invisible. Por elemento no se escapa ninguna.
+
+   Las casillas y los radios se quedan fuera a propósito: los pinta el sistema
+   operativo con sus propios colores de alto contraste, y tocarles el borde los
+   convierte en cuadros grises sin la marca de «marcado». */
+input:not([type="radio"]):not([type="checkbox"]),
+select,
+textarea {
+  border-color: var(--control);
+}
+
+/* Un botón de contorno: el borde es lo único que lo hace botón.
+   `button.border-line` muerde solo en los botones —no en las tarjetas, que
+   usan la misma clase— y tiene más especificidad que la utilidad suelta. */
+button.border-line,
+a[role="button"].border-line {
+  border-color: var(--control);
+}
+
 /* El aro de foco se ve siempre: se navega con teclado y con lector. */
 :focus-visible {
   outline: 2px solid var(--accent-edge);
@@ -121,58 +166,30 @@ select {
 }
 
 /* ---------------------------------------------------------------------------
-   La burbuja de Caleb.
+   Caleb, acoplado.
 
-   Flota en todas las pantallas, así que lo que tape lo tapa doce veces. Se
-   coloca DESDE las variables —el alto de la barra más el aire— y se obliga a
-   medir `--burbuja`, que es el mismo valor con el que `.contenido` reserva el
-   hueco. Puesta a mano (`bottom-20` y un alto que salía del relleno), las dos
-   medidas se separaron y la burbuja se sentó encima de los botones del dinero.
+   Era una burbuja flotante (`position: fixed`, abajo a la derecha) y por eso
+   se sentaba encima de lo que pasara por debajo. El hueco que `.contenido` le
+   reservaba —`--burbuja` más `--aire-burbuja`— protege el FINAL de la página;
+   a media página no protege nada, porque lo fijo se queda quieto mientras el
+   contenido se desliza. Con el auditor midiendo arriba del todo salieron seis
+   choques, dos sobre botones de dinero: «Confirmar que entraron $31.50» en
+   Cobros y el enlace de «3 pedidos agendados sin preparar» del Resumen.
+
+   Más relleno no lo arregla. Lo arregla no pasar por encima: el botón se fue a
+   la barra inferior en el teléfono y al pie de la barra lateral en la
+   computadora, que son sitios con espacio propio. Por eso aquí ya no queda
+   posicionamiento — solo el tamaño— y por eso desaparecieron `--burbuja` y
+   `--aire-burbuja`: dos medidas que existían únicamente para reservarle un
+   hueco que ya no necesita.
+
+   La clase se queda por su nombre: es por donde el auditor lo encuentra.
    --------------------------------------------------------------------------- */
-/* Con una hoja abierta, la burbuja se quita de en medio.
- *
- * El hueco que `.contenido` reserva protege la lista de abajo, y no puede
- * proteger una hoja: una hoja es un `<dialog>` modal, vive fuera de ese
- * contenedor y se dibuja encima de todo. Así que con una hoja abierta la
- * burbuja se sentaba sobre sus botones — sobre «Confirmar: pasar a pedido» y
- * sobre «Sí, descartar», que son decisiones, no adornos. Trece casos medidos.
- *
- * Esconderla es además lo correcto por sí solo: `showModal()` deja el resto de
- * la página inerte, así que la burbuja ya no respondía al toque. Lo único que
- * hacía era tapar.
- *
- * El cajón del menú es el otro caso y va por el mismo camino: no es un
- * `<dialog>` sino un panel con `aria-modal`, y vive SIEMPRE en el árbol —se
- * desliza con una transformación— así que no vale preguntar si existe. Lo que
- * dice si está abierto es el `inert` que ya se le pone al cerrarlo, justo para
- * que el tabulador no entre en un cajón que no se ve. Se reutiliza eso en vez
- * de añadir una marca nueva: dos señales para el mismo hecho acaban
- * discrepando.
- *
- * Una regla de CSS y no una bandera en React: así vale para cualquier hoja,
- * incluidas las que alguien añada mañana, sin que nadie tenga que acordarse.
- */
-body:has(dialog[open]) .burbuja-caleb,
-body:has([aria-modal="true"]:not([inert])) .burbuja-caleb {
-  display: none;
-}
-
 .burbuja-caleb {
-  position: fixed;
-  right: 16px;
-  bottom: calc(var(--barra-telefono) + var(--aire-burbuja) + env(safe-area-inset-bottom, 0px));
-  z-index: 30;
-  height: var(--burbuja);
   display: inline-flex;
   align-items: center;
-}
-
-@media (min-width: 768px) {
-  /* En computadora no hay barra inferior, así que la burbuja baja; el hueco
-     del contenido lo pone el bloque de escritorio de más abajo. */
-  .burbuja-caleb {
-    bottom: 24px;
-  }
+  justify-content: center;
+  height: var(--tactil);
 }
 
 /* El enlace de saltar al contenido es el primer foco de la página (§7i). */
@@ -432,13 +449,13 @@ body:has([aria-modal="true"]:not([inert])) .burbuja-caleb {
   /* <main> baja a 14 px: 26 px es el 13 % de una pantalla de 390 (§7h). */
   .contenido {
     padding: 14px;
-    /* Hueco para la barra inferior, para la burbuja de Caleb que flota encima
-       de ella y para la zona segura del teléfono. Las tres medidas salen de
-       las variables de arriba: nadie las estima aquí. */
-    padding-bottom: calc(
-      var(--barra-telefono) + var(--aire-burbuja) + var(--burbuja) + 12px +
-        env(safe-area-inset-bottom, 0px)
-    );
+    /* Hueco para la barra inferior y para la zona segura del teléfono; las
+       dos medidas salen de las variables de arriba, nadie las estima aquí.
+       Solo la barra, que es lo único que sigue flotando (§7f).
+       Antes sumaba además el alto de la burbuja de Caleb; la burbuja ya no
+       flota, así que ese sumando era un hueco en blanco al final de cada
+       lista. */
+    padding-bottom: calc(var(--barra-telefono) + 12px + env(safe-area-inset-bottom, 0px));
   }
   .solo-escritorio {
     display: none !important;
@@ -450,11 +467,8 @@ body:has([aria-modal="true"]:not([inert])) .burbuja-caleb {
     display: none !important;
   }
 
-  /* También en computadora la burbuja flota sobre el contenido: sin barra
-     inferior, pero sobre la última fila. Mismo hueco, mismas variables. */
-  .contenido {
-    padding-bottom: calc(24px + var(--aire-burbuja) + var(--burbuja) + 12px);
-  }
+  /* En computadora no flota nada encima del contenido: ni barra inferior ni
+     burbuja. El relleno es el de la pantalla (`p-6`) y ya. */
 }
 
 @media (prefers-reduced-motion: reduce) {

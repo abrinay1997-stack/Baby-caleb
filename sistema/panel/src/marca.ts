@@ -126,6 +126,27 @@ export const TIPOS = {
   campo: 16,
 } as const;
 
+/**
+ * El contorno de lo que se RELLENA o se TOCA (`--control` en `estilos.css`).
+ *
+ * Va FUERA de `MARCA` a propósito: `MARCA` es la copia literal de
+ * `brand.json` y hay una prueba que falla si aparece aquí un color que allá no
+ * esté. Éste no es un color de marca, es una decisión de accesibilidad del
+ * panel, así que vive aparte.
+ *
+ * Por qué existe, teniendo ya `line`: `line` SEPARA —el canto de una tarjeta,
+ * la raya entre dos filas— y a 1.24:1 está bien, porque si no se ve no se
+ * pierde nada. El borde de un campo no separa: es lo ÚNICO que dice dónde
+ * empieza el campo. Medido sobre el crema, `line` daba 1.24:1 y la WCAG 2.2
+ * pide 3:1 para el contorno de un control (1.4.11). En las capturas del
+ * teléfono, las cajas de «Nombre», «Talla», «Precio» y «Unidades por caja» no
+ * se veían: se adivinaban por el relleno, un punto más claro que la tarjeta.
+ *
+ * Vale lo mismo para los botones de contorno —«Cancelar», «No cuadra»,
+ * «Quitar»—, donde el borde es lo único que los hace botón.
+ */
+export const CONTROL = "rgba(27, 50, 70, 0.55)";
+
 /** Todo lo que se toca mide al menos esto. El relleno cuenta para la caja. */
 export const TACTIL_MIN_PX = 44;
 

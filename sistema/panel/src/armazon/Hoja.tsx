@@ -30,15 +30,63 @@ export function Hoja({
   pie?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  /**
+   * Quién tenía el foco antes de abrir, para devolvérselo al cerrar.
+   *
+   * Un `<dialog>` nativo ya hace esto solo… mientras siga en el documento. Y
+   * aquí no sigue: las pantallas montan la hoja con `{editando && <Hoja…>}`, o
+   * sea que cerrar DESMONTA el diálogo, y el navegador se queda sin el
+   * elemento al que devolver el foco. Medido en las siete hojas: seis dejaban
+   * el foco en `<body>` —tanto con Escape como con la equis— y solo la de
+   * Llaves lo devolvía, justo porque esa se queda montada.
+   *
+   * Lo que eso significa en la mano: la dueña cambia un precio, cierra, y el
+   * tabulador vuelve a empezar desde «Saltar al contenido». Para llegar al
+   * siguiente producto hay que recorrer la lista entera otra vez. Con el
+   * teclado del teléfono abierto encima de media pantalla, o con un conmutador,
+   * eso es perder el sitio en cada edición.
+   *
+   * El cajón del menú ya resolvía esto mismo guardando su disparador
+   * (`Cajon.tsx`). Aquí no hace falta que cada pantalla pase una referencia:
+   * el elemento que tenía el foco en el momento de abrir ES el que la abrió,
+   * así que se guarda aquí y vale para las trece hojas y para las que vengan.
+   */
+  const devolverElFoco = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const d = ref.current;
     if (d === null) return;
     // `showModal` es lo que enciende la trampa de foco y el fondo inerte.
     // Abrirlo poniendo el atributo `open` a mano NO hace nada de eso.
-    if (abierta && !d.open) d.showModal();
+    if (abierta && !d.open) {
+      const antes = document.activeElement;
+      // `<body>` no cuenta como sitio al que volver, y un elemento de dentro
+      // de la propia hoja tampoco: se va con ella.
+      devolverElFoco.current =
+        antes instanceof HTMLElement && antes !== document.body && !d.contains(antes)
+          ? antes
+          : null;
+      d.showModal();
+    }
     if (!abierta && d.open) d.close();
   }, [abierta]);
+
+  // Al desmontarse —que es como se cierran de verdad estas hojas— el foco
+  // vuelve a la fila o al botón que la abrió. Va en su propio efecto, sin
+  // dependencias, para que corra UNA vez al salir: hacerlo dentro del efecto de
+  // arriba lo dispararía en cada cambio de `abierta` y robaría el foco a media
+  // edición.
+  //
+  // `isConnected` porque la fila puede haber desaparecido mientras la hoja
+  // estaba abierta (se borró el producto, cambió el filtro): enfocar un nodo
+  // que ya no está en el documento no hace nada y deja el foco en `<body>`
+  // igual, así que no se finge que se arregló.
+  useEffect(() => {
+    return () => {
+      const volver = devolverElFoco.current;
+      if (volver !== null && volver.isConnected) volver.focus();
+    };
+  }, []);
 
   return (
     <dialog

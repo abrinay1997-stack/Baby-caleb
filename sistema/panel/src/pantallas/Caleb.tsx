@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Hoja } from "../armazon/Hoja";
+import { IconoCaleb } from "../armazon/Iconos";
 import { pedir } from "../api";
 
 /**
@@ -43,8 +44,85 @@ interface Burbuja {
   texto: string;
 }
 
-export function Caleb({ pantalla }: { pantalla?: string }) {
-  const [abierta, setAbierta] = useState(false);
+/**
+ * El botón que abre a Caleb. Se ACOPLA, no flota.
+ *
+ * Flotaba (`position: fixed`, abajo a la derecha) y por eso se sentaba encima
+ * de lo que hubiera debajo. El hueco que `.contenido` le reservaba protege el
+ * FINAL de la página; a media página no protege nada, porque un elemento fijo
+ * se queda quieto mientras el contenido pasa por debajo. Medido con el auditor:
+ * tapaba «Confirmar que entraron $31.50» en Cobros, el enlace de «3 pedidos
+ * agendados sin preparar» del Resumen, «Quitar» en Pasarelas, «Cambiar» en
+ * Ajustes, «Preparar entrega» en Entregas y una fila de Existencias. Dinero,
+ * dos de ellas.
+ *
+ * Más relleno no lo arregla: lo arregla no pasar por encima. Así que el botón
+ * vive donde ya hay sitio reservado para él — la barra inferior en el teléfono
+ * y el pie de la barra lateral en la computadora— y deja de haber un sitio de
+ * la pantalla donde tocar signifique otra cosa.
+ *
+ * Se renderiza DOS veces, una por cada barra, y `solo-telefono`/
+ * `solo-escritorio` dejan visible exactamente una: las dos usan
+ * `display: none`, así que la que no toca ni sale en el árbol de
+ * accesibilidad ni la encuentra un lector de pantalla.
+ */
+export function BotonCaleb({
+  alAbrir,
+  variante,
+}: {
+  alAbrir: () => void;
+  /**
+   * `pastilla` en la barra lateral de escritorio, donde es un botón suelto y
+   * el naranja lo que lo hace encontrable.
+   *
+   * `celda` en la barra inferior del teléfono, donde NO lleva relleno naranja
+   * a propósito: en esa barra el naranja ya significa «usted está aquí» —es la
+   * pastilla que va detrás del icono del destino activo—, y un segundo bulto
+   * naranja al lado dice el mismo color para dos cosas distintas, un estado y
+   * una acción. Caleb se viste como las demás celdas (icono arriba, palabra
+   * debajo) y así la barra se lee de un golpe: cuatro sitios y una pregunta.
+   */
+  variante: "pastilla" | "celda";
+}) {
+  if (variante === "pastilla") {
+    return (
+      <button
+        type="button"
+        onClick={alAbrir}
+        aria-label="Preguntarle a Caleb"
+        className="tactil burbuja-caleb w-full rounded-full border border-line bg-accent px-5 text-[15px] font-bold text-accent-fg"
+      >
+        Caleb
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={alAbrir}
+      aria-label="Preguntarle a Caleb"
+      className="tactil burbuja-caleb h-full w-full flex-col justify-center gap-1 rounded-[12px] px-1 py-1.5 text-[12px] text-muted focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:-outline-offset-2"
+    >
+      <span aria-hidden="true" className="flex items-center justify-center px-3.5 py-1">
+        <IconoCaleb className="h-[22px] w-[22px]" />
+      </span>
+      <span className="leading-none">Caleb</span>
+    </button>
+  );
+}
+
+export function Caleb({
+  pantalla,
+  abierta,
+  alCerrar,
+}: {
+  pantalla?: string;
+  abierta: boolean;
+  alCerrar: () => void;
+}) {
+  const setAbierta = (v: boolean) => {
+    if (!v) alCerrar();
+  };
   const [historial, setHistorial] = useState<Mensaje[]>([]);
   const [burbujas, setBurbujas] = useState<Burbuja[]>([]);
   const [escrito, setEscrito] = useState("");
@@ -115,22 +193,9 @@ export function Caleb({ pantalla }: { pantalla?: string }) {
 
   return (
     <>
-      {/* Flotante, y por eso no empuja nada: dónde se pone y cuánto mide lo
-          dice `.burbuja-caleb` en `estilos.css`, que es donde el contenido lee
-          el hueco que tiene que reservarle (§7f). Puesto aquí con
-          `bottom-20` y un alto que salía del relleno, las dos medidas se
-          separaron y la burbuja se sentó encima de «Confirmar: el dinero
-          entró», de dos filas de Existencias, de una zona y de una fila de
-          Pedidos y de Catálogo. */}
-      <button
-        type="button"
-        onClick={() => setAbierta(true)}
-        aria-label="Preguntarle a Caleb"
-        className="tactil burbuja-caleb rounded-full border border-line bg-accent px-5 text-[15px] font-bold text-accent-fg shadow-lg"
-      >
-        Caleb
-      </button>
-
+      {/* El disparador ya no vive aquí: lo pone el armazón dentro de la barra
+          que toque (`BotonCaleb`), porque flotando se sentaba encima de botones
+          que deciden dinero. Aquí queda solo la hoja. */}
       <Hoja
         abierta={abierta}
         titulo="Caleb"

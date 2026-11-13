@@ -48,7 +48,14 @@ export function Cifra({
   return (
     <Tarjeta>
       <p className="m-0 text-[12px] uppercase tracking-wide text-muted">{etiqueta}</p>
-      <p className="m-0 text-[32px] font-bold leading-tight">{valor}</p>
+      {/* `break-words`: una cifra grande parte de línea en vez de empujar la
+          página de lado (§7g). `$5,555,555.55` a 32 px en negrita no cabe en
+          una celda de teléfono y no tiene dónde partirse solo; sin esto, la
+          cuadrícula crecía con ella y el Resumen se desplazaba 26 px en
+          horizontal. Se encontró metiendo un total de siete cifras, que es lo
+          que va a tener el cierre de un año — con los datos de muestra, de dos
+          cifras, no se ve nunca. */}
+      <p className="m-0 break-words text-[32px] font-bold leading-tight">{valor}</p>
       {nota ? <p className="m-0 text-[12px] text-muted">{nota}</p> : null}
     </Tarjeta>
   );

@@ -144,6 +144,18 @@ Se mide contra el alto de **una** línea del título, no contra su caja entera:
 con dos líneas, la caja abarca también el renglón de abajo y daría por buena
 justo la forma que esto vigila.
 
+### 7m · El contorno de un control se ve (3:1)
+
+La 7h mide **texto**. El borde de un campo no es texto, y es lo único que dice
+dónde empieza el campo. Estaba a **1.24:1 en todos los campos del panel**,
+porque `--line` hacía dos trabajos distintos: separar tarjetas —donde está
+bien— y dibujar un control, donde no. Son dos tokens: `--line` para las rayas
+y `--control` para los contornos.
+
+Se mide contra el fondo que hay detrás, que es lo que pide la WCAG 1.4.11. Y se
+mide en el elemento, no en el token: un token correcto que no llega al elemento
+se ve exactamente igual que no tenerlo.
+
 ## Lo que el auditor NO puede ver
 
 Mide, no mira. Ha dado «sin fallas» sobre:

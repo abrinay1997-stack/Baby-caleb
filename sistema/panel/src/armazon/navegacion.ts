@@ -20,6 +20,18 @@ export interface Destino {
   /** Para el lector de pantalla cuando solo se ve el icono. */
   descripcion: string;
   permiso: Permiso | null;
+  /**
+   * El nombre CORTO, solo para la barra inferior del teléfono.
+   *
+   * La barra reparte el ancho entre sus celdas, así que un nombre largo no se
+   * corta: se parte. «Entregas del día» caía en dos renglones contra el borde
+   * mientras «Resumen» y «Pedidos» ocupaban uno, y la fila se leía torcida.
+   *
+   * Solo cambia la palabra de la barra. El título de la pantalla, el cajón y
+   * el lector de pantalla siguen diciendo el nombre entero: acortar en la
+   * barra es ahorrar espacio, no renombrar la sección.
+   */
+  corto?: string;
 }
 
 export interface Seccion {
@@ -87,6 +99,7 @@ export const SECCIONES: Seccion[] = [
       {
         ruta: "/entregas",
         nombre: "Entregas del día",
+        corto: "Entregas",
         descripcion: "Qué sale hoy, quién lo lleva y qué se cobró",
         permiso: "pedidos",
       },

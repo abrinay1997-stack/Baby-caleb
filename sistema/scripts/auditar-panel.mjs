@@ -72,7 +72,23 @@ const VISTAS = [
  * que no se pueda olvidar en una de las quince llamadas.
  */
 async function medirAhora(pagina, opciones = {}) {
+  // El Tab mueve el foco al primer enfocable, que es «Saltar al contenido»
+  // —arriba del todo—, y el navegador lo trae a la vista: la página SALTA a
+  // scrollY = 0. Medido: en escritorio pasaba en tres de seis pantallas
+  // (1607 → 0 en el Resumen, 1422 en Contabilidad, 1039 en Cobros) y en el
+  // teléfono a veces sí y a veces no, porque traerlo a la vista es asíncrono.
+  //
+  // Eso deja la regla de la burbuja midiendo ARRIBA mientras su comentario
+  // dice, con todas las letras, que se mide con la página abajo del todo —que
+  // es donde lo fijo puede tapar algo—. Las fallas que encontró eran reales,
+  // pero no por el motivo que estaba escrito, y una medida que depende de en
+  // qué pantalla esté es una medida que un día dice que no hay nada.
+  //
+  // Lo encontró el agente que arreglaba el panel, leyendo el código del
+  // auditor que yo había tocado.
+  const donde = await pagina.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
   await pagina.keyboard.press("Tab");
+  await pagina.evaluate(({ x, y }) => window.scrollTo(x, y), donde);
   return pagina.evaluate(medir, opciones);
 }
 

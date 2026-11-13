@@ -136,8 +136,18 @@ export function Cajon({ abierto, alCerrar, secciones, disparador, id }: CajonPro
                       end={d.ruta === "/"}
                       onClick={alCerrar}
                       className={({ isActive }) =>
+                        /* Sin `bg-accent/15` detrás del texto (§7h): un 15 % de
+                           naranja sobre la superficie deja el fondo real en
+                           #f1e1ce, y `--accent-strong` encima cae a 4.16:1 —el
+                           peor contraste del panel, y en el renglón que dice
+                           dónde está usted—. La barra de 3 px es la misma que
+                           marca el activo en la barra lateral de escritorio:
+                           antes el cajón y la barra lateral señalaban el activo
+                           de dos maneras distintas. */
                         `tactil flex flex-col justify-center px-4 py-2 no-underline ${
-                          isActive ? "bg-accent/15 font-bold text-accent-strong" : "text-fg"
+                          isActive
+                            ? "border-l-[3px] border-accent-edge pl-[13px] font-bold text-accent-strong"
+                            : "text-fg"
                         }`
                       }
                       aria-current={undefined}
