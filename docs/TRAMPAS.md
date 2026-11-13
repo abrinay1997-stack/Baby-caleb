@@ -316,6 +316,42 @@ efecto: nadie vuelve a mirarlo.
 
 ---
 
+## 14. Una medición puede poner la máquina en un estado que nadie usa
+
+Mordió el 13 de noviembre, midiendo accesibilidad en el panel. El auditor
+enfocaba cada botón por programa y miraba si le aparecía el aro de foco.
+Resultado: **1 130 botones «sin aro»** en 57 pantallas. Todos lo tenían.
+
+El aro lo pone `:focus-visible`, y Chrome lo **apaga** mientras la última cosa
+que hizo la persona fue tocar con el ratón — para eso existe esa pseudoclase:
+para no dibujar aros a quien va con el dedo. El auditor abre las hojas con
+clics, así que medía el panel en «modo ratón», que es el único modo en el que
+el aro no se dibuja a propósito. Una sola pulsación de Tab antes de medir
+cambia la respuesta de 1 130 a 0.
+
+Lo mismo, más pequeño, el mismo día y dos veces más: un botón apagado y un
+enlace detrás de una hoja abierta tampoco reciben el foco — ahí lo correcto es
+justo que no lo reciban—, y la regla los acusaba igual. Y el retrato «en
+reposo» de un botón se leía mientras el botón **ya estaba enfocado**, porque una
+hoja modal enfoca sola su primer botón al abrirse: se comparaba consigo mismo.
+
+**La regla:** antes de creerse un número grande, pregunte en qué estado estaba
+la máquina cuando se midió. Un fallo que sale en *todas* las pantallas casi
+nunca es un fallo en todas las pantallas: es la medición.
+
+**Cómo se comprueba:** la medida se hace por el mismo camino por el que llega
+una persona. Si la regla habla del teclado, se pulsa una tecla; si habla de un
+elemento enfocado, se comprueba que el foco llegó (`document.activeElement`).
+Y cada regla lleva su par de muestras —una que tiene que suspender y otra que
+tiene que aprobar— corridas por ese mismo camino, que es lo que destapó esto:
+la muestra del foco escrita con `:focus` aprobaba, y el panel usa
+`:focus-visible`.
+
+Lo venenoso no es el falso positivo. Es que un informe de 1 130 líneas **no se
+lee**: se descarta entero, y con él las 28 fallas de verdad que traía dentro.
+
+---
+
 ## Lo que este archivo NO es
 
 No es una lista de todo lo que salió mal: la mayoría de los fallos se arreglan

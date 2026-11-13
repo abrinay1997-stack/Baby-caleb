@@ -37,6 +37,16 @@ escribía.
 
 Ni aunque sea una nota al pie. Si no se puede leer, no está.
 
+### 7d · La burbuja de Caleb no se sienta encima de nada que se toque
+
+Flota en todas las pantallas, así que lo que tape lo tapa doce veces. Es la
+hermana de la 7f y falla por lo mismo: la burbuja está **fija**, así que en una
+captura de página entera se dibuja una sola vez, donde estuviera el viewport, y
+eso es el artefacto. El fallo de verdad es que el contenido no reserve su hueco.
+
+Se mide con la página **abajo del todo**, que es donde la última fila queda más
+cerca. Tapaba «No cuadra» en Cobros, al lado de «Confirmar: el dinero entró».
+
 ### 7e · Ni `100vh` ni `min-width` en píxeles
 
 - **`100vh`**: en el teléfono, la barra del navegador se come una parte, y lo
@@ -60,6 +70,61 @@ barra cambia cada vez que alguien le toca un renglón.
 
 Es el síntoma de todo lo anterior cuando se escapa.
 
+### 7h · Contraste de 4.5:1 en el texto, 3:1 en lo grande
+
+Medido en píxeles, no en tokens. Un token puede estar bien y aplicarse sobre un
+fondo que no era el que se pensó; lo que cuenta es el color que sale. «Grande»
+es 24 px, o 18,66 px en negrita.
+
+El gris claro sobre blanco es el fallo más común y el más invisible, porque en
+la pantalla de quien lo escribe se lee perfectamente. En el teléfono de la
+dueña, al sol, no.
+
+### 7i · Todo lo que se enfoca, se ve enfocado
+
+El aro lo pone `:focus-visible` en `estilos.css`, una vez para todo el panel. Un
+`outline: none` suelto en un componente lo apaga solo ahí, y quien navega con
+teclado —o con el teclado del teléfono abierto encima de media pantalla—
+pierde el sitio sin ninguna señal.
+
+Un elemento apagado o detrás de una hoja abierta no cuenta: ahí lo correcto es
+justo que no se pueda enfocar.
+
+### 7j · Cada campo con su etiqueta, cada icono con su nombre
+
+Un texto **al lado** no es una etiqueta. El lector de pantalla lee el campo
+solo, y dice «cuadro de edición» sin más. Hace falta un `<label for="…">`, el
+campo dentro del `<label>`, o un `aria-label`.
+
+Lo mismo con un botón que solo lleva un icono: sin nombre se anuncia como
+«botón», que no le sirve a nadie. La papelera y la equis son las que más se
+olvidan.
+
+### 7k · Los encabezados no saltan niveles
+
+Quien usa un lector de pantalla salta de encabezado en encabezado: ésa es su
+tabla de contenidos. De `h1` a `h3` lo que oye es que falta una sección.
+
+Y los rótulos de un menú no son encabezados del documento: son etiquetas de
+grupos de navegación. Puestos como `<h2>` antes del `<h1>`, el esquema de cada
+pantalla empieza por el menú.
+
+### 7l · En el teléfono, la cifra que se viene a buscar va arriba a la derecha
+
+Solo en el teléfono: en la computadora las filas son columnas de tabla y la
+regla es otra.
+
+Comparte el **primer renglón** con el título y toca el **borde derecho**. Se
+rompía sin que nada lo dijera: cuando la celda del título crecía a dos líneas,
+la cifra se caía al renglón de abajo y aterrizaba entre dos datos sueltos. En
+Bodegas se leía «Principal 412 Productos 96 unidades» —otro número metido entre
+el dato y su unidad— y en Existencias se caía justo en las filas bajas de stock,
+que son las que se viene a mirar.
+
+Se mide contra el alto de **una** línea del título, no contra su caja entera:
+con dos líneas, la caja abarca también el renglón de abajo y daría por buena
+justo la forma que esto vigila.
+
 ## Lo que el auditor NO puede ver
 
 Mide, no mira. Ha dado «sin fallas» sobre:
@@ -71,6 +136,22 @@ Mide, no mira. Ha dado «sin fallas» sobre:
 - un título **repetido** que en un teléfono se come media pantalla.
 
 Por eso las capturas se miran, no solo se cuentan. Quedan en `.capturas/`.
+
+## El auditor se prueba a sí mismo
+
+Cada regla de aquí tiene en `sistema/scripts/medir-el-panel.mjs` un par de
+muestras: un trozo de HTML que **tiene que suspender** y otro que **tiene que
+aprobar**. El auditor las corre antes de mirar el panel y se para si una regla
+deja de señalar su propia muestra.
+
+Hace falta porque ya pasó al revés: dos arreglos de CSS se rompieron a propósito
+y el auditor siguió diciendo «sin fallas», porque medía todo menos justo eso
+(`docs/TRAMPAS.md` §11). Un control que aprueba siempre no es un control: es un
+permiso. Romper la regla a mano encontró el hueco una vez; la muestra lo
+encuentra siempre.
+
+Si cambia la forma del panel y una muestra deja de representarla, se corrige la
+muestra. Lo que no se hace es borrar la regla porque molesta.
 
 ## Y la regla que más se olvida
 
