@@ -24,6 +24,7 @@ import {
   ponerReceta,
   explicar,
 } from "../db/catalogo-admin";
+import { estadoEnLaTienda } from "../tienda/fichas";
 import { guardar as guardarAjuste, historial, leerVigentes } from "../db/ajustes";
 import { leerPedido, listarPedidos } from "../db/pedidos-lectura";
 import {
@@ -445,7 +446,21 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
        ORDER BY p.orden, p.nombre, v.talla, v.codigo`,
     ).all();
 
-    return c.json(ok({ variantes: results, muestraCosto: conCosto }));
+    // Y, por cada una, si la TIENDA la está enseñando — y si no, por qué.
+    //
+    // Es la pregunta que la dueña hace cuando publica algo y no aparece en
+    // babycaleb.com, y hasta hoy no la contestaba nadie: ni la tienda, ni el
+    // panel, ni un error. La respuesta no sale de la base: sale de las fichas
+    // de `content.json`, que es donde viven la descripción, la foto y el texto
+    // de venta. Un producto recién creado tiene precio y existencia pero no
+    // tiene ficha, así que la tienda no lo sabe pintar.
+    const variantes = results.map((fila) => {
+      const v = fila as { codigo: string; publicado: number; activo: number };
+      const enLaTienda = estadoEnLaTienda(v);
+      return { ...fila, saleEnLaTienda: enLaTienda.sale, porQueNoSale: enLaTienda.motivo };
+    });
+
+    return c.json(ok({ variantes, muestraCosto: conCosto }));
   });
 
   // -------------------------------------------------------------------------

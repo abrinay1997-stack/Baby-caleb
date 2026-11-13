@@ -3,6 +3,7 @@ import { libresSQL } from "../../db/inventario";
 import { cuantosCombos, loQueFrena } from "../../dominio/combos";
 import { formatear } from "../../dominio/dinero";
 import { UMBRAL_POCAS, disponibilidad } from "../../dominio/existencias";
+import { estadoEnLaTienda } from "../../tienda/fichas";
 import { definir } from "../registro";
 
 /**
@@ -273,4 +274,65 @@ export const verCombo = definir({
   },
 });
 
-export const HERRAMIENTAS_DE_CATALOGO = [buscarArticulo, verCombo] as const;
+export const verEnLaTienda = definir({
+  nombre: "ver_en_la_tienda",
+  descripcion:
+    "Dice qué artículos se están enseñando AHORA en babycaleb.com y, de los que no, por qué no. Contesta la pregunta «publiqué un producto y no aparece en la web». Sin código, lista los publicados que la tienda no está enseñando. Ejemplo: ver_en_la_tienda con codigo «NAT-M» dice si una clienta la ve en la tienda.",
+  parametros: z.object({
+    codigo: codigoDe
+      .optional()
+      .describe("Opcional. Sin él, salen todos los publicados que la tienda no enseña."),
+  }),
+  nivel: "lectura",
+  categoria: "catalogo",
+  roles: ["duena", "asistente", "contadora"],
+
+  async ejecutar(ctx, args) {
+    if (args.codigo !== undefined) {
+      const v = await ctx.db
+        .prepare("SELECT codigo, nombre, publicado, activo FROM variantes WHERE codigo = ?")
+        .bind(args.codigo)
+        .first<{ codigo: string; nombre: string; publicado: number; activo: number }>();
+
+      if (v === null) {
+        return {
+          codigo: args.codigo,
+          existe: false,
+          aviso: "no existe ningún artículo con ese código",
+        };
+      }
+      const estado = estadoEnLaTienda(v);
+      return {
+        codigo: v.codigo,
+        nombre: v.nombre,
+        existe: true,
+        saleEnLaTienda: estado.sale,
+        porQueNo: estado.motivo,
+      };
+    }
+
+    const { results } = await ctx.db
+      .prepare(
+        `SELECT codigo, nombre, publicado, activo FROM variantes
+         WHERE activo = 1 ORDER BY codigo`,
+      )
+      .all<{ codigo: string; nombre: string; publicado: number; activo: number }>();
+
+    const fuera = results
+      .map((v) => ({ v, estado: estadoEnLaTienda(v) }))
+      .filter((x) => !x.estado.sale)
+      .map((x) => ({ codigo: x.v.codigo, nombre: x.v.nombre, porQueNo: x.estado.motivo }));
+
+    return {
+      enLaTienda: results.length - fuera.length,
+      fueraDeLaTienda: fuera.length,
+      cuales: fuera,
+      aviso:
+        fuera.length === 0
+          ? "todo lo publicado se está enseñando en la tienda"
+          : "estos artículos no los ve una clienta entrando a la tienda",
+    };
+  },
+});
+
+export const HERRAMIENTAS_DE_CATALOGO = [buscarArticulo, verCombo, verEnLaTienda] as const;

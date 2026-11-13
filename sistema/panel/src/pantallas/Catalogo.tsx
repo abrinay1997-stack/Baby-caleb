@@ -15,6 +15,16 @@ interface Variante {
   precio_cents: number;
   tasa_itbms_bp: number | null;
   publicado: number;
+  /**
+   * Si una clienta la ve AHORA en babycaleb.com, y si no, por qué.
+   *
+   * No sale de la base: lo decide `src/tienda/fichas.ts` mirando las fichas de
+   * `content.json`, que es donde viven la descripción, la foto y el texto de
+   * venta. Un producto recién creado tiene precio y existencia pero no tiene
+   * ficha, así que la tienda no lo sabe pintar.
+   */
+  saleEnLaTienda?: boolean;
+  porQueNoSale?: string | null;
   activo: number;
   version: number;
   imagen: string | null;
@@ -148,10 +158,31 @@ export function Catalogo() {
                     )}
                   </Celda>
                   <Celda etiqueta="Estado" papel="estado">
+                    {/*
+                        «En la web» se decía mirando SOLO `publicado`, y eso era
+                        mentira: la lista de la tienda se arma con las fichas de
+                        `content.json`, así que un producto publicado sin ficha
+                        tiene precio, tiene existencia, y NO aparece. El dueño
+                        preguntó cuatro días seguidos por qué, y esta pastilla
+                        le contestaba «En la web» cada vez.
+
+                        Ahora dice lo que pasa de verdad, y debajo por qué. El
+                        motivo se escribe en el sistema, no aquí: una frase
+                        repetida en dos sitios se separa.
+                    */}
                     {v.activo !== 1 ? (
                       <Pastilla tono="neutro">Descatalogado</Pastilla>
-                    ) : v.publicado === 1 ? (
+                    ) : v.saleEnLaTienda === true ? (
                       <Pastilla tono="bien">En la web</Pastilla>
+                    ) : v.publicado === 1 ? (
+                      <>
+                        <Pastilla tono="aviso">Publicado, pero no en la web</Pastilla>
+                        {v.porQueNoSale ? (
+                          <span className="mt-1 block text-[12px] font-normal text-muted">
+                            {v.porQueNoSale}
+                          </span>
+                        ) : null}
+                      </>
                     ) : (
                       <Pastilla tono="neutro">Solo interno</Pastilla>
                     )}

@@ -1439,6 +1439,12 @@ const RESPUESTAS = {
   // `/catalogo`: las columnas del SELECT, con costo porque el rol es dueña.
   "/api/catalogo": ok({
     muestraCosto: true,
+    // `saleEnLaTienda` y `porQueNoSale`: si una clienta ve este artículo en
+    // babycaleb.com, y si no, por qué. Los valores van A MANO y no calculados:
+    // el trabajo de esta muestra es que las TRES formas de la fila se
+    // rendericen —sale, le falta la ficha, está retirada—, no acertar lo que
+    // diría `content.json`. Una pantalla que solo se ha visto en un estado es
+    // una pantalla que no se ha visto.
     variantes: [
       // `pedir_por_whatsapp`: los TRES estados tienen que verse en la muestra.
       // `null` es «lo que diga Ajustes» y es el de casi todo; el 0 y el 1 son
@@ -1447,10 +1453,14 @@ const RESPUESTAS = {
       { codigo: "BC-001-03", nombre: "Body manga larga pima", talla: "0-3m", unidades_por_caja: 12,
         precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Ropa",
         pedir_por_whatsapp: null,
+        saleEnLaTienda: false, porQueNoSale: "La tienda todavía no tiene su ficha: le falta la descripción, la foto y el texto de venta. Está publicada y tiene precio, así que quien reciba su enlace directo sí la puede pedir.",
+        saleEnLaTienda: true, porQueNoSale: null,
+        saleEnLaTienda: true, porQueNoSale: null,
         producto: "Body manga larga algodón pima", costo_unidades: 23, costo_valor_cents: 14720 },
       { codigo: "BC-001-36", nombre: "Body manga larga pima", talla: "3-6m", unidades_por_caja: 12,
         precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Ropa",
         pedir_por_whatsapp: null,
+        saleEnLaTienda: true, porQueNoSale: null,
         producto: "Body manga larga algodón pima", costo_unidades: 11, costo_valor_cents: 7040 },
       { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", talla: "Única", unidades_por_caja: 6,
         precio_cents: 2890, tasa_itbms_bp: 700, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Textil",
@@ -1463,12 +1473,14 @@ const RESPUESTAS = {
       { codigo: "BC-004-U", nombre: "Pañalera impermeable grande", talla: "Única", unidades_por_caja: 4,
         precio_cents: 4550, tasa_itbms_bp: 700, publicado: 0, activo: 0, version: 1, imagen: null, es_combo: 0, familia: "Bolsos",
         pedir_por_whatsapp: 0,
+        saleEnLaTienda: false, porQueNoSale: "Está retirada del catálogo.",
         producto: "Pañalera impermeable grande", costo_unidades: 11, costo_valor_cents: 26400 },
           {
         codigo: "BC-COMBO-1", producto: "Combo recién nacido", nombre: "Combo recién nacido",
         talla: null, unidades_por_caja: 1, precio_cents: 3500, tasa_itbms_bp: 0,
         publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 1, familia: "Combos",
         pedir_por_whatsapp: 0,
+        saleEnLaTienda: false, porQueNoSale: "No está publicada. Publíquela para que la tienda pueda enseñarla.",
         costo_unidades: null, costo_valor_cents: null,
       },
 ],
