@@ -223,24 +223,93 @@ function medir() {
   // al sol, con prisa.
   // -------------------------------------------------------------------------
 
-  /** El color de fondo de VERDAD: el primero que no sea transparente. */
-  const fondoDe = (el) => {
+  /**
+   * El color que sale, sea cual sea la sintaxis con que se escribió.
+   *
+   * NO se lee con una expresión regular. Tailwind v4 compila `bg-accent/20` a
+   * `color-mix(…)`, y Chrome lo CALCULA como `oklab(0.78 -0.07 0.03 / 0.2)`:
+   * una expresión que ningún `rgba?\(…\)` reconoce. El resultado no era un
+   * error visible, era algo peor — el color volvía `null`, la medición se
+   * saltaba, y la regla decía «sin fallas».
+   *
+   * Lo destapó el agente que auditaba la tienda: el mismo fallo, en el auditor
+   * de la web, decía «sin fallos de contraste» en las siete páginas mientras
+   * axe-core encontraba 18 nodos malos. Esta copia tenía el defecto idéntico y
+   * por eso el panel daba cero: no es que el panel estuviera bien, es que
+   * nadie estaba midiendo. La trampa §1, dentro del propio control.
+   *
+   * Ahora lo convierte el navegador: se pinta en un lienzo de un píxel y se
+   * lee el píxel. Eso entiende `rgb`, `oklab`, `oklch`, `lab`, `color(srgb …)`,
+   * `color-mix`, los nombres de color y lo que Chrome añada mañana, sin que
+   * nadie tenga que venir a enseñarle una sintaxis nueva.
+   */
+  const lienzo = document.createElement("canvas");
+  lienzo.width = 1;
+  lienzo.height = 1;
+  const pincel = lienzo.getContext("2d", { willReadFrequently: true });
+  const aRgb = (valor) => {
+    if (!valor) return null;
+    if (valor === "transparent") return [0, 0, 0, 0];
+    pincel.clearRect(0, 0, 1, 1);
+    pincel.fillStyle = "#000";
+    pincel.fillStyle = valor;
+    // `fillStyle` se queda en negro cuando el valor no se entiende. Un negro
+    // de verdad también sale negro, así que se distingue aparte.
+    if (
+      pincel.fillStyle === "#000000" &&
+      !/^(#000|black|rgba?\(0,\s*0,\s*0)/i.test(valor.trim())
+    ) {
+      return null;
+    }
+    pincel.fillRect(0, 0, 1, 1);
+    const d = pincel.getImageData(0, 0, 1, 1).data;
+    return [d[0], d[1], d[2], d[3] / 255];
+  };
+
+  /** Una capa sobre otra, como las pinta el navegador. */
+  const mezclar = ([r, g, b, a], [fr, fg, fb]) => [
+    r * a + fr * (1 - a),
+    g * a + fg * (1 - a),
+    b * a + fb * (1 - a),
+    1,
+  ];
+
+  /**
+   * El fondo que de verdad hay detrás, ya compuesto, y la opacidad acumulada.
+   *
+   * Dos cosas que la versión anterior hacía mal, y las dos bajan el contraste
+   * de verdad por debajo de lo que la medida decía:
+   *
+   *  1. **Los fondos traslúcidos se componen, no se saltan.** Subía hasta
+   *     encontrar uno opaco e ignoraba todo lo de en medio. Un `bg-accent/10`
+   *     sobre crema no es crema: es crema teñido de azul, y es más claro.
+   *  2. **La `opacity` de los ancestros cuenta.** Es del ancestro y se aplica
+   *     al pintar: una fila con `opacity-60` deja su texto al 60 % contra el
+   *     fondo. Medir el color declarado da por bueno un texto que nadie lee.
+   */
+  const fondoYOpacidad = (el) => {
+    const capas = [];
+    let opacidad = 1;
     let actual = el;
-    while (actual) {
-      const c = getComputedStyle(actual).backgroundColor;
-      const m = c.match(/rgba?\(([^)]+)\)/);
-      if (m) {
-        const [r, g, b, a] = m[1].split(",").map((x) => parseFloat(x));
-        if (a === undefined || a > 0.95) return [r, g, b];
-      }
+    while (actual && actual !== document.documentElement) {
+      const estilo = getComputedStyle(actual);
+      const o = parseFloat(estilo.opacity);
+      opacidad *= Number.isFinite(o) ? o : 1;
+      const bg = aRgb(estilo.backgroundColor);
+      if (bg && bg[3] > 0) capas.push(bg);
+      if (bg && bg[3] >= 0.999) break;
       actual = actual.parentElement;
     }
     // Si nada era opaco —ni el elemento, ni la fila, ni el cuerpo, ni el
     // `html`— lo que se pinta debajo es el lienzo del navegador, que es
     // blanco. Leer aquí el fondo del cuerpo sería leer `rgba(0,0,0,0)` y
-    // medir contra NEGRO: el texto gris claro saldría aprobado y el oscuro
-    // suspendido, o sea la regla exactamente al revés.
-    return [255, 255, 255];
+    // medir contra NEGRO: la regla exactamente al revés.
+    const delCuerpo = aRgb(getComputedStyle(document.body).backgroundColor);
+    let fondo = delCuerpo && delCuerpo[3] >= 0.999 ? delCuerpo : [255, 255, 255, 1];
+    // De la capa más lejana a la más cercana. Al revés daría un color
+    // plausible y equivocado.
+    for (let i = capas.length - 1; i >= 0; i--) fondo = mezclar(capas[i], fondo);
+    return { fondo, opacidad };
   };
 
   /** Luminancia relativa, tal como la define la WCAG. */
@@ -257,10 +326,10 @@ function medir() {
     return (x + 0.05) / (y + 0.05);
   };
 
-  // 7f - Contraste de verdad, medido en píxeles.
+  // 7h - Contraste de verdad, medido en píxeles.
   //
   // No se confía en los tokens: un token puede estar bien y aplicarse sobre
-  // un fondo que no es el que se pensó. Se mide el color que sale.
+  // un fondo que no era el que se pensó. Se mide el color que sale.
   const yaDicho = new Set();
   for (const el of document.querySelectorAll("body *")) {
     if (!visible(el)) continue;
@@ -270,27 +339,58 @@ function medir() {
     if (!propio) continue;
 
     const estilo = getComputedStyle(el);
-    const m = estilo.color.match(/rgba?\(([^)]+)\)/);
-    if (!m) continue;
-    const partes = m[1].split(",").map((x) => parseFloat(x));
-    // Un texto casi transparente ya es otro problema; medirlo daría un número
-    // que no significa nada.
-    if (partes[3] !== undefined && partes[3] < 0.9) continue;
+    const frente = aRgb(estilo.color);
+    if (!frente) continue;
+
+    // Un control APAGADO está exento, y lo dice la propia WCAG: el 1.4.3 no
+    // pide contraste a un «componente de interfaz inactivo». Tiene sentido —
+    // el gris es precisamente lo que comunica que no se puede tocar.
+    //
+    // No es un detalle de abogado: el panel apaga sus botones con
+    // `disabled:opacity-50`, así que sin esta excepción la regla señalaba 14
+    // botones —«Tomar el pedido», «Hacer la cotización», «Crear», «Enviar»—
+    // que están grises a propósito porque falta llenar el formulario. Catorce
+    // rojos que cualquiera que sepa de accesibilidad descarta con razón, y una
+    // regla a la que se le descartan los rojos deja de leerse entera: es la
+    // trampa §14 otra vez, el mismo día.
+    //
+    // Lo que NO está exento es un texto cualquiera bajado de opacidad. Un
+    // `<span>` no se puede «deshabilitar»; si está al 50 % es que alguien lo
+    // apagó a mano, y ahí sigue habiendo alguien que no lo puede leer.
+    if (el.closest(":disabled, [aria-disabled='true']")) continue;
+
+    // Y el texto que SOLO existe para el lector de pantalla tampoco: un
+    // `sr-only` es una caja de 1×1 px recortada, nadie la ve con los ojos y
+    // pedirle contraste visual no quiere decir nada. Se reconoce por el
+    // tamaño, que es lo que de verdad lo define. Salió de aquí: la pastilla
+    // de PayPal llevaba dentro un `<span class="sr-only">` y el auditor lo
+    // estaba midiendo.
+    const caja = el.getBoundingClientRect();
+    if (caja.width < 4 || caja.height < 4) continue;
+
+    const { fondo, opacidad } = fondoYOpacidad(el);
+    // Por debajo de 0.1 ya no es texto apagado: es texto escondido, y
+    // exigirle contraste a algo invisible es ruido.
+    if (opacidad < 0.1) continue;
 
     const px = parseFloat(estilo.fontSize);
     const grande = px >= 24 || (px >= 18.66 && parseInt(estilo.fontWeight, 10) >= 700);
     const minimo = grande ? 3 : 4.5;
-    const r = contraste(partes.slice(0, 3), fondoDe(el));
+    const pintado = mezclar([frente[0], frente[1], frente[2], frente[3] * opacidad], fondo);
+    const r = contraste(pintado, fondo);
 
     if (r < minimo) {
       // Una clase sale UNA vez: el mismo gris repetido en cuarenta filas es un
       // solo arreglo, y cuarenta líneas de informe lo esconden.
-      const firma = `${el.className}|${estilo.color}|${px}`;
+      const firma = `${el.className}|${estilo.color}|${opacidad}|${px}`;
       if (yaDicho.has(firma)) continue;
       yaDicho.add(firma);
       fallas.push({
         regla: "contraste 4.5:1",
-        detalle: `${donde(el)} sale a ${r.toFixed(2)}:1 y necesita ${minimo}:1 (${px}px)`,
+        detalle:
+          `${donde(el)} sale a ${r.toFixed(2)}:1 y necesita ${minimo}:1 (${px}px` +
+          (opacidad < 0.999 ? `, al ${Math.round(opacidad * 100)} %` : "") +
+          ")",
       });
     }
   }
@@ -473,6 +573,52 @@ export const PRUEBAS = [
     seccion: "7h",
     rompe: `<div style="background:#fff;color:#b9b9b9;font-size:14px">Total del día</div>`,
     cumple: `<div style="background:#fff;color:#3a3a3a;font-size:14px">Total del día</div>`,
+  },
+  {
+    // El contraste tiene TRES muestras más, y cada una es un fallo que esta
+    // misma regla dejó pasar durante días diciendo «sin fallas». No se borran
+    // aunque parezcan repetidas: son los tres agujeros por los que se escapó.
+
+    // (1) Sintaxis moderna. Tailwind v4 compila las opacidades a `color-mix`,
+    // y Chrome las calcula como `oklab(…)`. Leído con una expresión regular de
+    // `rgba(`, el color volvía nulo y la medición se SALTABA.
+    regla: "contraste 4.5:1",
+    seccion: "7h",
+    rompe: `<div style="background:#fff"><span style="color:oklch(0.82 0.02 250);font-size:14px">Total del día</span></div>`,
+    cumple: `<div style="background:#fff"><span style="color:oklch(0.35 0.02 250);font-size:14px">Total del día</span></div>`,
+  },
+  {
+    // (2) Una capa traslúcida se COMPONE. Antes se subía hasta el primer fondo
+    // opaco y se ignoraba lo de en medio: aquí el texto se medía contra el azul
+    // marino —y pasaba— cuando lo que hay detrás es ese azul tapado por un
+    // blanco al 85 %, o sea casi blanco.
+    regla: "contraste 4.5:1",
+    seccion: "7h",
+    rompe:
+      `<div style="background:#0A1628"><div style="background:rgba(255,255,255,0.85)">` +
+      `<span style="color:#8899AA;font-size:14px">Quedan 3 por marcar</span></div></div>`,
+    cumple:
+      `<div style="background:#0A1628"><div style="background:rgba(255,255,255,0.85)">` +
+      `<span style="color:#223344;font-size:14px">Quedan 3 por marcar</span></div></div>`,
+  },
+  {
+    // (3) La `opacity` de un ancestro cuenta. Una fila apagada al 30 % deja su
+    // texto al 30 % contra el fondo; medir el color declarado da por bueno un
+    // texto que nadie puede leer.
+    regla: "contraste 4.5:1",
+    seccion: "7h",
+    rompe: `<div style="background:#fff;opacity:0.3"><span style="color:#333;font-size:14px">Agotado</span></div>`,
+    cumple: `<div style="background:#fff;opacity:1"><span style="color:#333;font-size:14px">Agotado</span></div>`,
+  },
+  {
+    // (4) Un control apagado NO cuenta, y un texto apagado a mano SÍ. La
+    // muestra que aprueba es un botón `disabled`; la que suspende es el mismo
+    // texto sin control que lo justifique, que es el caso real de la pastilla
+    // de PayPal en Pasarelas.
+    regla: "contraste 4.5:1",
+    seccion: "7h",
+    rompe: `<div style="background:#fff"><span style="color:#555;opacity:0.5;font-size:15px">PayPal</span></div>`,
+    cumple: `<div style="background:#fff"><button disabled style="height:44px"><span style="color:#555;opacity:0.5;font-size:15px">PayPal</span></button></div>`,
   },
   {
     regla: "el foco se ve",
