@@ -504,6 +504,15 @@ for (const [nombreVista, tamano] of VISTAS) {
     revisadas += 1;
     for (const f of fallas) todas.push({ vista: nombreVista, pantalla: "cajon-abierto", ...f });
 
+    // Y su captura. El cajón se MEDÍA y no se fotografiaba, así que era la
+    // única pantalla del panel de la que no quedaba imagen — justo la que hay
+    // que mirar cuando se le cambian los iconos, y justo lo que el §5 dice que
+    // los números no contestan. Lo encontró quien tuvo que capturarlo con un
+    // guion propio para poder revisar su trabajo.
+    if (!soloMedir) {
+      await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-cajon-abierto.png`, fullPage: true });
+    }
+
     // Lo del 7d que sí se puede comprobar solo: el disparador anuncia que
     // está abierto y a qué, y el cajón es un diálogo con nombre.
     const aria = await pagina.evaluate(() => {

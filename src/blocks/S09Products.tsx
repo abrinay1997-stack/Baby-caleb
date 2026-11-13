@@ -5,16 +5,23 @@ import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
 import { buttonVariants } from '../components/ui/Button';
 import { Link } from 'react-router-dom';
-import { useCatalogoConEstado, desdeDe } from '../hooks/useCatalogo';
+import { useCatalogoConEstado, desdeDe, laTiendaLoEnsena } from '../hooks/useCatalogo';
 import { FilaPresentacion } from '../carrito/FilaPresentacion';
 import { whatsappCon } from '../data/contacto';
 
 export default function S09Products() {
   const { catalogo, cargando, copiaVieja } = useCatalogoConEstado();
-  // Lo descatalogado no se pinta: vender lo que no existe acaba en un pedido
+  // Lo que no existe no se pinta: vender lo que no existe acaba en un pedido
   // que nadie puede cumplir, y en un bot diciéndole a la clienta lo contrario
   // que la web.
-  const data = getContentData().products.filter((p) => p.descatalogado !== true);
+  //
+  // Quién decide: la D1 del sistema. Hasta hoy lo decidía SOLO este archivo
+  // —`content.json`, escrito a mano—, así que retirar un producto desde el
+  // panel no lo sacaba de la tienda: se quedaba en la lista con un
+  // «Consultar». El porqué de cada regla está en `laTiendaLoEnsena`.
+  const data = getContentData().products.filter((p) =>
+    laTiendaLoEnsena(p, catalogo, { cargando }),
+  );
 
   const containerRef = useGsapContext(() => {
     gsap.from('.product-card', {

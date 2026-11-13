@@ -240,3 +240,60 @@ export function desdeDe(catalogo: Catalogo, codigos: readonly (string | undefine
     .filter((p): p is number => p !== undefined);
   return precios.length === 0 ? 'Consultar' : `Desde ${dolares(Math.min(...precios))}`;
 }
+
+/** Lo mínimo que esta decisión necesita saber de un producto de `content.json`. */
+export interface ProductoDeLaTienda {
+  readonly descatalogado?: boolean;
+  readonly variants?: readonly { readonly codigo?: string }[];
+}
+
+/**
+ * ¿La tienda puede enseñar este producto?
+ *
+ * **El problema que resuelve.** La lista de la tienda sale de `content.json`,
+ * un archivo escrito a mano, y el precio y la existencia salen de la D1. O
+ * sea: la pregunta «¿qué productos hay?» tenía DOS dueños. Si la dueña
+ * retiraba un producto desde el panel, el sistema dejaba de publicarlo y la
+ * tienda **lo seguía ofreciendo**, con un «Consultar» donde antes iba el
+ * precio. Una clienta tocaba «Pedir» sobre algo que ya no existe.
+ *
+ * Ahora la D1 manda también en esto: un producto solo se enseña si el sistema
+ * publica alguna de sus presentaciones.
+ *
+ * **Lo que esto NO arregla, y conviene no confundirlo:** un producto creado en
+ * el panel sigue sin salir en la lista, porque su descripción, su foto y su
+ * texto de venta viven en `content.json` y nadie los escribió. Eso se dice
+ * ahora en el panel, en vez de dejar a la dueña preguntándose por qué su
+ * producto no aparece.
+ *
+ * **Falla abierta, a propósito.** Si el catálogo todavía no llegó, o llegó
+ * vacío porque el sistema no contesta, se enseña TODO. Una tienda con un
+ * producto de más es un pedido que hay que aclarar; una tienda vacía es una
+ * tienda cerrada, y eso es peor en todos los casos.
+ */
+export function laTiendaLoEnsena(
+  producto: ProductoDeLaTienda,
+  catalogo: Catalogo,
+  estado: { readonly cargando: boolean },
+): boolean {
+  // Lo descatalogado a mano sigue mandando: es la forma de sacar algo de la
+  // tienda sin tocar la base.
+  if (producto.descatalogado === true) return false;
+
+  // Todavía no sabemos nada: no se esconde nada en la primera pintada.
+  if (estado.cargando) return true;
+
+  // El catálogo vino vacío — el sistema no contesta y ni siquiera hubo copia.
+  // Esconderlo todo dejaría la tienda en blanco.
+  if (catalogo.size === 0) return true;
+
+  const codigos = (producto.variants ?? [])
+    .map((v) => v.codigo)
+    .filter((c): c is string => typeof c === 'string' && c !== '');
+
+  // Un producto sin ningún código no lo maneja el sistema (el fular, las
+  // toallitas sueltas). No hay nada que comprobar, así que se enseña.
+  if (codigos.length === 0) return true;
+
+  return codigos.some((c) => catalogo.has(c));
+}

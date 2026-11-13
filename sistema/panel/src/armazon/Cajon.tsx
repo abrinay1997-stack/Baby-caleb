@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { NavLink } from "react-router-dom";
+import { ICONOS } from "./Iconos";
 import type { Seccion } from "./navegacion";
 
 /**
@@ -19,6 +20,18 @@ import type { Seccion } from "./navegacion";
  *    cerrar;
  *  - Escape cierra;
  *  - se abre y se usa solo con el teclado.
+ *
+ * ## Por qué cada renglón lleva su dibujo
+ *
+ * La barra de abajo tiene icono y palabra desde el principio. El cajón no: era
+ * quince renglones de texto, y quince renglones de texto se LEEN uno por uno.
+ * La barra deja fuera todo lo que no es de todos los días, así que el cajón es
+ * justo donde hay más donde elegir y menos ayuda había para elegir.
+ *
+ * El icono va a la IZQUIERDA del nombre y es `aria-hidden` (lo pone `Iconos`):
+ * al lado tiene su palabra, y un lector que lo nombrara diría las cosas dos
+ * veces. No sustituye al texto — el nombre entero y su explicación siguen ahí,
+ * porque un dibujo solo obligaría a adivinar qué es «Pasarelas».
  */
 
 export interface CajonProps {
@@ -129,34 +142,60 @@ export function Cajon({ abierto, alCerrar, secciones, disparador, id }: CajonPro
                 {seccion.titulo}
               </h2>
               <ul className="m-0 list-none p-0">
-                {seccion.destinos.map((d) => (
-                  <li key={d.ruta}>
-                    <NavLink
-                      to={d.ruta}
-                      end={d.ruta === "/"}
-                      onClick={alCerrar}
-                      className={({ isActive }) =>
-                        /* Sin `bg-accent/15` detrás del texto (§7h): un 15 % de
-                           naranja sobre la superficie deja el fondo real en
-                           #f1e1ce, y `--accent-strong` encima cae a 4.16:1 —el
-                           peor contraste del panel, y en el renglón que dice
-                           dónde está usted—. La barra de 3 px es la misma que
-                           marca el activo en la barra lateral de escritorio:
-                           antes el cajón y la barra lateral señalaban el activo
-                           de dos maneras distintas. */
-                        `tactil flex flex-col justify-center px-4 py-2 no-underline ${
-                          isActive
-                            ? "border-l-[3px] border-accent-edge pl-[13px] font-bold text-accent-strong"
-                            : "text-fg"
-                        }`
-                      }
-                      aria-current={undefined}
-                    >
-                      <span>{d.nombre}</span>
-                      <span className="text-[12px] font-normal text-muted">{d.descripcion}</span>
-                    </NavLink>
-                  </li>
-                ))}
+                {seccion.destinos.map((d) => {
+                  const Icono = ICONOS[d.ruta];
+                  return (
+                    <li key={d.ruta}>
+                      <NavLink
+                        to={d.ruta}
+                        end={d.ruta === "/"}
+                        onClick={alCerrar}
+                        className={({ isActive }) =>
+                          /* Sin `bg-accent/15` detrás del texto (§7h): un 15 % de
+                             naranja sobre la superficie deja el fondo real en
+                             #f1e1ce, y `--accent-strong` encima cae a 4.16:1 —el
+                             peor contraste del panel, y en el renglón que dice
+                             dónde está usted—. La barra de 3 px es la misma que
+                             marca el activo en la barra lateral de escritorio:
+                             antes el cajón y la barra lateral señalaban el activo
+                             de dos maneras distintas. */
+                          /* `items-start` y no `items-center`: la explicación
+                             de nueve destinos ocupa dos renglones, y centrando
+                             el dibujo contra el bloque entero el icono queda a
+                             la altura de la EXPLICACIÓN, no del nombre — se ve
+                             en la captura: el de «Quién reparte» apuntaba a «El
+                             equipo de la calle». El icono es del nombre, así
+                             que se alinea con el nombre. */
+                          `tactil flex items-start gap-3 px-4 py-2 no-underline ${
+                            isActive
+                              ? "border-l-[3px] border-accent-edge pl-[13px] font-bold text-accent-strong"
+                              : "text-fg"
+                          }`
+                        }
+                        aria-current={undefined}
+                      >
+                        {/* El hueco del dibujo se reserva SIEMPRE, lleve icono o
+                            no. Es la misma lección que la barra de abajo: una
+                            celda sin dibujo no deja la fila coja, la deja
+                            TORCIDA, porque su texto se corre al sitio del icono
+                            y el renglón ya no se alinea con sus vecinos. Hoy
+                            todos los destinos tienen el suyo —lo vigila una
+                            prueba—, así que esto es solo el seguro. */}
+                        <span className="flex w-6 shrink-0 justify-center">
+                          {Icono ? <Icono className="h-6 w-6" /> : null}
+                        </span>
+                        {/* `min-w-0` para que un nombre largo parta dentro de su
+                            columna en vez de empujar el cajón de lado (§7g). */}
+                        <span className="flex min-w-0 flex-col justify-center">
+                          <span>{d.nombre}</span>
+                          <span className="text-[12px] font-normal text-muted">
+                            {d.descripcion}
+                          </span>
+                        </span>
+                      </NavLink>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ))}
