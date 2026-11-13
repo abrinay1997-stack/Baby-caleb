@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nombreDeVentana } from "./Entregas";
+import { diaEnPalabras, nombreDeVentana } from "./Entregas";
 import { sinPuntoFinal } from "../componentes";
 
 /**
@@ -56,5 +56,44 @@ describe("el punto final de una fecha", () => {
 
   it("y no se inventa uno donde no lo había", () => {
     expect(sinPuntoFinal("12 nov 2026")).toBe("12 nov 2026");
+  });
+});
+
+/**
+ * El día que se está mirando, en palabras.
+ *
+ * El campo de al lado es un `<input type="date">`, que lo dibuja el navegador
+ * en el idioma del TELÉFONO: puede salir «11/13/2026». Este repositorio ya
+ * pagó esa factura una vez —el panel decía «11/10/2026» para el 10 de
+ * noviembre, que una panameña lee como el 11 de octubre— y la regla que quedó
+ * es que el mes va con nombre. Dentro de un control del sistema no se puede
+ * imponer, así que se dice al lado; esto comprueba que lo que se dice al lado
+ * cumple la regla.
+ */
+describe("el día de las entregas, en palabras", () => {
+  it("lleva el mes con NOMBRE, nunca en número", () => {
+    const texto = diaEnPalabras("2026-11-13");
+    expect(texto).toContain("nov");
+    expect(texto).toContain("13");
+    expect(texto).toContain("2026");
+    // Lo que no puede pasar: que se lea como 11/13 o 13/11.
+    expect(texto).not.toMatch(/\d{1,2}\/\d{1,2}/);
+  });
+
+  it("no se corre un día por la zona horaria", () => {
+    // La trampa: 'YYYY-MM-DD' es medianoche UTC, y pasarlo a la hora de Panamá
+    // le resta cinco horas y lo enseña como el día anterior.
+    expect(diaEnPalabras("2026-01-01")).toContain("1");
+    expect(diaEnPalabras("2026-01-01")).toContain("ene");
+    expect(diaEnPalabras("2026-01-01")).toContain("2026");
+    expect(diaEnPalabras("2026-03-01")).toContain("mar");
+    expect(diaEnPalabras("2026-12-31")).toContain("31");
+    expect(diaEnPalabras("2026-12-31")).toContain("dic");
+  });
+
+  it("y un campo a medio escribir no saca «Invalid Date»", () => {
+    for (const malo of ["", "2026-11", "ayer", "13/11/2026", "2026-13-45"]) {
+      expect(diaEnPalabras(malo), `«${malo}»`).toBe("");
+    }
   });
 });

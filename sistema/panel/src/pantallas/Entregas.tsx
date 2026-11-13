@@ -151,6 +151,39 @@ function Campo({
  * un nombre bonito a un código que ya nadie reconoce sería peor: diría que la
  * ventana existe cuando lo que pasa es que se borró o se renombró.
  */
+/**
+ * «2026-11-13» → «viernes 13 nov 2026».
+ *
+ * Con el mes escrito, porque el campo de al lado es un `<input type="date">` y
+ * ése lo pinta el navegador en el idioma del teléfono: puede salir
+ * «11/13/2026», que una panameña lee como el 11 de marzo… o como el 13 de
+ * noviembre, según quién mire. La regla del repositorio es que el mes va con
+ * NOMBRE (`fecha.test.ts`), y dentro de un control del sistema no se puede
+ * imponer; aquí se dice al lado.
+ *
+ * `timeZone: "UTC"` y no «America/Panama», que parece lo correcto y es el
+ * error: una fecha 'YYYY-MM-DD' se interpreta como medianoche UTC, y pasarla a
+ * la hora de Panamá le resta cinco horas y la enseña como el día ANTERIOR. La
+ * fecha ya viene en el día de Panamá; aquí solo se formatea. Es la misma
+ * trampa que ya está documentada en `diaCorto` del Resumen.
+ *
+ * Una cadena que no sea una fecha devuelve «» en vez de «Invalid Date»: el
+ * campo puede quedar vacío mientras se escribe, y un cartel de error de
+ * JavaScript debajo del calendario no le dice nada a nadie.
+ */
+export function diaEnPalabras(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "";
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("es-PA", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(d);
+}
+
 export function nombreDeVentana(
   codigo: string | null,
   ventanas: readonly { id: string; etiqueta: string }[],
@@ -269,6 +302,21 @@ export function Entregas() {
               onChange={(ev) => setDia(ev.target.value)}
               className={`${ENTRADA} md:w-auto`}
             />
+            {/* El día, otra vez, con el mes escrito.
+
+                No es repetir por repetir. El calendario nativo lo dibuja el
+                NAVEGADOR y lo escribe en el idioma del teléfono, no en el de
+                la página: en este contenedor sale «11/13/2026». Esa es
+                exactamente la forma que este repositorio ya se prohibió —hay
+                una prueba, `fecha.test.ts`, que existe porque el panel decía
+                «11/10/2026» para el 10 de noviembre y una panameña lee eso
+                como el 11 de octubre—, y dentro de un control del sistema no
+                se puede cambiar desde aquí.
+
+                Así que se dice al lado, con el mes con nombre, que es lo único
+                que no se puede leer al revés en ningún país. Y aquí importa:
+                este campo decide QUÉ ENTREGAS se están mirando. */}
+            <span className="mt-1 block text-[12px] text-muted">{diaEnPalabras(dia)}</span>
           </label>
 
           {aviso === null ? null : (

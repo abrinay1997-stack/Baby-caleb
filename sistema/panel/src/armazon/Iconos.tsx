@@ -62,11 +62,40 @@ export function IconoExistencias({ className }: PropsIcono) {
   );
 }
 
+/** Pedidos: lo que una clienta encargó. Una nota con sus renglones. */
+export function IconoPedidos({ className }: PropsIcono) {
+  return (
+    <svg {...comun} className={className}>
+      <path d="M7.5 3h9a1.5 1.5 0 0 1 1.5 1.5v15.1a.4.4 0 0 1-.62.33L15 18.2l-2.38 1.6a1.1 1.1 0 0 1-1.24 0L9 18.2l-2.38 1.73A.4.4 0 0 1 6 19.6V4.5A1.5 1.5 0 0 1 7.5 3Z" />
+      <path d="M9 7.5h6M9 11h6" />
+    </svg>
+  );
+}
+
+/** Entregas del día: lo que sale a la calle. Una caja en movimiento. */
+export function IconoEntregas({ className }: PropsIcono) {
+  return (
+    <svg {...comun} className={className}>
+      <path d="M3 7.6 12 3.5l9 4.1v8.8L12 20.5 3 16.4Z" />
+      <path d="M3 7.6 12 11.7l9-4.1M12 11.7v8.8" />
+    </svg>
+  );
+}
+
 /** El cajón con todo lo demás. */
 export function IconoMenu({ className }: PropsIcono) {
   return (
     <svg {...comun} className={className}>
       <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  );
+}
+
+/** Caleb: preguntarle algo. Un globo de conversación. */
+export function IconoCaleb({ className }: PropsIcono) {
+  return (
+    <svg {...comun} className={className}>
+      <path d="M20.5 11.6c0 3.9-3.8 7.1-8.5 7.1a9.8 9.8 0 0 1-2.4-.3l-4.3 1.8a.35.35 0 0 1-.48-.4l.8-3.3C4.3 15.2 3.5 13.5 3.5 11.6c0-3.9 3.8-7.1 8.5-7.1s8.5 3.2 8.5 7.1Z" />
     </svg>
   );
 }
@@ -81,11 +110,28 @@ export function IconoCerrar({ className }: PropsIcono) {
 }
 
 /**
- * El icono de cada ruta. Una ruta sin icono NO rompe la barra: se queda con su
- * palabra, que es lo que de verdad la nombra.
+ * El icono de cada ruta.
+ *
+ * Una ruta sin icono no rompe la barra —se queda con su palabra— pero sí
+ * rompe la fila: la celda sin dibujo no tiene la pastilla de 22 px, así que su
+ * palabra se sube a centrarse mientras las demás se quedan abajo, y la barra
+ * se lee torcida. Es lo que pasaba, y en el peor sitio: la barra inferior
+ * tenía icono para Resumen y para el Menú, y NINGUNO para Pedidos ni para
+ * Entregas del día — que son, por `RUTAS_BARRA`, las dos que se abren todos
+ * los días. «Entregas del día» además partía en dos renglones contra el borde.
+ *
+ * `IconoCatalogo` e `IconoExistencias` estaban escritos y no se dibujaban en
+ * ningún sitio: sus rutas no están en la barra. Se quedan porque el cajón o
+ * una barra futura pueden usarlos, pero el hueco real estaba en las dos de
+ * arriba.
+ *
+ * La regla, para quien añada un destino a `RUTAS_BARRA`: si va en la barra,
+ * lleva icono aquí.
  */
 export const ICONOS: Record<string, (p: PropsIcono) => React.JSX.Element> = {
   "/": IconoResumen,
+  "/pedidos": IconoPedidos,
+  "/entregas": IconoEntregas,
   "/catalogo": IconoCatalogo,
   "/existencias": IconoExistencias,
 };

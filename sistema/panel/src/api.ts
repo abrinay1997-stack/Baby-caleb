@@ -165,11 +165,38 @@ export function useCarga<T>(ruta: string, dependencias: unknown[] = []): Estado<
   return estado;
 }
 
-/** Centavos a lo que se lee. El dinero se muestra, nunca se calcula aquí. */
+/**
+ * Centavos a lo que se lee. El dinero se muestra, nunca se calcula aquí.
+ *
+ * **Con separador de miles**, y no es cosmética. Sin él salía `$5555555.55`:
+ *
+ *  - No se lee. Contar siete cifras seguidas para saber si son cincuenta mil o
+ *    quinientos mil es justo lo que no se hace de pie y con prisa, y es un
+ *    número con el que se decide.
+ *  - Y rompía la pantalla. `$5555555.55` no tiene dónde partirse, así que a
+ *    32 px en negrita —el tamaño de `Cifra`— medía 199 px dentro de una celda
+ *    de 143, empujaba su columna, y el Resumen entero se desplazaba 26 px de
+ *    lado en el teléfono. El §7g lo prohíbe. El auditor no lo veía porque los
+ *    datos de muestra son de dos cifras; se encontró inyectando un total
+ *    grande, que es lo que va a tener el cierre de un año.
+ *
+ * Los grupos se arman a mano, con el número ya partido en entero y centavos,
+ * y NO con `toLocaleString` sobre `centavos / 100`: esa división mete coma
+ * flotante en el único sitio del panel donde el dinero se vuelve texto, y
+ * `0.1 + 0.2` ya enseñó cómo acaba eso. Aquí `abs % 100` y `Math.trunc` son
+ * enteros exactos hasta el límite de `Number`, muy por encima de cualquier
+ * cifra de esta tienda.
+ *
+ * El punto decimal y la coma de millares son los de Panamá: `$1,234.50`.
+ * `deCentavos` (`dinero.ts`) es otra cosa y se queda como está — alimenta el
+ * campo que se edita, y ahí un separador rompería `aCentavos`.
+ */
 export function dinero(centavos: number): string {
   const signo = centavos < 0 ? "-" : "";
   const abs = Math.abs(centavos);
-  return `${signo}$${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+  const entero = Math.trunc(abs / 100);
+  const conMiles = String(entero).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${signo}$${conMiles}.${String(abs % 100).padStart(2, "0")}`;
 }
 
 /**

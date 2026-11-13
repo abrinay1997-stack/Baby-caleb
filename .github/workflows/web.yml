@@ -58,14 +58,21 @@ jobs:
 
       - run: npm run build
 
-      # Abre las siete páginas en un navegador de verdad y mide el contraste
-      # de cada nodo de texto contra su fondo CALCULADO. No mira las clases:
-      # caza lo que un grep no ve — un color heredado, una opacidad, un fondo
-      # que viene de tres divs más arriba.
+      # Abre CADA página en un navegador de verdad, en escritorio y en teléfono,
+      # y mide dos cosas: el contraste de cada nodo de texto contra su fondo
+      # CALCULADO, y las reglas del §7 (44 px táctiles, 16 px en los campos, el
+      # aro de foco, la etiqueta de cada campo, el nombre de cada botón de solo
+      # icono y el orden de los encabezados). No mira las clases: caza lo que un
+      # grep no ve — un color heredado, una opacidad, un fondo que viene de tres
+      # divs más arriba.
       #
-      # El 2026-11-09 esto encontró 55 fallos, entre ellos el titular del
-      # llamado a la acción (1.75:1) y el botón con el que se compra (2.20:1).
-      # Está aquí para que no vuelvan.
+      # El 2026-11-09 esto encontró 55 fallos de contraste, entre ellos el
+      # titular del llamado a la acción (1.75:1) y el botón con el que se compra
+      # (2.20:1). Está aquí para que no vuelvan.
+      #
+      # Medía SOLO escritorio y SOLO siete páginas: la ficha de producto —con la
+      # que se vende—, el carrito, las legales y la de «no existe» no estaban en
+      # la lista, y el menú del teléfono no se había medido nunca. Ahora sí.
       # El navegador pesa ~170 MB y tardaba 2m40s EN CADA EJECUCIÓN. Guardado
       # en caché baja a segundos. La llave lleva la versión de Playwright: si
       # se actualiza, la caché vieja deja de valer sola y se descarga el
@@ -101,15 +108,14 @@ jobs:
             echo "listo=si" >> "$GITHUB_OUTPUT"
           else
             echo "listo=no" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Comprobaciones de navegador NO ejecutadas::No se pudo instalar el navegador (la red de esta máquina no resuelve los espejos de Ubuntu). El contraste y las capturas NO se midieron en esta corrida."
+            echo "::warning title=Comprobaciones de navegador NO ejecutadas::No se pudo instalar el navegador (la red de esta máquina no resuelve los espejos de Ubuntu). El contraste, el §7 y las capturas NO se midieron en esta corrida."
           fi
 
-      # Igual que en `sistema.yml`: un hallazgo de contraste SÍ bloquea; un
-      # espejo de Ubuntu caído, no. Son cosas distintas y hasta hoy se
-      # trataban igual.
-      - name: Contraste (WCAG AA)
+      # Igual que en `sistema.yml`: un hallazgo SÍ bloquea; un espejo de Ubuntu
+      # caído, no. Son cosas distintas y hasta hoy se trataban igual.
+      - name: Auditar la web (contraste WCAG AA, §7 y accesibilidad)
         if: steps.navegador.outputs.listo == 'si'
-        run: npm run contraste
+        run: npm run auditar:web
 
       # Presupuesto de tamaño. Lo que se vigila no es el peso en sí, sino que
       # CREZCA sin que nadie lo note. El 2026-11-09 `dist` pesaba 3296 KB, casi

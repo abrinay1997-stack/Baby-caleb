@@ -484,7 +484,12 @@ function Numero({
       {valor === null ? (
         <p className="m-0 py-1 text-[15px] font-bold">Todavía no hay datos</p>
       ) : (
-        <p className="m-0 text-[32px] font-bold leading-tight">{valor}</p>
+        /* `break-words` en la cifra: una cifra larga parte de línea en vez
+           de empujar la página de lado (§7g). A 32 px en negrita, un total de
+           siete cifras mide más que su celda, y como las cuadrículas estiran a
+           sus hijos, arrastraba la fila entera. Dos renglones feos son mejores
+           que una pantalla que se mueve en horizontal. */
+        <p className="m-0 break-words text-[32px] font-bold leading-tight">{valor}</p>
       )}
       {comparacion === undefined ? null : (
         <p className="m-0 text-[12px] font-bold">{comparacion}</p>

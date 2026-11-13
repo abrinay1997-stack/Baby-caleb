@@ -339,10 +339,22 @@ export function EditarVariante({
       abierta
       titulo={variante.codigo}
       alCerrar={cerrar}
+      /* El pie dice lo mismo que el de las otras seis hojas: a la izquierda la
+         salida, a la derecha guardar.
+
+         Aquí la izquierda era «Borrar». Mismo tamaño que «Guardar», mismo
+         contorno que el «Cancelar» de Bodegas, Zonas, Traslado, Usuarios,
+         Llaves y Producto nuevo, y a 8 px de distancia — medidos. O sea: en
+         seis hojas ese sitio significa «sáqueme de aquí sin tocar nada» y en
+         ésta empezaba a borrar un producto. Y la hoja no tenía salida: para
+         arrepentirse había que encontrar la equis de la esquina.
+
+         Borrar no desaparece, se muda al final del formulario, que es donde
+         se va a buscar y no donde cae el pulgar. */
       pie={
         <>
-          <button type="button" onClick={preguntarQuePasa} className={`${BOTON} border border-line`}>
-            Borrar
+          <button type="button" onClick={cerrar} className={`${BOTON} border border-line`}>
+            Cancelar
           </button>
           <button
             type="button"
@@ -543,6 +555,28 @@ export function EditarVariante({
           <span className="block text-[12px] text-muted">{textoDePublicado(publicado)}</span>
         </span>
       </label>
+
+      {/* Borrar, al final y aparte.
+
+          Separado del pie por una raya y por todo el formulario: para llegar
+          aquí hay que bajar a propósito, que es exactamente lo que debe costar
+          borrar un producto, y lo contrario de estar a 8 px de «Guardar».
+          Sigue siendo de contorno y no navy porque no borra: abre la pregunta
+          —y esa pregunta es la que dice si se borra o solo se oculta—. El navy
+          es del botón que confirma, como en Cobros y en Usuarios. */}
+      <div className="mt-6 border-t border-line pt-4">
+        <button
+          type="button"
+          onClick={preguntarQuePasa}
+          className="tactil w-full rounded-[14px] border border-line px-4 py-3 font-bold focus-visible:outline-accent-edge focus-visible:outline-2"
+        >
+          Borrar este producto
+        </button>
+        <p className="m-0 mt-2 text-[12px] text-muted">
+          Le vamos a decir antes qué pasa de verdad: los productos que ya se
+          vendieron no se borran, se ocultan.
+        </p>
+      </div>
     </Hoja>
   );
 }

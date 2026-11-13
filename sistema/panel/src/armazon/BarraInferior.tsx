@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { BotonCaleb } from "../pantallas/Caleb";
 import { ICONOS, IconoMenu } from "./Iconos";
 import type { Destino } from "./navegacion";
 
@@ -31,6 +32,16 @@ export interface BarraInferiorProps {
   menuAbierto: boolean;
   idDelCajon: string;
   disparador: React.RefObject<HTMLButtonElement | null>;
+  /**
+   * Caleb vive AQUÍ en el teléfono, no flotando sobre el contenido.
+   *
+   * Como burbuja fija se sentaba encima de lo que hubiera debajo —«Preparar
+   * entrega» y una fila de Existencias, medidas—, y el hueco que `.contenido`
+   * le reservaba solo protege el final de la página. En la barra tiene su
+   * propia celda, con su sitio reservado por construcción: no hay ningún
+   * punto de la pantalla donde tocar signifique otra cosa.
+   */
+  alAbrirCaleb: () => void;
 }
 
 /** Mismo alto y mismo reparto para los enlaces y para el botón del cajón. */
@@ -48,6 +59,7 @@ export function BarraInferior({
   menuAbierto,
   idDelCajon,
   disparador,
+  alAbrirCaleb,
 }: BarraInferiorProps) {
   return (
     <nav
@@ -78,13 +90,22 @@ export function BarraInferior({
                     >
                       {Icono ? <Icono className="h-[22px] w-[22px]" /> : null}
                     </span>
-                    <span className="leading-none">{d.nombre}</span>
+                    {/* El nombre corto si lo tiene: «Entregas del día» partía en dos
+                        renglones contra el borde mientras sus vecinas ocupaban uno.
+                        El nombre entero sigue siendo el del título y el del cajón. */}
+                    <span className="leading-none">{d.corto ?? d.nombre}</span>
                   </>
                 )}
               </NavLink>
             </li>
           );
         })}
+
+        {/* Caleb antes del Menú: se pregunta más de lo que se navega al
+            resto. */}
+        <li className="flex-1">
+          <BotonCaleb alAbrir={alAbrirCaleb} variante="celda" />
+        </li>
 
         <li className="flex-1">
           <button

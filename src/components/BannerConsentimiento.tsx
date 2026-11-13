@@ -40,11 +40,21 @@ import { activarPixel, entornoDelNavegador, pixelYaCargado } from '../consentimi
  * ## Diseño
  *
  * No hay nada nuevo: `bg-surface`, `border-line`, `text-muted` y los mismos
- * botones (`buttonVariants`) del resto del sitio. El único detalle propio es
- * que mientras está abierto tapa el globo del chat, que vive en la misma
- * esquina de abajo. Se acepta a sabiendas: es un estado corto —se contesta una
- * vez— y la alternativa era mover el chat, que es diseño de la web y no se
- * toca sin pedido.
+ * botones (`buttonVariants`) del resto del sitio.
+ *
+ * ## Lo que tapa, y lo que ya no
+ *
+ * Este comentario decía que la tarjeta «tapa el globo del chat» y que se
+ * aceptaba a sabiendas. Lo que de verdad pasaba era peor y nadie lo había
+ * medido: el que tapaba no era la tarjeta, era **el envoltorio** —una franja
+ * de lado a lado con relleno transparente— y se tragaba todos los toques de
+ * esa franja en todas las páginas, cayera encima lo que cayera. En el teléfono
+ * el globo del chat quedaba imposible de pulsar aunque se viera entero.
+ *
+ * Eso está arreglado: los toques solo los recibe la tarjeta. Lo que sigue
+ * siendo verdad es lo que el comentario decía — en un teléfono la tarjeta
+ * cubre la esquina donde vive el globo mientras está abierta, y eso sí es un
+ * estado corto, se contesta una vez.
  */
 export default function BannerConsentimiento() {
   const [abierto, setAbierto] = useState(false);
@@ -103,9 +113,17 @@ export default function BannerConsentimiento() {
       role="dialog"
       aria-modal="false"
       aria-labelledby="consentimiento-titulo"
-      className="fixed inset-x-0 bottom-0 z-[1001] px-4 pb-4 sm:px-6 sm:pb-6"
+      // `pointer-events-none` en el envoltorio y `pointer-events-auto` en la
+      // tarjeta. El envoltorio es una franja de lado a lado con relleno
+      // transparente, y mientras estuvo abierta se tragaba TODOS los toques de
+      // esa franja: no solo los suyos. Medido con un navegador el 2026-11-13 —
+      // pulsar el globo del chat era imposible, y el que lo intentara desde el
+      // teléfono concluiría que el chat está roto. Lo que no se podía tocar
+      // cambia según la página: aquí el chat, en el carrito lo que caiga bajo
+      // la franja.
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-[1001] px-4 pb-4 sm:px-6 sm:pb-6"
     >
-      <div className="bg-surface border-line mx-auto max-w-3xl rounded-lg border p-5 sm:p-6">
+      <div className="bg-surface border-line pointer-events-auto mx-auto max-w-3xl rounded-lg border p-5 sm:p-6">
         <h2 id="consentimiento-titulo" className="text-fg mb-2 text-base font-bold">
           ¿Nos deja medir con Meta?
         </h2>
@@ -119,7 +137,12 @@ export default function BannerConsentimiento() {
           <button
             type="button"
             onClick={() => decidir('aceptado')}
-            className={buttonVariants({ variant: 'accent', size: 'sm' })}
+            // `size: 'md'` y no `'sm'`: medían 36 y 38 px de alto. Son los dos
+            // botones de una decisión legal —la Ley 81 pide que el «no» sea
+            // igual de fácil que el «sí»— y un botón al que hay que apuntar es
+            // menos fácil que uno que no. Los dos cambian a la vez: el día que
+            // uno sea más cómodo que el otro, la decisión deja de ser libre.
+            className={buttonVariants({ variant: 'accent', size: 'md' })}
           >
             Permitir
           </button>
@@ -128,14 +151,14 @@ export default function BannerConsentimiento() {
           <button
             type="button"
             onClick={() => decidir('rechazado')}
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            className={buttonVariants({ variant: 'outline', size: 'md' })}
           >
             No permitir
           </button>
           <Link
             to="/privacidad#cookies"
             onClick={() => setAbierto(false)}
-            className="text-muted hover:text-fg focus-visible:outline-accent-edge inline-flex items-center justify-center rounded-md px-2 py-2 text-sm underline underline-offset-4 focus-visible:outline-2"
+            className="text-muted hover:text-fg focus-visible:outline-accent-edge inline-flex min-h-11 items-center justify-center rounded-md px-2 text-sm underline underline-offset-4 focus-visible:outline-2"
           >
             Leer la política de privacidad
           </Link>

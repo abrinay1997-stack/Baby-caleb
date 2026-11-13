@@ -4,6 +4,7 @@
  */
 
 import { useEffect } from 'react';
+import { MotionConfig } from 'motion/react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { initSmoothScroll, scrollToTop } from './lib/smooth';
 
@@ -23,6 +24,7 @@ import Tips from './pages/Tips';
 import CarritoPagina from './pages/Carrito';
 import Privacidad from './pages/Privacidad';
 import Terminos from './pages/Terminos';
+import NoEncontrada from './pages/NoEncontrada';
 import { ProveedorCarrito } from './carrito/useCarrito';
 
 function ScrollToTop() {
@@ -40,6 +42,12 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      {/* `reducedMotion="user"`: lo que anima `motion/react` —hoy, la entrada
+          del menú del teléfono— obedece la preferencia del sistema. Va aquí y
+          no en el componente porque es una decisión del sitio entero, y porque
+          el siguiente que anime algo con esta librería lo hereda sin tener que
+          acordarse. Lo que anima GSAP lo resuelve `src/lib/movimiento.ts`. */}
+      <MotionConfig reducedMotion="user">
       {/* Envuelve TODO lo de dentro del router: la barra de navegación necesita
           el número del carrito igual que la pantalla del carrito. */}
       <ProveedorCarrito>
@@ -50,7 +58,7 @@ export default function App() {
       >
         Saltar al contenido
       </a>
-      <div className="bg-bg min-h-screen text-fg font-body">
+      <div className="bg-bg min-h-dvh text-fg font-body">
         <S01Nav />
         <Routes>
           <Route path="/" element={<Home />} />
@@ -72,6 +80,12 @@ export default function App() {
               seo/rutas.ts y no en SIN_INDEXAR. */}
           <Route path="/privacidad" element={<Privacidad />} />
           <Route path="/terminos" element={<Terminos />} />
+          {/* Cualquier otra dirección. Sin esto, `<Routes>` no pintaba NADA:
+              la página quedaba con la barra arriba, el pie debajo y un hueco
+              en medio — sin `<main>`, sin encabezado y sin ninguna salida. Un
+              enlace viejo de un estado de WhatsApp lleva ahí, y lo que se ve
+              parece la tienda rota, no una dirección equivocada. */}
+          <Route path="*" element={<NoEncontrada />} />
         </Routes>
         <Chatbot />
         <S20Footer />
@@ -81,6 +95,7 @@ export default function App() {
         <BannerConsentimiento />
       </div>
       </ProveedorCarrito>
+      </MotionConfig>
     </BrowserRouter>
   );
 }

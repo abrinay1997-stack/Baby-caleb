@@ -66,7 +66,7 @@ export default function S10Gallery() {
                 />
               </div>
               <div className="p-4 flex flex-col gap-1">
-                <span className="mono text-[10px] text-sage-strong">{item.productName}</span>
+                <span className="mono text-sage-strong">{item.productName}</span>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-bold text-fg leading-tight">{item.size}</span>
                   <span className="font-display font-bold text-accent-strong">{priceLabel}</span>

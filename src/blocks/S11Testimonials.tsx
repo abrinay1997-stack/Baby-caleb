@@ -39,7 +39,14 @@ export default function S11Testimonials() {
                 <p className="text-sm text-muted">{item.role}</p>
               </div>
               <div className="text-right">
-                <span className="inline-block px-3 py-1 bg-sage/20 text-sage-strong rounded-pill text-xs font-bold mono">
+                {/* `text-fg` y no `text-sage-strong`: el verde de marca sobre
+                    el verde al 20 % da 4.16 y AA pide 4.5 (medido por axe el
+                    2026-11-13). El par que sí está medido y documentado en
+                    `brand.json` es el navy sobre el verde — 6.96 — y es el
+                    mismo que ya usa la píldora «Sin cloro · Sin perfumes» del
+                    hero. No es un color nuevo: es el par que la marca ya
+                    tenía elegido para escribir encima del verde. */}
+                <span className="inline-block px-3 py-1 bg-sage/20 text-fg rounded-pill text-xs font-bold mono">
                   {item.result}
                 </span>
               </div>

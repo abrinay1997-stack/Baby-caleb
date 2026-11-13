@@ -15,8 +15,11 @@
  * Necesita el panel servido en BASE (por defecto http://127.0.0.1:4173).
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { chromium } from "playwright";
+
+import { PRUEBAS, medir } from "./medir-el-panel.mjs";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:4173";
 const SALIDA = process.env.SALIDA ?? ".capturas";
@@ -58,213 +61,129 @@ const VISTAS = [
   ["telefono", { width: 390, height: 844 }],
 ];
 
+
 /**
- * Lo que se mide dentro de la página.
+ * Mide una página como la vive alguien que usa el teclado.
  *
- * Va como una función que se serializa al navegador, así que no puede usar
- * nada de fuera: todo lo que necesita entra por argumento o se declara aquí.
+ * El Tab no es un adorno: Chrome apaga `:focus-visible` mientras la última
+ * cosa que pasó fue un clic, y este guion abre cada hoja con clics. Sin esta
+ * pulsación, el panel se mide en «modo ratón» y la regla del aro de foco
+ * acusa a todos los botones de no tenerlo. Va aquí, en un solo sitio, para
+ * que no se pueda olvidar en una de las quince llamadas.
  */
-function medir() {
-  const fallas = [];
-  const visible = (el) => {
-    const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return false;
-    if (getComputedStyle(el).visibility === "hidden") return false;
-    // `checkVisibility` es lo único que caza lo que está DENTRO de un
-    // `<details>` cerrado: ahí el elemento conserva su tamaño y su
-    // `visibility`, así que las dos comprobaciones de arriba lo dan por
-    // visible y el auditor mide —y aprueba, o suspende— algo que nadie puede
-    // ver. Dio un falso positivo en Pasarelas.
-    return typeof el.checkVisibility === "function" ? el.checkVisibility() : true;
-  };
-  const donde = (el) => {
-    const t = (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
-    return `<${el.tagName.toLowerCase()}>${t ? ` «${t}»` : ""}`;
-  };
-
-  // 7a - 44 px de alto en todo lo que se toca. Un enlace dentro de un párrafo
-  // no cuenta: lo táctil es lo que existe para tocarse.
-  for (const el of document.querySelectorAll("button, a[href], [role='button'], summary")) {
-    if (!visible(el)) continue;
-    if (el.closest("p")) continue;
-    const r = el.getBoundingClientRect();
-    if (r.height < 44 - 0.5) {
-      fallas.push({ regla: "44px táctil", detalle: `${donde(el)} mide ${r.height.toFixed(1)}px de alto` });
-    }
-  }
-
-  // 7b - 16 px en los campos. Con menos, iOS hace zoom al enfocar y la
-  // pantalla se descoloca sola.
-  for (const el of document.querySelectorAll("input, select, textarea")) {
-    if (!visible(el)) continue;
-    const px = parseFloat(getComputedStyle(el).fontSize);
-    if (px < 16 - 0.01) {
-      fallas.push({ regla: "16px en campos", detalle: `${donde(el)} tiene ${px}px` });
-    }
-  }
-
-  // 7c - nada de texto por debajo de 12 px, ni aunque sea una nota al pie.
-  for (const el of document.querySelectorAll("body *")) {
-    if (!visible(el)) continue;
-    const propio = Array.from(el.childNodes).some(
-      (n) => n.nodeType === 3 && (n.textContent ?? "").trim().length > 0,
-    );
-    if (!propio) continue;
-    const px = parseFloat(getComputedStyle(el).fontSize);
-    if (px < 12 - 0.01) {
-      fallas.push({ regla: "piso de 12px", detalle: `${donde(el)} tiene ${px}px` });
-    }
-  }
-
-  // 7e - ni `100vh` (en el teléfono se la come la barra del navegador) ni
-  // `min-width` en píxeles (obliga a hacer scroll de lado). Se miran las hojas
-  // de estilo porque es ahí donde se escriben, no en el estilo calculado.
-  for (const hoja of Array.from(document.styleSheets)) {
-    let reglas;
-    try {
-      reglas = hoja.cssRules;
-    } catch {
-      continue; // De otro origen: no se puede leer, y tampoco es nuestra.
-    }
-    const recorrer = (lista) => {
-      for (const regla of Array.from(lista)) {
-        if (regla.cssRules) recorrer(regla.cssRules);
-        const texto = regla.style?.cssText;
-        if (!texto) continue;
-        if (/\b100vh\b/.test(texto)) {
-          fallas.push({ regla: "sin 100vh", detalle: `${regla.selectorText}: ${texto.slice(0, 80)}` });
-        }
-        const min = regla.style.minWidth;
-        if (min && /\d(px)$/.test(min) && parseFloat(min) > 0) {
-          fallas.push({ regla: "sin min-width en px", detalle: `${regla.selectorText}: min-width:${min}` });
-        }
-      }
-    };
-    recorrer(reglas);
-  }
-
-  // La barra inferior es `position: fixed`: no empuja nada, así que si el
-  // contenido no reserva su alto, la última fila queda DEBAJO de ella. Es un
-  // fallo que no se ve en una captura de página entera —ahí la barra se dibuja
-  // donde esté el viewport— y que en la mano significa que a la dueña le falta
-  // el último producto de la lista sin ninguna señal de que falta.
+async function medirAhora(pagina, opciones = {}) {
+  // El Tab mueve el foco al primer enfocable, que es «Saltar al contenido»
+  // —arriba del todo—, y el navegador lo trae a la vista: la página SALTA a
+  // scrollY = 0. Medido: en escritorio pasaba en tres de seis pantallas
+  // (1607 → 0 en el Resumen, 1422 en Contabilidad, 1039 en Cobros) y en el
+  // teléfono a veces sí y a veces no, porque traerlo a la vista es asíncrono.
   //
-  // Se mide, no se estima: el hueco se escribe una vez en el CSS y el alto de
-  // la barra cambia cada vez que alguien le toca un renglón.
-  const barra = document.querySelector("nav.solo-telefono");
-  const principal = document.querySelector("main.contenido");
-  if (barra && principal && getComputedStyle(barra).display !== "none") {
-    const alto = barra.getBoundingClientRect().height;
-    const hueco = parseFloat(getComputedStyle(principal).paddingBottom);
-    if (hueco < alto) {
-      fallas.push({
-        regla: "la barra no tapa el contenido",
-        detalle: `la barra mide ${alto}px y el hueco es de ${hueco}px: faltan ${(alto - hueco).toFixed(1)}px`,
-      });
-    }
-  }
-
-  // 7d - La burbuja de Caleb no se sienta encima de nada que se toque.
+  // Eso deja la regla de la burbuja midiendo ARRIBA mientras su comentario
+  // dice, con todas las letras, que se mide con la página abajo del todo —que
+  // es donde lo fijo puede tapar algo—. Las fallas que encontró eran reales,
+  // pero no por el motivo que estaba escrito, y una medida que depende de en
+  // qué pantalla esté es una medida que un día dice que no hay nada.
   //
-  // Es la hermana de la comprobación de la barra, y hacía falta por lo mismo:
-  // la burbuja está FIJA, así que en una captura de página entera se dibuja
-  // una sola vez, donde estuviera el viewport, encima de una fila cualquiera
-  // —y eso es el artefacto, no el fallo—. El fallo de verdad es que el
-  // contenido no reserve su hueco, y entonces en la mano hay un botón debajo
-  // de la burbuja.
-  //
-  // Tapaba «No cuadra» en Cobros, que está al lado de «Confirmar: el dinero
-  // entró». Se arregló, y los dos arreglos de CSS de esa tanda —éste y el de
-  // la cifra clave— se rompieron a propósito y el auditor siguió diciendo
-  // «sin fallas»: medían todo menos justo esto. Por eso están aquí.
-  //
-  // Se mide con la página abajo del todo, que es donde la última fila queda
-  // más cerca de la burbuja; quien llama a esto hace el scroll antes.
-  const burbuja = document.querySelector(".burbuja-caleb");
-  if (burbuja && visible(burbuja)) {
-    const b = burbuja.getBoundingClientRect();
-    const dentroDelPrincipal = document.querySelectorAll(
-      "main button, main a[href], main [role='button'], main summary, main input, main select, main textarea",
-    );
-    for (const el of dentroDelPrincipal) {
-      if (!visible(el)) continue;
-      const r = el.getBoundingClientRect();
-      // Se solapan de verdad: dos rectángulos que solo se rozan por un píxel
-      // no esconden nada, y perseguir eso daría rojos que nadie puede
-      // arreglar.
-      const ancho = Math.min(r.right, b.right) - Math.max(r.left, b.left);
-      const alto = Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top);
-      if (ancho > 1 && alto > 1) {
-        fallas.push({
-          regla: "la burbuja no tapa lo que se toca",
-          detalle: `la burbuja cubre ${Math.round(ancho)}×${Math.round(alto)}px de ${donde(el)}`,
-        });
-      }
-    }
-  }
-
-  // 7e - En el teléfono, la cifra que se viene a buscar va ARRIBA A LA
-  // DERECHA.
-  //
-  // El CSS lo declara en prosa desde siempre y se rompía sin que nada lo
-  // dijera: cuando la celda del título crecía a dos líneas, la cifra se caía
-  // al renglón de abajo y aterrizaba entre dos datos sueltos. En Bodegas se
-  // leía «Principal 412 Productos 96 unidades», con otro número metido entre
-  // el dato y su unidad; y en Existencias se caía justo en las filas bajas de
-  // stock, que son las que se viene a mirar.
-  //
-  // Solo en el teléfono: en la computadora las filas son columnas de tabla y
-  // la regla es otra.
-  if (window.innerWidth <= 480) {
-    for (const fila of document.querySelectorAll(".filas")) {
-      if (!visible(fila)) continue;
-      const titulo = fila.querySelector('.celda[data-papel="titulo"]');
-      const clave = fila.querySelector('.celda[data-papel="clave"]');
-      if (!titulo || !clave || !visible(titulo) || !visible(clave)) continue;
-
-      const t = titulo.getBoundingClientRect();
-      const c = clave.getBoundingClientRect();
-      const caja = fila.getBoundingClientRect();
-      const relleno = parseFloat(getComputedStyle(fila).paddingRight);
-
-      // Comparten el PRIMER renglón: la cifra tiene que empezar dentro de la
-      // primera línea del título, no debajo de ella. Se mide contra el alto de
-      // una línea del título y no contra su caja entera, que con dos líneas
-      // abarcaría también el renglón de abajo y daría por buena justo la
-      // forma que esto vigila.
-      const unaLinea = parseFloat(getComputedStyle(titulo).lineHeight) || t.height;
-      if (c.top > t.top + unaLinea * 0.75) {
-        fallas.push({
-          regla: "la cifra clave comparte línea con el título",
-          detalle: `la cifra de ${donde(titulo)} cayó ${Math.round(c.top - t.top)}px por debajo`,
-        });
-      }
-
-      // Y toca el borde derecho. Si no, está flotando en medio de la fila,
-      // que es como se leía «412 Productos 96».
-      const margen = caja.right - relleno - c.right;
-      if (margen > 2) {
-        fallas.push({
-          regla: "la cifra clave va pegada a la derecha",
-          detalle: `la cifra de ${donde(titulo)} quedó a ${Math.round(margen)}px del borde`,
-        });
-      }
-    }
-  }
-
-  // Se desborda de lado: el síntoma de todo lo de arriba cuando se escapa.
-  const desborde = document.documentElement.scrollWidth - document.documentElement.clientWidth;
-  if (desborde > 1) {
-    fallas.push({ regla: "sin scroll horizontal", detalle: `${desborde}px de más` });
-  }
-
-  return fallas;
+  // Lo encontró el agente que arreglaba el panel, leyendo el código del
+  // auditor que yo había tocado.
+  const donde = await pagina.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  await pagina.keyboard.press("Tab");
+  await pagina.evaluate(({ x, y }) => window.scrollTo(x, y), donde);
+  return pagina.evaluate(medir, opciones);
 }
 
-const navegador = await chromium.launch({
-  args: ["--no-sandbox"],
-  ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
-});
+/**
+ * Abre el navegador, y si el que Playwright espera no está, usa el que haya.
+ *
+ * Playwright pide una compilación EXACTA de Chromium. Donde el navegador
+ * viene con la imagen y no lo baja `playwright install`, los números no
+ * coinciden casi nunca, y el error que sale —«Executable doesn't exist»
+ * seguido de «run npx playwright install»— manda a bajar un navegador que a
+ * veces no se puede bajar, mientras hay uno perfectamente bueno al lado. Es
+ * un error que nombra la causa equivocada (`docs/TRAMPAS.md` §10): el que lo
+ * lee se pasa media hora peleando con la descarga.
+ *
+ * Así que se intenta lo normal, y si falla por eso, se usa el de la imagen y
+ * se dice en voz alta cuál se usó.
+ */
+async function abrirNavegador() {
+  const opciones = { args: ["--no-sandbox"] };
+  const dicho = process.env.CHROMIUM_PATH;
+  if (dicho) return chromium.launch({ ...opciones, executablePath: dicho });
+
+  try {
+    return await chromium.launch(opciones);
+  } catch (error) {
+    if (!/Executable doesn't exist/i.test(String(error?.message))) throw error;
+    const deLaImagen = "/opt/pw-browsers/chromium";
+    if (!existsSync(deLaImagen)) {
+      throw new Error(
+        "Playwright no encuentra su Chromium y tampoco hay uno en " +
+          deLaImagen +
+          ". Corra `npx playwright install chromium`, o apunte CHROMIUM_PATH a " +
+          "un Chrome que ya tenga.",
+      );
+    }
+    console.log("El Chromium de Playwright no está; se usa el de la imagen (" + deLaImagen + ").");
+    return chromium.launch({ ...opciones, executablePath: deLaImagen });
+  }
+}
+
+const navegador = await abrirNavegador();
+
+/**
+ * Antes de medir el panel, el auditor se mide a sí mismo.
+ *
+ * Cada regla tiene en `medir-el-panel.mjs` un trozo de HTML que tiene que
+ * suspender y otro que tiene que aprobar. Si una regla deja de señalar su
+ * propia muestra, este guion se para: un auditor que no mide es peor que un
+ * rojo, porque dice «sin fallas» y se le cree.
+ *
+ * Esto es la segunda mitad de una lección que ya está escrita en
+ * `docs/TRAMPAS.md` §11: dos arreglos de CSS se rompieron a propósito y el
+ * auditor siguió en verde, porque medía todo menos justo eso. Romper la regla
+ * a mano encontró el hueco UNA vez; esto lo encuentra siempre.
+ */
+async function autoprueba() {
+  const roto = [];
+  for (const prueba of PRUEBAS) {
+    const ancho = prueba.ancho ?? 1440;
+    const contexto = await navegador.newContext({ viewport: { width: ancho, height: 844 } });
+    const pagina = await contexto.newPage();
+    for (const [caso, esperaFalla] of [
+      ["rompe", true],
+      ["cumple", false],
+    ]) {
+      await pagina.setContent(prueba[caso], { waitUntil: "load" });
+      const fallas = await medirAhora(pagina, prueba.opciones ?? {});
+      const señalada = fallas.some((f) => f.regla === prueba.regla);
+      if (señalada !== esperaFalla) {
+        roto.push(
+          esperaFalla
+            ? `«${prueba.regla}» NO vio su propio fallo: la regla ya no mide nada`
+            : `«${prueba.regla}» señaló un caso que está bien: daría rojos imposibles de arreglar`,
+        );
+      }
+    }
+    await contexto.close();
+  }
+  return roto;
+}
+
+{
+  const roto = await autoprueba();
+  if (roto.length > 0) {
+    console.error("El auditor está roto. No se puede fiar de lo que diga del panel:\n");
+    for (const r of roto) console.error("  · " + r);
+    console.error(
+      "\nArregle la regla en scripts/medir-el-panel.mjs, o su muestra si lo que " +
+        "cambió es la forma del panel.",
+    );
+    await navegador.close();
+    process.exit(2);
+  }
+  console.log(`El auditor se probó a sí mismo: ${PRUEBAS.length} reglas señalan su propio fallo.`);
+}
 
 if (!soloMedir) await mkdir(SALIDA, { recursive: true });
 
@@ -301,7 +220,7 @@ for (const [nombreVista, tamano] of VISTAS) {
     });
     await pagina.waitForTimeout(150);
 
-    const fallas = await pagina.evaluate(medir);
+    const fallas = await medirAhora(pagina);
     revisadas += 1;
     for (const f of fallas) todas.push({ vista: nombreVista, pantalla: nombre, ...f });
 
@@ -318,7 +237,7 @@ for (const [nombreVista, tamano] of VISTAS) {
   {
     await pagina.goto(`${BASE}/llaves`, { waitUntil: "networkidle" });
     await pagina.waitForSelector("h1");
-    const deLlaves = await pagina.evaluate(medir);
+    const deLlaves = await medirAhora(pagina);
     revisadas += 1;
     for (const f of deLlaves) todas.push({ vista: nombreVista, pantalla: "llaves", ...f });
     if (!soloMedir) await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-llaves.png` });
@@ -327,7 +246,7 @@ for (const [nombreVista, tamano] of VISTAS) {
     if ((await crear.count()) > 0) {
       await crear.click();
       await pagina.waitForTimeout(300);
-      const deHoja = await pagina.evaluate(medir);
+      const deHoja = await medirAhora(pagina);
       revisadas += 1;
       for (const f of deHoja) todas.push({ vista: nombreVista, pantalla: "hoja-crear-llave", ...f });
       if (!soloMedir) {
@@ -359,7 +278,7 @@ for (const [nombreVista, tamano] of VISTAS) {
         await pagina.waitForTimeout(400);
       }
 
-      const deCaleb = await pagina.evaluate(medir);
+      const deCaleb = await medirAhora(pagina);
       revisadas += 1;
       for (const f of deCaleb) todas.push({ vista: nombreVista, pantalla: "hoja-caleb", ...f });
       if (!soloMedir) {
@@ -397,7 +316,7 @@ for (const [nombreVista, tamano] of VISTAS) {
       await abrir.click();
       await pagina.waitForTimeout(300);
 
-      const suyas = await pagina.evaluate(medir);
+      const suyas = await medirAhora(pagina);
       revisadas += 1;
       for (const f of suyas) todas.push({ vista: nombreVista, pantalla: "hoja-cotizacion", ...f });
 
@@ -437,7 +356,7 @@ for (const [nombreVista, tamano] of VISTAS) {
           await hacerla.first().click();
           await pagina.waitForTimeout(400);
 
-          const hecha = await pagina.evaluate(medir);
+          const hecha = await medirAhora(pagina);
           revisadas += 1;
           for (const f of hecha) {
             todas.push({ vista: nombreVista, pantalla: "hoja-cotizacion-hecha", ...f });
@@ -483,7 +402,7 @@ for (const [nombreVista, tamano] of VISTAS) {
       await fila.click();
       await pagina.waitForTimeout(300);
 
-      const suyas = await pagina.evaluate(medir);
+      const suyas = await medirAhora(pagina);
       revisadas += 1;
       for (const f of suyas) {
         todas.push({ vista: nombreVista, pantalla: "hoja-acciones-cotizacion", ...f });
@@ -508,7 +427,7 @@ for (const [nombreVista, tamano] of VISTAS) {
       if ((await descartar.count()) > 0) {
         await descartar.click();
         await pagina.waitForTimeout(200);
-        const conCampo = await pagina.evaluate(medir);
+        const conCampo = await medirAhora(pagina);
         revisadas += 1;
         for (const f of conCampo) {
           todas.push({ vista: nombreVista, pantalla: "hoja-descartar-cotizacion", ...f });
@@ -543,7 +462,7 @@ for (const [nombreVista, tamano] of VISTAS) {
       await abrirEnEscritorio.click();
       await pagina.waitForTimeout(300);
 
-      const deHoja = await pagina.evaluate(medir);
+      const deHoja = await medirAhora(pagina);
       revisadas += 1;
       for (const f of deHoja) {
         todas.push({ vista: nombreVista, pantalla: "hoja-tomar-pedido", ...f });
@@ -581,7 +500,7 @@ for (const [nombreVista, tamano] of VISTAS) {
     await pagina.getByRole("button", { name: /men/i }).first().click();
     await pagina.waitForTimeout(300);
 
-    const fallas = await pagina.evaluate(medir);
+    const fallas = await medirAhora(pagina);
     revisadas += 1;
     for (const f of fallas) todas.push({ vista: nombreVista, pantalla: "cajon-abierto", ...f });
 
@@ -624,7 +543,7 @@ for (const [nombreVista, tamano] of VISTAS) {
     if ((await fila.count()) > 0) {
       await fila.click();
       await pagina.waitForTimeout(300);
-      const deLaHoja = await pagina.evaluate(medir);
+      const deLaHoja = await medirAhora(pagina);
       revisadas += 1;
       for (const f of deLaHoja) todas.push({ vista: nombreVista, pantalla: "hoja-editar", ...f });
 
@@ -638,7 +557,7 @@ for (const [nombreVista, tamano] of VISTAS) {
       if ((await filaStock.count()) > 0) {
         await filaStock.click();
         await pagina.waitForTimeout(300);
-        const deLaHojaStock = await pagina.evaluate(medir);
+        const deLaHojaStock = await medirAhora(pagina);
         revisadas += 1;
         for (const f of deLaHojaStock) {
           todas.push({ vista: nombreVista, pantalla: "hoja-mover-stock", ...f });
@@ -656,7 +575,7 @@ for (const [nombreVista, tamano] of VISTAS) {
       if ((await tomar.count()) > 0) {
         await tomar.click();
         await pagina.waitForTimeout(300);
-        const deTomar = await pagina.evaluate(medir);
+        const deTomar = await medirAhora(pagina);
         revisadas += 1;
         for (const f of deTomar) todas.push({ vista: nombreVista, pantalla: "hoja-tomar-pedido", ...f });
         if (!soloMedir) {
@@ -670,7 +589,7 @@ for (const [nombreVista, tamano] of VISTAS) {
         if ((await buscador.count()) > 0) {
           await buscador.fill("ma"); // «manga» y «mantas» en el catálogo de muestra: filas de verdad
           await pagina.waitForTimeout(250);
-          const deBuscar = await pagina.evaluate(medir);
+          const deBuscar = await medirAhora(pagina);
           revisadas += 1;
           for (const f of deBuscar) {
             todas.push({ vista: nombreVista, pantalla: "hoja-tomar-pedido-buscando", ...f });
@@ -767,7 +686,7 @@ for (const [nombreVista, tamano] of VISTAS) {
         if (hoja.despues) await hoja.despues(pagina);
         await pagina.waitForTimeout(150);
 
-        const suyas = await pagina.evaluate(medir);
+        const suyas = await medirAhora(pagina);
         revisadas += 1;
         for (const f of suyas) todas.push({ vista: nombreVista, pantalla: hoja.nombre, ...f });
 
@@ -784,7 +703,7 @@ for (const [nombreVista, tamano] of VISTAS) {
       if ((await unPedido.count()) > 0) {
         await unPedido.click();
         await pagina.waitForTimeout(300);
-        const deAcciones = await pagina.evaluate(medir);
+        const deAcciones = await medirAhora(pagina);
         revisadas += 1;
         for (const f of deAcciones) {
           todas.push({ vista: nombreVista, pantalla: "hoja-acciones-pedido", ...f });
@@ -847,7 +766,7 @@ for (const [nombreVista, tamano] of VISTAS) {
     if ((await buscador.count()) > 0) {
       await buscador.fill("muestra");
       await pagina.waitForTimeout(400);
-      const conResultados = await pagina.evaluate(medir);
+      const conResultados = await medirAhora(pagina);
       revisadas += 1;
       for (const f of conResultados) {
         todas.push({ vista: nombreVista, pantalla: "clientas-buscada", ...f });
@@ -860,7 +779,7 @@ for (const [nombreVista, tamano] of VISTAS) {
       if ((await unaClienta.count()) > 0) {
         await unaClienta.click();
         await pagina.waitForTimeout(400);
-        const deLaFicha = await pagina.evaluate(medir);
+        const deLaFicha = await medirAhora(pagina);
         revisadas += 1;
         for (const f of deLaFicha) {
           todas.push({ vista: nombreVista, pantalla: "hoja-ficha-clienta", ...f });

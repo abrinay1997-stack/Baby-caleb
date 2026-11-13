@@ -15,7 +15,20 @@
   --measure:     68ch;       
 
   /* ---------- TIPOGRAFÍA FLUIDA ---------- */
-  --fs-mono:    0.6875rem;                              
+  /* 12 px, y ni un píxel menos. Valía 0.6875rem = 11 px, y la clase `.mono`
+     lo imponía en los rótulos, las insignias y los pasos de «Cómo comprar».
+     Dos cosas lo hacían peor de lo que parece:
+
+       · `.mono` vive en `themes/babycaleb.css`, FUERA de toda capa, y las
+         utilidades de Tailwind v4 van en `@layer utilities`. Lo que está sin
+         capa gana. Así que `mono text-xs` —que aparece en cinco sitios— no
+         daba 12 px: daba 11, y nadie lo veía al leer el JSX.
+       · Es el tamaño de los rótulos que ordenan la página («01 / Catálogo»),
+         o sea de lo que se lee para saber dónde está uno.
+
+     Medido a 390 px el 2026-11-13: once textos por debajo del piso en cinco
+     páginas. El piso de 12 px es el §7c del contrato de diseño. */
+  --fs-mono:    0.75rem;
   --fs-xs:      clamp(0.75rem, 0.72rem + 0.15vw, 0.8125rem);
   --fs-sm:      clamp(0.875rem, 0.84rem + 0.18vw, 0.9375rem);
   --fs-base:    clamp(1rem, 0.95rem + 0.25vw, 1.125rem);

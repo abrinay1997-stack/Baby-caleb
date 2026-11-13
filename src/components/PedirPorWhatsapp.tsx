@@ -56,7 +56,16 @@ export function PedirPorWhatsapp({
       href={`https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={`${agotado ? 'Avisarme de' : 'Pedir'} ${variante.nombre} por WhatsApp`}
+      // El nombre accesible EMPIEZA por el texto que se ve en el botón. Decía
+      // «Pedir <nombre> por WhatsApp» mientras el botón decía «Pedir por
+      // WhatsApp»: el texto visible no estaba dentro del nombre, así que quien
+      // maneja el teléfono por voz pedía un botón que el sistema no encontraba.
+      // WCAG 2.5.3, Nivel A.
+      aria-label={
+        agotado
+          ? `Avísenme cuando entre: ${variante.nombre}`
+          : `Pedir por WhatsApp: ${variante.nombre}`
+      }
       className={buttonVariants({ variant: agotado ? 'outline' : 'accent' })}
     >
       {agotado ? 'Avísenme cuando entre' : 'Pedir por WhatsApp'}

@@ -53,8 +53,18 @@ export function CompartirProducto({ slug, nombre }: { slug: string; nombre: stri
     <button
       type="button"
       onClick={compartir}
-      aria-label={`Compartir ${nombre}`}
-      className="text-muted hover:text-fg focus-visible:outline-accent-edge inline-flex items-center gap-2 self-start rounded-md py-2 text-sm underline underline-offset-4 focus-visible:outline-2"
+      // El nombre accesible empieza por el texto visible. Decía «Compartir
+      // <nombre>» mientras el botón decía «Compartir este producto», y el
+      // texto visible no estaba dentro del nombre: WCAG 2.5.3, Nivel A.
+      aria-label={
+        copiado ? `Enlace copiado: ${nombre}` : `Compartir este producto: ${nombre}`
+      }
+      // 44 px de alto y algo de aire a los lados. Medía 36 px y es el botón
+      // con el que la dueña arma sus publicaciones y con el que una clienta le
+      // pasa la ficha a otra — o sea, por donde entra la siguiente venta.
+      // `-ml-2` para que el texto siga alineado con el resto de la columna
+      // aunque el botón sea más ancho que su texto.
+      className="text-muted hover:text-fg focus-visible:outline-accent-edge -ml-2 inline-flex min-h-11 items-center gap-2 self-start rounded-md px-2 text-sm underline underline-offset-4 focus-visible:outline-2"
     >
       <span aria-hidden="true">🔗</span>
       <span aria-live="polite">{copiado ? 'Enlace copiado' : 'Compartir este producto'}</span>
