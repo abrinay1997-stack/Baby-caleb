@@ -12,8 +12,45 @@ import { leerPublico } from "../db/archivos";
  * Va por service binding: no sale a internet, no lleva token y no hay forma de
  * llamarlo desde fuera de la cuenta. Por eso aquí no hay autenticación —la
  * tiene el binding— y por eso lo que importa es QUÉ SE DEVUELVE: cualquier
- * cosa que salga por aquí acaba en un navegador, así que sale el precio y la
- * etiqueta de disponibilidad, nunca el costo ni la cantidad exacta.
+ * cosa que salga por aquí acaba en un navegador, así que sale el precio, la
+ * etiqueta de disponibilidad y la FOTO del artículo, nunca el costo ni la
+ * cantidad exacta.
+ *
+ * ## La foto del catálogo (`VarianteDelCatalogo.imagen`)
+ *
+ * La cadena existía entera menos el último eslabón: la dueña subía la foto en
+ * el panel, se convertía, se guardaba en R2, quedaba en `variantes.imagen` y
+ * `/foto/<clave>` la servía con un 200 — y el catálogo público NO llevaba el
+ * campo, así que la tienda seguía pintando la de `content.json` y la foto que
+ * ella había subido no se veía en ninguna parte. El panel prometía algo que no
+ * pasaba.
+ *
+ * Ahora sale por aquí, y con dos reglas que no son opcionales:
+ *
+ *  - **Relativa siempre** (`/foto/<clave>`, nunca un dominio). Con
+ *    `panel.babycaleb.com` delante, la foto no se ve nunca: Access tapa el
+ *    dominio del panel y la CSP del panel (`img-src 'self'`) tapa el de la
+ *    web. El filtro de la forma es `fotoPublica` en `rpc/catalogo.ts`.
+ *  - **La de `content.json` queda como RESPALDO, no como segunda verdad.** Si
+ *    el sistema tiene foto, manda la del sistema; si no, la tienda enseña lo
+ *    que enseñaba ayer. Y si la clave no está en R2, la tienda vuelve sola a
+ *    la de `content.json` en vez de dejar un hueco (`FotoDeProducto.tsx` en la
+ *    web).
+ *
+ * **Decisión de MCP (CLAUDE.md · `docs/TRAMPAS.md` §13), escrita aquí para que
+ * no se olvide:** este cambio no añade ninguna capacidad nueva que alguien
+ * pueda querer por una herramienta. SUBIR la foto ya estaba decidido como
+ * `solo_panel` en `scripts/sin-mcp.mjs` («se sube una imagen, no datos: una
+ * herramienta tendría que recibir el archivo por el modelo»), y lo que se
+ * añade aquí es el cable que lleva a la tienda una foto que ya estaba subida
+ * —no una puerta nueva—. `node scripts/sin-mcp.mjs` sigue en 0 pendientes.
+ *
+ * Lo que SÍ falta por MCP, y es anterior a este cambio: «¿a qué artículos les
+ * falta foto?». El panel lo contesta —`GET /catalogo` devuelve `v.imagen`— y
+ * `buscar_articulo`, que es su pareja en el mapa de cobertura, no lo devuelve.
+ * Es un hueco de CAMPO, no de ruta, y por eso `sin-mcp.mjs` no lo ve: compara
+ * rutas con herramientas, no las columnas de cada una. Se arregla en
+ * `asistente/herramientas/catalogo.ts`, que no es este archivo.
  *
  * En F3.2 solo están catálogo y zonas. Los pedidos y los pagos llegan en F4a:
  * los métodos no se declaran vacíos, porque un método que existe y no hace

@@ -149,6 +149,52 @@ describe("cuando el sistema no contesta, la web sigue en pie", () => {
   });
 });
 
+describe("la foto que la dueña subió", () => {
+  /**
+   * Que el campo CRUCE esta función es lo que faltaba.
+   *
+   * El eslabón que no estaba no era la subida ni el servidor de la foto: era
+   * este. La foto llegaba a R2, `/foto/<clave>` la servía con un 200 y
+   * `/api/catalogo` no la mencionaba, así que la tienda no podía enseñarla
+   * aunque quisiera. Aquí no se filtra nada —la forma la decide `fotoPublica`
+   * en el sistema, que es su dueño— y justamente por eso hay que comprobar que
+   * no se cae por el camino.
+   */
+  const FOTO = "/foto/catalogo/NAT-M/01HXQ2W3E4R5T6Y7U8I9O0P1A2.webp";
+
+  const conFoto = (imagen: string | null) =>
+    sistema({
+      async catalogo() {
+        return {
+          ok: true as const,
+          datos: {
+            version: CATALOGO.version,
+            generadoEn: CATALOGO.generadoEn,
+            variantes: [{ codigo: "NAT-M", precioCents: 5000, imagen }],
+          },
+        };
+      },
+    });
+
+  const primera = async (s: SistemaWebBinding): Promise<{ imagen?: string | null }> => {
+    const d = (await (await pedir(s)).json()) as { variantes: { imagen?: string | null }[] };
+    return d.variantes[0] ?? {};
+  };
+
+  it("llega hasta el navegador, y relativa", async () => {
+    const v = await primera(conFoto(FOTO));
+    expect(v.imagen).toBe(FOTO);
+    // Relativa: la tienda se la pide a SU dominio. Con `panel.babycaleb.com`
+    // delante no se vería nunca —Access por un lado, la CSP del panel por el
+    // otro— y eso ya pasó.
+    expect(v.imagen?.startsWith("/foto/")).toBe(true);
+  });
+
+  it("y sin foto subida el campo viaja en null, no se inventa ninguna", async () => {
+    expect((await primera(conFoto(null))).imagen).toBeNull();
+  });
+});
+
 describe("lo que sale hacia un navegador", () => {
   it("ni el costo ni la cantidad exacta, venga de donde venga", async () => {
     for (const s of [sistema(), undefined]) {

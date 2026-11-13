@@ -7,6 +7,7 @@ import { buttonVariants } from '../components/ui/Button';
 import { Link } from 'react-router-dom';
 import { useCatalogoConEstado, desdeDe, laTiendaLoEnsena } from '../hooks/useCatalogo';
 import { FilaPresentacion } from '../carrito/FilaPresentacion';
+import { FotoDeProducto, fotoDelProducto } from '../components/FotoDeProducto';
 import { whatsappCon } from '../data/contacto';
 
 export default function S09Products() {
@@ -74,19 +75,25 @@ export default function S09Products() {
           // Sin este enlace esas páginas existían y no se llegaba a ninguna.
           const primera = product.variants[0]?.codigo;
           const slug = primera === undefined ? undefined : catalogo.get(primera)?.slug;
+          // La foto de la tarjeta: la primera presentación que tenga foto
+          // subida en el panel, y si ninguna la tiene, la del producto en
+          // `content.json` — que es lo que se enseñaba hasta hoy. Así la dueña
+          // que sube la foto de UNA caja ya ve cambiar la tarjeta.
+          const foto = fotoDelProducto(product, catalogo);
           return (
             <div
               key={idx}
               className="product-card group flex flex-col h-full bg-surface rounded-2xl overflow-hidden shadow-soft border border-line hover:shadow-[0_20px_60px_-25px_rgba(27,50,70,0.25)] hover:-translate-y-1 transition-all duration-300"
             >
               <div className="aspect-[4/3] bg-sage/15 relative overflow-hidden flex items-center justify-center">
-                <img
-                  src={product.image}
-                  alt={product.name}
-                  className="w-full h-full object-contain p-4 group-hover:scale-[1.03] transition-transform duration-500"
-                  loading="lazy"
-                  decoding="async"
-                />
+                {foto === undefined ? null : (
+                  <FotoDeProducto
+                    foto={foto}
+                    alt={product.name}
+                    className="w-full h-full object-contain p-4 group-hover:scale-[1.03] transition-transform duration-500"
+                    loading="lazy"
+                  />
+                )}
                 <span className="absolute top-4 left-4 bg-bg/90 backdrop-blur text-fg font-bold text-xs px-3 py-1.5 rounded-pill border border-line">
                   {desdeDe(catalogo, product.variants.map((v) => v.codigo))}
                 </span>

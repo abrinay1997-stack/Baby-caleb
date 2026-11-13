@@ -4,6 +4,7 @@ import { useGsapContext } from '../hooks/useGsapContext';
 import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
 import { useCatalogo, precioDe } from '../hooks/useCatalogo';
+import { FotoDeProducto, fotoDeVariante } from '../components/FotoDeProducto';
 
 const WHATSAPP_BASE = 'https://wa.me/50767575065?text=';
 
@@ -41,6 +42,15 @@ export default function S10Gallery() {
       <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
         {items.map((item, idx) => {
           const priceLabel = precioDe(catalogo, item.codigo);
+          // Esta rejilla enseña UNA presentación por casilla, así que aquí la
+          // foto del sistema encaja exacta: la de esa presentación. Si la
+          // dueña sube la foto de la caja M, la casilla de la caja M cambia.
+          // Sin esto, la tarjeta de arriba enseñaría la foto nueva y la
+          // casilla de aquí abajo la vieja, en la MISMA página.
+          const foto = fotoDeVariante(
+            item.codigo === undefined ? undefined : catalogo.get(item.codigo),
+            item.image,
+          );
           // El precio entra en el mensaje de WhatsApp solo si se sabe: mandar
           // «por Consultar» es peor que no mandar precio.
           const message = encodeURIComponent(
@@ -57,13 +67,14 @@ export default function S10Gallery() {
               className="gallery-item group flex flex-col bg-bg rounded-2xl overflow-hidden border border-line hover:border-accent-edge hover:-translate-y-1 transition-all duration-300 shadow-soft focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4"
             >
               <div className="aspect-square bg-sage/15 overflow-hidden flex items-center justify-center">
-                <img
-                  src={item.image}
-                  alt={`${item.productName} ${item.size}`}
-                  className="w-full h-full object-contain p-3 group-hover:scale-[1.04] transition-transform duration-500"
-                  loading={idx < 4 ? 'eager' : 'lazy'}
-                  decoding="async"
-                />
+                {foto === undefined ? null : (
+                  <FotoDeProducto
+                    foto={foto}
+                    alt={`${item.productName} ${item.size}`}
+                    className="w-full h-full object-contain p-3 group-hover:scale-[1.04] transition-transform duration-500"
+                    loading={idx < 4 ? 'eager' : 'lazy'}
+                  />
+                )}
               </div>
               <div className="p-4 flex flex-col gap-1">
                 <span className="mono text-sage-strong">{item.productName}</span>

@@ -82,6 +82,33 @@ export interface VarianteDelCatalogo extends VariantePublica {
    * manera.
    */
   readonly pedirPorWhatsapp: boolean;
+  /**
+   * La foto que la dueña subió desde el panel, o `null` si no subió ninguna.
+   *
+   * **Quién es el dueño de la foto, a partir de aquí.** La tienda pintaba la
+   * foto de `content.json` —un archivo del repositorio de la web— y la dueña
+   * subía fotos desde el panel que no se veían en ninguna parte: llegaban a
+   * R2, quedaban en `variantes.imagen`, `/foto/<clave>` las servía con un 200
+   * … y el catálogo público no llevaba el campo, así que la tienda ni se
+   * enteraba. Un panel que promete algo que no pasa. Desde hoy la foto del
+   * sistema MANDA y la de `content.json` es el respaldo: no son dos verdades,
+   * es una verdad y una red.
+   *
+   * **Es una ruta RELATIVA, y eso no es un detalle.** Puesta como
+   * `panel.babycaleb.com/foto/…` la foto subía bien y no se veía nunca: ese
+   * dominio está entero detrás de Cloudflare Access, y la CSP del panel es
+   * `img-src 'self'`. Dos muros independientes y los dos callados. Relativa,
+   * la pide cada dominio al suyo —la tienda a `babycaleb.com/foto/…`, el panel
+   * a sí mismo— y las dos la ven. El porqué largo está en `src/index.ts`,
+   * sobre la ruta `/foto/*`.
+   *
+   * Va en `VarianteDelCatalogo` y no en `VariantePublica` por lo mismo que
+   * `pedirPorWhatsapp`: el asistente contesta WhatsApps con texto y una ruta
+   * de imagen no le sirve para nada. Lo que por MCP sí hace falta —«¿a qué
+   * artículos les falta foto?»— es otra pregunta y se contesta sobre
+   * `variantes.imagen`, no sobre este campo. Ver `rpc/web.ts`.
+   */
+  readonly imagen: string | null;
 }
 
 export interface CatalogoPublico {
@@ -112,6 +139,8 @@ interface Fila {
   libres: number | null;
   /** `null` = «lo que diga Ajustes». Ver `migrations/0013`. */
   pedir_por_whatsapp?: number | null;
+  /** `/foto/<clave>` si tiene foto subida; `null` si no. Ver `fotoPublica`. */
+  imagen?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +230,62 @@ export async function whatsappDelNegocio(
   };
 }
 
+// ---------------------------------------------------------------------------
+// La foto: qué forma tiene que tener para salir hacia un navegador
+// ---------------------------------------------------------------------------
+
+/**
+ * Con qué empieza una ruta de foto, aquí y en la web.
+ *
+ * Lo escribe el panel al subirla (`PUT /catalogo/variantes/:codigo/foto`), lo
+ * sirve esta misma aplicación en `/foto/*` y lo sirve la web en
+ * `worker/imagenes.ts`, donde la constante se llama `PREFIJO`. Son tres sitios
+ * para un prefijo, así que hay una prueba de la web
+ * (`test/la-foto-del-sistema.test.ts`) que los compara: cambiar uno sin el
+ * otro deja todas las fotos en 404, que es exactamente lo que pasó la vez que
+ * se eligió `/img/`.
+ */
+export const PREFIJO_FOTO = "/foto/";
+
+/**
+ * Lo que puede salir de `variantes.imagen` hacia un navegador: nada, o una
+ * ruta relativa que la tienda pueda pedirle a su propio dominio.
+ *
+ * Tres filtros, y cada uno tapa un agujero que ya se vio en este repositorio:
+ *
+ *  1. **Tiene que empezar por `/foto/`.** Eso excluye de una vez cualquier
+ *     cosa absoluta (`https://…`) y cualquier cosa de otro origen (`//otro`,
+ *     que el navegador lee como «el mismo esquema, otro dominio»). Una foto
+ *     apuntada a `panel.babycaleb.com` subía bien y no se veía JAMÁS: Access
+ *     delante y la CSP del panel detrás. Si el valor guardado no es relativo,
+ *     la tienda no lo enseña — enseña la de `content.json`, que es lo que
+ *     enseñaba ayer.
+ *  2. **Tiene que haber algo DETRÁS del prefijo.** `/foto/` a secas no es una
+ *     foto: es un enlace a la lista de nada. `leerPublico` lo rechazaría, pero
+ *     para entonces el navegador ya habría pedido y ya habría roto el hueco.
+ *  3. **Y tiene que caber.** `SistemaWeb.archivo` rechaza una clave de más de
+ *     512 caracteres, así que una más larga es un 404 asegurado. Prometer una
+ *     foto que el único que la sirve va a rechazar es prometer un hueco.
+ *
+ * Lo que NO decide esta función es si esa clave existe o si se puede servir en
+ * abierto: eso es de `leerPublico`, del lado de los datos, porque en ese
+ * bucket viven también los comprobantes de pago de las clientas. Aquí solo se
+ * decide la FORMA.
+ *
+ * `/img/…` —la forma que anticipaba el comentario de `migrations/0001`— se
+ * queda fuera a propósito: esos archivos viven en el paquete de la web y su
+ * dueño es `content.json`. Dejarlos salir por aquí sería crear un segundo
+ * dueño de la misma ruta, que es justo lo que este cambio viene a terminar.
+ */
+export function fotoPublica(valor: unknown): string | null {
+  if (typeof valor !== "string") return null;
+  const limpio = valor.trim();
+  if (!limpio.startsWith(PREFIJO_FOTO)) return null;
+  const clave = limpio.slice(PREFIJO_FOTO.length);
+  if (clave === "" || clave.length > 512) return null;
+  return limpio;
+}
+
 /**
  * `publicado = 1` es el interruptor de lo que se ve fuera.
  *
@@ -211,7 +296,7 @@ export async function whatsappDelNegocio(
 const CONSULTA = `
   SELECT v.codigo, p.slug AS slug_producto, v.nombre, v.talla,
          v.peso_min_lb, v.peso_max_lb, v.unidades_por_caja, v.precio_cents, v.version,
-         v.pedir_por_whatsapp,
+         v.pedir_por_whatsapp, v.imagen,
          -- La regla del combo tiene UN dueño: libresSQL en src/db/inventario.ts,
          -- que es la misma expresión que usan las herramientas del asistente.
          ${libresSQL("v")} AS libres
@@ -288,6 +373,11 @@ export async function catalogoPublico(db: D1Database, ahora: number): Promise<Ca
     variantes: results.map((f) => ({
       ...aPublica(f),
       pedirPorWhatsapp: seEnseniaElBoton(negocio, f.pedir_por_whatsapp),
+      // La foto sale por la MISMA puerta que el precio, y no por una segunda
+      // consulta: la pieza que decidía qué ve la tienda tiene un solo dueño y
+      // es esta función (trampa §12 — una pieza que nadie llama, y su
+      // contraria: dos piezas que dicen lo mismo y se separan).
+      imagen: fotoPublica(f.imagen),
     })),
   };
 }
