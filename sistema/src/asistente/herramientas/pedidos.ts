@@ -802,7 +802,51 @@ export const darDeAltaClienta = definir({
   },
 });
 
+export const verReservasVencidas = definir({
+  nombre: "ver_reservas_vencidas",
+  descripcion:
+    "Los pedidos por abonar a los que ya se les cumplió el plazo, y qué pasa con su mercancía. Contesta «¿por qué no tengo existencias de la M si tengo cajas en la bodega?»: puede ser que estén apartadas por un pedido vencido. Los que no pagaron nada los suelta el sistema solo cada cinco minutos; los que tienen un abono esperan a que una persona decida.",
+  parametros: z.object({}),
+  nivel: "lectura",
+  categoria: "pedidos",
+  roles: ["duena", "asistente", "contadora"],
+
+  async ejecutar(ctx) {
+    const { results } = await ctx.db
+      .prepare(
+        `SELECT p.numero, p.pagado_cents, p.vence_en, c.referencia AS clienta
+           FROM pedidos p
+           LEFT JOIN clientes c ON c.id = p.cliente_id
+          WHERE p.estado = 'por_abonar' AND p.vence_en IS NOT NULL AND p.vence_en <= ?
+          ORDER BY p.vence_en
+          LIMIT 50`,
+      )
+      .bind(ctx.ahora)
+      .all<{ numero: string; pagado_cents: number; vence_en: number; clienta: string | null }>();
+
+    const sinPagar = results.filter((r) => r.pagado_cents === 0);
+    const conAbono = results.filter((r) => r.pagado_cents > 0);
+
+    return {
+      cuantos: results.length,
+      // Estos los suelta el cron solo; se listan para que se entienda qué va
+      // a pasar, no para que nadie los toque.
+      seSueltanSolos: sinPagar.map((r) => ({ numero: r.numero, clienta: r.clienta })),
+      esperanUnaDecision: conAbono.map((r) => ({
+        numero: r.numero,
+        clienta: r.clienta,
+        abonadoCents: r.pagado_cents,
+      })),
+      aviso:
+        conAbono.length === 0
+          ? "lo vencido sin pagar se suelta solo en la próxima vuelta del sistema"
+          : "los que tienen abono NO se cancelan solos: qué se hace con ese dinero todavía no está decidido",
+    };
+  },
+});
+
 export const HERRAMIENTAS_DE_PEDIDOS = [
+  verReservasVencidas,
   buscarPedido,
   verPedido,
   crearPedidoDeLaClienta,
