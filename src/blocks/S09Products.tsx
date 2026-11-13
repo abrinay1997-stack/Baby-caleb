@@ -10,7 +10,7 @@ import { FilaPresentacion } from '../carrito/FilaPresentacion';
 import { whatsappCon } from '../data/contacto';
 
 export default function S09Products() {
-  const { catalogo, cargando } = useCatalogoConEstado();
+  const { catalogo, cargando, copiaVieja } = useCatalogoConEstado();
   // Lo descatalogado no se pinta: vender lo que no existe acaba en un pedido
   // que nadie puede cumplir, y en un bot diciéndole a la clienta lo contrario
   // que la web.
@@ -35,6 +35,30 @@ export default function S09Products() {
         kicker="01 / Catálogo"
         title="Esenciales diseñados para proteger su piel."
       />
+
+      {/*
+        Cuando el sistema no contesta, la web sigue en pie con una copia de los
+        precios del día del despliegue, y hasta hoy no lo decía en ninguna
+        parte: el `fetch` contesta 200 igual, así que el navegador tomaba la
+        copia por el catálogo de verdad. Lo que se enseñaba era todo «agotado»,
+        con precios viejos y sin botón de pedir — una tienda muerta con cara de
+        tienda sana.
+
+        Enseñar un precio viejo en silencio es peor que no enseñar ninguno:
+        quien lo lee se lo cree y escribe pidiéndolo. Así que se dice, y se
+        dice en términos de lo que le importa a quien está comprando —si puede
+        fiarse del precio— y no del fallo técnico que lo causó.
+      */}
+      {copiaVieja ? (
+        <p
+          role="status"
+          className="mb-8 rounded-2xl border border-line bg-surface px-5 py-4 text-sm text-muted"
+        >
+          <strong className="font-semibold text-fg">Estamos actualizando el catálogo.</strong>{' '}
+          Los precios y la disponibilidad que ve aquí pueden no estar al día. Antes de
+          hacer su pedido, confírmelos con nosotras por WhatsApp.
+        </p>
+      ) : null}
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
         {data.map((product, idx) => {

@@ -95,9 +95,16 @@ export function Existencias() {
                   </Celda>
                   <Celda etiqueta="Libres" papel="clave">
                     <strong>{e.libres}</strong>
+                    {/* «mínimo 6» y no «por debajo del mínimo (6)»: en el
+                        teléfono la celda clave tiene hasta el 40 % de la fila
+                        —el resto es para el nombre, que dice de qué es la
+                        cifra—, y la frase larga le robaba dos renglones al
+                        nombre del producto. Solo aparece cuando SE ESTÁ por
+                        debajo, así que las cuatro palabras no decían nada que
+                        el número grande de encima no diga ya. */}
                     {e.minimo !== null && e.libres <= e.minimo ? (
                       <span className="block text-[12px] font-normal text-muted">
-                        por debajo del mínimo ({e.minimo})
+                        mínimo {e.minimo}
                       </span>
                     ) : null}
                   </Celda>

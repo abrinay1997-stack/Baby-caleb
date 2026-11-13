@@ -84,6 +84,39 @@ export default {
     }
 
     if (url.pathname === "/api/salud") {
+      // Se le PREGUNTA al sistema; no se mira si el binding existe.
+      //
+      // Esto decía `env.SISTEMA ? "del sistema" : "falta el binding"`, que
+      // comprueba que el cable esté enchufado y no que al otro lado conteste
+      // alguien. Con la base caída seguía diciendo «del sistema» mientras cada
+      // petición servía la copia de respaldo: la salud afirmaba justo lo que
+      // había dejado de ser verdad, y es la primera pantalla que alguien mira
+      // cuando la tienda enseña precios raros.
+      //
+      // Un control que no puede ser falso es peor que ninguno (trampa §1), y
+      // éste no podía: el binding se declara en `wrangler.jsonc` y está ahí
+      // siempre. Ahora la llamada puede fallar, así que la respuesta puede
+      // decir que no.
+      let catalogo: string;
+      if (env.SISTEMA === undefined) {
+        catalogo = "copia del build (falta el binding SISTEMA)";
+      } else {
+        try {
+          const r = await env.SISTEMA.salud();
+          catalogo = r.ok
+            ? r.datos.sano
+              ? "del sistema"
+              : "EL SISTEMA CONTESTA PERO NO ESTÁ SANO: la tienda está sirviendo la copia del build"
+            : "EL SISTEMA RECHAZA LA CONSULTA: la tienda está sirviendo la copia del build";
+        } catch {
+          // La llamada revienta cuando el Worker del sistema no está, o cuando
+          // el método todavía no está desplegado al otro lado. No es lo mismo
+          // que un «no» suyo, y confundirlos manda al siguiente que lo mire a
+          // buscar en la base en vez de en el despliegue.
+          catalogo = "EL SISTEMA NO CONTESTA: la tienda está sirviendo la copia del build";
+        }
+      }
+
       return conCabeceras(
         json({
           ok: true,
@@ -107,10 +140,10 @@ export default {
           // está mal, esto es lo primero que hay que mirar, y mirarlo no debe
           // exigir leer el código.
           chat_modelo: env.MODELO_CHAT ?? "muse-spark-1.3-contributor",
-          // Sin el binding, /api/catalogo sirve la copia del build y la web
-          // sigue en pie — pero con precios de la fecha del despliegue. Vale
-          // más verlo aquí que descubrirlo por un precio viejo.
-          catalogo: env.SISTEMA ? "del sistema" : "copia del build (falta el binding SISTEMA)",
+          // Si esto no dice «del sistema», la web sigue en pie pero con los
+          // precios de la fecha del despliegue. Vale más verlo aquí que
+          // descubrirlo por un precio viejo cobrado a una clienta.
+          catalogo,
         }),
       );
     }

@@ -10,7 +10,13 @@
     "lib": ["ES2022"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["@cloudflare/workers-types"],
+    // `@cloudflare/vitest-plugin/types` trae `cloudflare:test`, que es de donde
+    // sale `SELF` — el Worker entero montado de verdad. Hace falta porque hay
+    // una prueba que comprueba una RUTA y no un módulo suelto: que
+    // `/api/salud` le pregunte al sistema no se puede ver llamando a una
+    // función, solo pidiéndole la ruta al Worker. Sin esto el tipo no existe y
+    // `npm run lint` se cae aunque la prueba pase.
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,

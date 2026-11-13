@@ -171,7 +171,12 @@ export function AccionesPedido({
                 void hacer(`/api/pedidos/${pedido.id}/cancelar`, { motivo: motivo.trim() });
               }}
               disabled={trabajando}
-              className="tactil w-full rounded-[14px] bg-accent px-4 py-3 font-bold text-accent-fg disabled:opacity-60 focus-visible:outline-accent-edge focus-visible:outline-2"
+              // El navy de lo que no se deshace, no el naranja de la casa.
+              // Estaba idéntico a «Agendar para entrega», que es su vecino en
+              // esta misma hoja: dos botones iguales para «sale a la calle» y
+              // «se cancela» es cómo se cancela un pedido sin querer. Es el
+              // mismo traje que «Quitar el acceso» en Usuarios.
+              className="tactil w-full rounded-[14px] bg-fg px-4 py-3 font-bold text-bg disabled:opacity-60 focus-visible:outline-accent-edge focus-visible:outline-2"
             >
               {trabajando
                 ? esCotizacion
@@ -180,6 +185,22 @@ export function AccionesPedido({
                 : esCotizacion
                   ? "Sí, descartar"
                   : "Sí, cancelar"}
+            </button>
+            {/* La salida. Su flujo gemelo —rechazar un cobro— la tiene desde
+                siempre, y aquí no estaba: una vez abierto el «¿por qué se
+                cancela?», lo único que quedaba era cancelar o cerrar la hoja
+                entera y volver a buscar el pedido. */}
+            <button
+              type="button"
+              onClick={() => {
+                setCancelando(false);
+                setMotivo("");
+                setError(null);
+              }}
+              disabled={trabajando}
+              className="tactil w-full rounded-[14px] border border-line px-4 py-3 font-bold text-fg disabled:opacity-60 focus-visible:outline-accent-edge focus-visible:outline-2"
+            >
+              Mejor no
             </button>
           </div>
         ) : null}

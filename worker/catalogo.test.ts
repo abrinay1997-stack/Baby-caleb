@@ -38,6 +38,9 @@ const sistema = (sobre: Partial<SistemaWebBinding> = {}): SistemaWebBinding => (
   async archivo() {
     return { ok: true, datos: null };
   },
+  async salud() {
+    return { ok: true as const, datos: { sano: true, version: "doble" } };
+  },
   ...sobre,
 });
 

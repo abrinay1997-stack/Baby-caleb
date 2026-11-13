@@ -68,7 +68,14 @@ function medir() {
   const fallas = [];
   const visible = (el) => {
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+    if (r.width === 0 || r.height === 0) return false;
+    if (getComputedStyle(el).visibility === "hidden") return false;
+    // `checkVisibility` es lo único que caza lo que está DENTRO de un
+    // `<details>` cerrado: ahí el elemento conserva su tamaño y su
+    // `visibility`, así que las dos comprobaciones de arriba lo dan por
+    // visible y el auditor mide —y aprueba, o suspende— algo que nadie puede
+    // ver. Dio un falso positivo en Pasarelas.
+    return typeof el.checkVisibility === "function" ? el.checkVisibility() : true;
   };
   const donde = (el) => {
     const t = (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
@@ -157,6 +164,94 @@ function medir() {
     }
   }
 
+  // 7d - La burbuja de Caleb no se sienta encima de nada que se toque.
+  //
+  // Es la hermana de la comprobación de la barra, y hacía falta por lo mismo:
+  // la burbuja está FIJA, así que en una captura de página entera se dibuja
+  // una sola vez, donde estuviera el viewport, encima de una fila cualquiera
+  // —y eso es el artefacto, no el fallo—. El fallo de verdad es que el
+  // contenido no reserve su hueco, y entonces en la mano hay un botón debajo
+  // de la burbuja.
+  //
+  // Tapaba «No cuadra» en Cobros, que está al lado de «Confirmar: el dinero
+  // entró». Se arregló, y los dos arreglos de CSS de esa tanda —éste y el de
+  // la cifra clave— se rompieron a propósito y el auditor siguió diciendo
+  // «sin fallas»: medían todo menos justo esto. Por eso están aquí.
+  //
+  // Se mide con la página abajo del todo, que es donde la última fila queda
+  // más cerca de la burbuja; quien llama a esto hace el scroll antes.
+  const burbuja = document.querySelector(".burbuja-caleb");
+  if (burbuja && visible(burbuja)) {
+    const b = burbuja.getBoundingClientRect();
+    const dentroDelPrincipal = document.querySelectorAll(
+      "main button, main a[href], main [role='button'], main summary, main input, main select, main textarea",
+    );
+    for (const el of dentroDelPrincipal) {
+      if (!visible(el)) continue;
+      const r = el.getBoundingClientRect();
+      // Se solapan de verdad: dos rectángulos que solo se rozan por un píxel
+      // no esconden nada, y perseguir eso daría rojos que nadie puede
+      // arreglar.
+      const ancho = Math.min(r.right, b.right) - Math.max(r.left, b.left);
+      const alto = Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top);
+      if (ancho > 1 && alto > 1) {
+        fallas.push({
+          regla: "la burbuja no tapa lo que se toca",
+          detalle: `la burbuja cubre ${Math.round(ancho)}×${Math.round(alto)}px de ${donde(el)}`,
+        });
+      }
+    }
+  }
+
+  // 7e - En el teléfono, la cifra que se viene a buscar va ARRIBA A LA
+  // DERECHA.
+  //
+  // El CSS lo declara en prosa desde siempre y se rompía sin que nada lo
+  // dijera: cuando la celda del título crecía a dos líneas, la cifra se caía
+  // al renglón de abajo y aterrizaba entre dos datos sueltos. En Bodegas se
+  // leía «Principal 412 Productos 96 unidades», con otro número metido entre
+  // el dato y su unidad; y en Existencias se caía justo en las filas bajas de
+  // stock, que son las que se viene a mirar.
+  //
+  // Solo en el teléfono: en la computadora las filas son columnas de tabla y
+  // la regla es otra.
+  if (window.innerWidth <= 480) {
+    for (const fila of document.querySelectorAll(".filas")) {
+      if (!visible(fila)) continue;
+      const titulo = fila.querySelector('.celda[data-papel="titulo"]');
+      const clave = fila.querySelector('.celda[data-papel="clave"]');
+      if (!titulo || !clave || !visible(titulo) || !visible(clave)) continue;
+
+      const t = titulo.getBoundingClientRect();
+      const c = clave.getBoundingClientRect();
+      const caja = fila.getBoundingClientRect();
+      const relleno = parseFloat(getComputedStyle(fila).paddingRight);
+
+      // Comparten el PRIMER renglón: la cifra tiene que empezar dentro de la
+      // primera línea del título, no debajo de ella. Se mide contra el alto de
+      // una línea del título y no contra su caja entera, que con dos líneas
+      // abarcaría también el renglón de abajo y daría por buena justo la
+      // forma que esto vigila.
+      const unaLinea = parseFloat(getComputedStyle(titulo).lineHeight) || t.height;
+      if (c.top > t.top + unaLinea * 0.75) {
+        fallas.push({
+          regla: "la cifra clave comparte línea con el título",
+          detalle: `la cifra de ${donde(titulo)} cayó ${Math.round(c.top - t.top)}px por debajo`,
+        });
+      }
+
+      // Y toca el borde derecho. Si no, está flotando en medio de la fila,
+      // que es como se leía «412 Productos 96».
+      const margen = caja.right - relleno - c.right;
+      if (margen > 2) {
+        fallas.push({
+          regla: "la cifra clave va pegada a la derecha",
+          detalle: `la cifra de ${donde(titulo)} quedó a ${Math.round(margen)}px del borde`,
+        });
+      }
+    }
+  }
+
   // Se desborda de lado: el síntoma de todo lo de arriba cuando se escapa.
   const desborde = document.documentElement.scrollWidth - document.documentElement.clientWidth;
   if (desborde > 1) {
@@ -190,6 +285,21 @@ for (const [nombreVista, tamano] of VISTAS) {
     // El panel pregunta `/api/yo` antes de pintar nada: hasta que haya un
     // encabezado, lo que se mediría es la pantalla de «cargando».
     await pagina.waitForSelector("h1", { timeout: 10000 });
+
+    // Se mide con la página ABAJO DEL TODO, no arriba.
+    //
+    // Lo fijo —la barra de abajo y la burbuja de Caleb— solo puede tapar algo
+    // cuando hay algo debajo, y arriba del todo nunca lo hay: la última fila
+    // está fuera de la pantalla. Midiendo sin bajar, la comprobación de la
+    // burbuja aprobaría siempre, que es la forma de control que este
+    // repositorio ya tiene escrito que no sirve para nada.
+    //
+    // No cambia nada de lo demás: las otras reglas miran tamaños y tipos de
+    // letra, que no dependen de dónde esté el scroll.
+    await pagina.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    await pagina.waitForTimeout(150);
 
     const fallas = await pagina.evaluate(medir);
     revisadas += 1;

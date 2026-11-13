@@ -50,6 +50,27 @@ const BOTON =
   "tactil rounded-[14px] px-4 py-3 font-bold focus-visible:outline-accent-edge focus-visible:outline-2 disabled:opacity-60";
 const PRINCIPAL = `${BOTON} bg-accent text-accent-fg`;
 const SUAVE = `${BOTON} border border-line`;
+/**
+ * Lo que no se deshace lleva el navy, no el naranja de la casa.
+ *
+ * Es el mismo traje que «Quitar el acceso» en Usuarios y que el «Ocultarlo» de
+ * la hoja del catálogo: dos pantallas distintas, el mismo gesto, el mismo
+ * color. Rechazar un comprobante le dice a una clienta que su pago no vale;
+ * con el naranja de «Confirmar» se tocaba por inercia.
+ */
+const DURO = `${BOTON} bg-fg text-bg`;
+
+/**
+ * Lo que dice el botón que mete el dinero en los libros.
+ *
+ * Lleva la CIFRA dentro. Un botón que dice «Confirmar: el dinero entró» se
+ * toca de memoria —es el mismo botón en las veinte fichas de la bandeja—;
+ * uno que dice «Confirmar que entraron $31.50» se verifica solo contra la
+ * captura que se está mirando, sin volver a subir a buscar el monto.
+ */
+export function textoDeConfirmar(montoCents: number): string {
+  return `Confirmar que entraron ${dinero(montoCents)}`;
+}
 const ENTRADA =
   "tactil w-full rounded-[12px] border border-line bg-bg px-3 py-2.5 text-[16px] text-fg " +
   "focus-visible:outline-accent-edge focus-visible:outline-2";
@@ -257,7 +278,7 @@ function Ficha({
               <button
                 type="button"
                 disabled={trabajando || motivo.trim() === ""}
-                className={`${PRINCIPAL} w-full`}
+                className={`${DURO} w-full`}
                 onClick={() => mandar(`/api/cobros/${c.pagoId}/rechazar`, { motivo })}
               >
                 {trabajando ? "Rechazando…" : "Rechazar este comprobante"}
@@ -265,7 +286,7 @@ function Ficha({
               <button
                 type="button"
                 disabled={trabajando}
-                className={`${SUAVE} w-full`}
+                className={`${SUAVE} mt-2 w-full`}
                 onClick={() => setRechazando(false)}
               >
                 Mejor no
@@ -279,12 +300,18 @@ function Ficha({
                 className={`${PRINCIPAL} w-full`}
                 onClick={() => mandar(`/api/cobros/${c.pagoId}/confirmar`, {})}
               >
-                {trabajando ? "Confirmando…" : "Confirmar: el dinero entró"}
+                {trabajando ? "Confirmando…" : textoDeConfirmar(c.montoCents)}
               </button>
+              {/* Separado del de arriba, y no a 8 px.
+
+                  Los dos son de un toque y van al revés el uno del otro:
+                  arriba el dinero entra en los libros, abajo empieza el
+                  rechazo. Pegados, el pulgar que viene bajando por la ficha
+                  los confunde. */}
               <button
                 type="button"
                 disabled={trabajando}
-                className={`${SUAVE} w-full`}
+                className={`${SUAVE} mt-2 w-full`}
                 onClick={() => setRechazando(true)}
               >
                 No cuadra

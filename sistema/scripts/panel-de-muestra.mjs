@@ -385,6 +385,539 @@ const FICHAS_DE_MUESTRA = {
   },
 };
 
+/**
+ * Las ventanas de entrega y las comisiones, escritas UNA vez.
+ *
+ * Las enseñan dos pantallas: Ajustes (como el valor del ajuste) y Entregas
+ * (como `ajustes` del día, que el Worker saca de `ajustesDeEntrega`, o sea del
+ * MISMO ajuste). Copiadas en dos sitios acabarían diciendo cosas distintas, y
+ * la muestra enseñaría a la vez «las ventanas están puestas» y «faltan reglas
+ * por decidir».
+ */
+const VENTANAS_DE_MUESTRA = [
+  { id: "manana", etiqueta: "Mañana", desde: "08:00", hasta: "12:00" },
+  { id: "tarde", etiqueta: "Tarde", desde: "13:00", hasta: "18:00" },
+];
+
+const COMISIONES_DE_MUESTRA = {
+  yappy: { porcentaje_bp: 350, fijo_cents: 0, lleva_itbms: true },
+  tilopay: PENDIENTE,
+  paypal: PENDIENTE,
+};
+
+// ---------------------------------------------------------------------------
+// Las entregas del día
+// ---------------------------------------------------------------------------
+
+/**
+ * Una parada, con la forma EXACTA de `ParadaDelDia` (src/db/entregas.ts).
+ *
+ * Por defecto, la parada más sosa que existe: pendiente, sin nadie, sin cobro.
+ * Cada una de abajo escribe solo lo suyo, igual que `ajuste()` — así una
+ * columna nueva se añade en una línea y no se olvida en seis sitios.
+ *
+ * `cobroCents` es lo que hay que cobrar en la puerta y `cobradoCents` lo que ya
+ * se cobró; el esquema solo deja que el segundo sea distinto de cero cuando la
+ * parada está entregada (migrations/0009), y aquí se respeta.
+ */
+const parada = (sobre) => ({
+  envioId: "env-muestra",
+  estado: "pendiente",
+  orden: null,
+  pedido: "BC-0000",
+  bodegaId: "b1",
+  bodega: "Principal",
+  cliente: null,
+  zona: null,
+  direccion: null,
+  referencia: null,
+  lat: null,
+  lng: null,
+  ventana: null,
+  cobroCents: 0,
+  cobradoCents: 0,
+  cobroMetodo: null,
+  entregadoEn: null,
+  conPrueba: false,
+  ...sobre,
+});
+
+/**
+ * `/entregas`: la ruta del día.
+ *
+ * Es UNA de las tres pestañas de la barra de abajo —o sea de lo más usado— y
+ * hasta hoy nunca se había rendido: el auditor la abría, la muestra contestaba
+ * 404 y lo único que se medía era la tarjeta de «No se pudo cargar». Eso es
+ * exactamente lo que dice docs/TRAMPAS.md §4: una pantalla que no se mide no
+ * dice «está bien», no dice nada.
+ *
+ * La forma es la de `entregasDelDia` (src/db/entregas.ts) MÁS `motorizados`,
+ * que la ruta añade aparte porque es de la pantalla y no del día
+ * (src/api/panel.ts).
+ *
+ * **Los estados se eligieron para que se vea lo que nadie ha visto**, no el
+ * caso fácil:
+ *
+ *  - una ruta EN LA CALLE con una parada entregada y cobrada, una que no se
+ *    pudo entregar, una que va en camino con saldo —la que abre el cobro de un
+ *    toque— y una ya pagada, que es el otro texto del cobro;
+ *  - una ruta SIN DESPACHAR, que es donde viven «Salió con la mercancía» y
+ *    «Deshacer la ruta»;
+ *  - dos paradas SIN MOTORIZADO, de dos bodegas distintas, para que al armar
+ *    la ruta se vea el aviso de que una ruta carga de una sola bodega;
+ *  - pedidos agendados sin entrega preparada, uno de ellos viejo: la consulta
+ *    de verdad NO los filtra por fecha, y por eso el trabajo olvidado del
+ *    viernes sigue saliendo el lunes.
+ *
+ * El resumen se CUENTA de las paradas, no se escribe: escrito a mano sería lo
+ * primero que se separa de la lista que tiene debajo.
+ */
+function entregasDeMuestra(fecha) {
+  const aLas = (h, m = 0) => medianoche(fecha) + h * 3_600_000 + m * 60_000;
+  const esHoy = fecha === diaPanama(Date.now());
+
+  // La ruta de Luis, ya en la calle. Cuatro paradas, que son las mismas cuatro
+  // que `/api/motorizados` le cuenta en `entregas_hoy`.
+  const deLuis = [
+    parada({
+      envioId: "env-1",
+      estado: "entregado",
+      orden: 1,
+      pedido: "BC-1044",
+      cliente: "Dayana I. Rodríguez de Hernández",
+      zona: "Ciudad de Panamá — centro",
+      direccion: "Calle 50, PH Costa del Este Business Park, torre B, piso 14, oficina 1402",
+      referencia: "Dejar en recepción, a nombre de Dayana",
+      lat: 9.0068,
+      lng: -79.4794,
+      ventana: "manana",
+      cobroCents: 12_500,
+      cobradoCents: 12_500,
+      cobroMetodo: "efectivo",
+      entregadoEn: aLas(10, 5),
+      conPrueba: true,
+    }),
+    // No se pudo entregar: la única parada desde la que se puede devolver y
+    // cancelar el pedido, y el texto de esa hoja no lo había leído nadie.
+    parada({
+      envioId: "env-2",
+      estado: "fallido",
+      orden: 2,
+      pedido: "BC-1048",
+      cliente: "Marielys Pérez de Sanjur",
+      zona: "Panamá Oeste",
+      direccion: "Vista Alegre, calle Segunda, casa 23-B, después del minisúper",
+      lat: 8.9312,
+      lng: -79.7021,
+      ventana: "manana",
+      cobroCents: 4_600,
+    }),
+    // Va en camino y con saldo: es la que abre el cobro en efectivo del saldo
+    // entero de un toque, sin campo donde teclear un monto.
+    parada({
+      envioId: "env-3",
+      estado: "en_ruta",
+      orden: 3,
+      pedido: "BC-1043",
+      cliente: "Rosa Elena Sánchez",
+      zona: "Ciudad de Panamá — centro",
+      direccion: "San Francisco, calle 74 Este, PH Altos del Parque, apto 7-C",
+      referencia: "Portón azul, timbre 7C",
+      lat: 8.9824,
+      lng: -79.5199,
+      ventana: "tarde",
+      cobroCents: 4_900,
+    }),
+    // Ya pagada y SIN punto en el mapa: las dos cosas cambian lo que dice la
+    // hoja, y las dos se ven aquí por primera vez.
+    parada({
+      envioId: "env-4",
+      estado: "recogido",
+      orden: 4,
+      pedido: "BC-1049",
+      cliente: "Yoselin Rodríguez de la Espriella",
+      zona: "Panamá Oeste",
+      direccion: "Arraiján, barriada El Progreso, casa sin número, frente a la cancha",
+      ventana: "tarde",
+    }),
+  ];
+
+  // La de Ana, armada y todavía sin salir. Ana está en pausa: le armaron la
+  // ruta y después no pudo salir, que es justo el día en que hace falta
+  // «Deshacer la ruta» — y por eso `/api/motorizados` le cuenta estas dos.
+  const deAna = [
+    parada({
+      envioId: "env-5",
+      estado: "asignado",
+      orden: 1,
+      pedido: "BC-1050",
+      bodegaId: "b2",
+      bodega: "Casa",
+      cliente: "Madelaine Esther Castillo de Bethancourt",
+      zona: "Ciudad de Panamá — centro",
+      direccion: "El Cangrejo, Vía Argentina, edificio Las Acacias, apto 3-A",
+      lat: 8.9873,
+      lng: -79.5302,
+      ventana: "manana",
+      cobroCents: 3_200,
+    }),
+    // Sin nombre: el pedido entró por el bot y nadie lo preguntó. La fila usa
+    // el número del pedido en lugar del nombre, y eso también hay que verlo.
+    parada({
+      envioId: "env-6",
+      estado: "asignado",
+      orden: 2,
+      pedido: "BC-1051",
+      bodegaId: "b2",
+      bodega: "Casa",
+      zona: "Ciudad de Panamá — centro",
+      direccion: "Bella Vista, calle Uruguay, casa 12",
+      lat: 8.9811,
+      lng: -79.5285,
+      cobroCents: 1_800,
+    }),
+  ];
+
+  const rutas = esHoy
+    ? [
+        {
+          rutaId: "ruta-ana",
+          motorizado: "Ana Gómez",
+          motorizadoId: "m2",
+          bodega: "Casa",
+          estado: "borrador",
+          salioEn: null,
+          cerradaEn: null,
+          kmPropuestos: null,
+          paradas: deAna,
+        },
+        {
+          rutaId: "ruta-luis",
+          motorizado: "Luis Pérez",
+          motorizadoId: "m1",
+          bodega: "Principal",
+          estado: "en_curso",
+          salioEn: aLas(8, 40),
+          cerradaEn: null,
+          kmPropuestos: 14.3,
+          paradas: deLuis,
+        },
+      ]
+    : [];
+
+  // Por repartir: preparadas y sin quien las lleve. De DOS bodegas a propósito,
+  // que es cuando armar la ruta avisa de que solo se puede cargar de una.
+  const sinRuta = esHoy
+    ? [
+        parada({
+          envioId: "env-7",
+          pedido: "BC-1052",
+          cliente: "Kathia Mendoza",
+          zona: "Ciudad de Panamá — centro",
+          direccion: "Obarrio, calle 53 Este, PH Mirador, apto 9-B",
+          lat: 8.9795,
+          lng: -79.5234,
+          ventana: "tarde",
+          cobroCents: 9_900,
+        }),
+        // Del interior y sin punto en el mapa. La zona «Interior» exige pago
+        // total, así que no hay nada que cobrar en la puerta: por eso esta fila
+        // dice «pagado» y no un monto.
+        parada({
+          envioId: "env-8",
+          pedido: "BC-1053",
+          bodegaId: "b2",
+          bodega: "Casa",
+          cliente: "Edilma del Carmen Quintero",
+          zona: "Interior",
+          direccion: "Chitré, barriada San Juan Bautista, casa 45, cerca de la iglesia",
+        }),
+      ]
+    : [];
+
+  const todas = [...sinRuta, ...rutas.flatMap((r) => r.paradas)];
+  const abiertas = todas.filter(
+    (p) => p.estado !== "entregado" && p.estado !== "devuelto" && p.estado !== "anulado",
+  );
+
+  return {
+    fecha,
+    rutas,
+    sinRuta,
+    // No se filtran por fecha, igual que la consulta de verdad: un pedido
+    // agendado el viernes y no despachado sigue siendo trabajo del lunes.
+    porPreparar: [
+      {
+        pedidoId: "ped-2",
+        numero: "BC-1042",
+        cliente: "Yarielis Concepción",
+        zona: "Ciudad de Panamá — centro",
+        saldoCents: 2_500,
+      },
+      // El olvidado: sin nombre, sin zona y ya pagado. Es el que enseña que
+      // esta lista no es «lo de hoy» sino «lo que quedó pendiente».
+      { pedidoId: "ped-8", numero: "BC-1038", cliente: null, zona: null, saldoCents: 0 },
+    ],
+    resumen: {
+      // «Fallido» cuenta como por entregar: la caja sigue siendo de alguien.
+      porEntregar: abiertas.length,
+      entregadas: todas.filter((p) => p.estado === "entregado").length,
+      fallidas: todas.filter((p) => p.estado === "fallido").length,
+      cobradoCents: todas.reduce((s, p) => s + p.cobradoCents, 0),
+    },
+    ajustes: {
+      // De cada ventana se guarda su CÓDIGO, no su nombre: es lo que lleva
+      // escrito `envios.ventana` y lo que devuelve `ajustesDeEntrega`.
+      ventanas: VENTANAS_DE_MUESTRA.map((v) => v.id),
+      comisiones: COMISIONES_DE_MUESTRA,
+    },
+    // Los que la ruta añade para poder asignar: sin los inactivos y por nombre,
+    // que es lo que dice su SELECT. Carlos (inactivo) no está, a propósito.
+    motorizados: [
+      { id: "m2", nombre: "Ana Gómez", estado: "pausa" },
+      { id: "m1", nombre: "Luis Pérez", estado: "activo" },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Las pasarelas de cobro
+// ---------------------------------------------------------------------------
+
+/**
+ * Qué credenciales están puestas, por pasarela y modo.
+ *
+ * Es lo ÚNICO que se declara a mano; de aquí se calculan `faltan`, `completo`,
+ * `puede_encenderse` y `por_que_no` con las mismas reglas del servidor
+ * (`queFalta` y `puedeEncenderse`, src/dominio/pasarelas.ts). Escritos a mano
+ * uno por uno, el primer descuido sería una pantalla que dice «no falta nada»
+ * al lado de un campo vacío.
+ *
+ * Los nombres de las credenciales son LOS DE VERDAD: la pantalla busca cada
+ * campo del catálogo por su nombre, así que uno inventado saldría como «sin
+ * poner» teniendo una puesta. Hay una prueba que compara esto con el catálogo.
+ */
+const CREDENCIALES_PUESTAS = {
+  // Yappy, encendida y en PRUEBA: completa en el modo en que está, así que se
+  // puede encender; y en real no tiene nada, que es lo que hace falta ver
+  // antes de pasarla a cobrar de verdad.
+  yappy: { prueba: ["id_comercio", "clave_secreta"], real: [] },
+  // Tilopay, encendida y en REAL: la única que cobraría dinero hoy. En prueba
+  // le falta media configuración, y eso también se lee en su tarjeta.
+  tilopay: { prueba: ["apiuser"], real: ["apiuser", "password", "key"] },
+  // PayPal: no se puede encender, y la pantalla tiene que decir QUÉ falta por
+  // su nombre. Con el webhook puesto y las dos llaves no, que es el caso real
+  // de quien dejó el trámite a medias.
+  paypal: { prueba: ["webhook_id"], real: [] },
+};
+
+/** El catálogo, copiado de `src/dominio/pasarelas.ts`. Una prueba los compara. */
+const CONECTORES_DE_MUESTRA = [
+  {
+    pasarela: "yappy",
+    titulo: "Yappy · Botón de Pago",
+    explica:
+      "El más usado en Panamá y el único con el que se puede abonar. La cuenta de Yappy Comercial ya existe a nombre del negocio.",
+    fuente: "docs/plan/04-pagos.md §4.1",
+    credenciales: [
+      { nombre: "id_comercio", titulo: "ID de comercio" },
+      { nombre: "clave_secreta", titulo: "Clave secreta" },
+    ],
+  },
+  {
+    pasarela: "tilopay",
+    titulo: "Tilopay · tarjetas y cuotas",
+    explica:
+      "Tarjeta de crédito o débito y las cuotas de BAC. Solo para el pago total: su cargo fijo se come casi todo un abono pequeño.",
+    fuente:
+      "tilopay.com/en/developers/api/autenticacion y .../hosted-payment-page/process-payment (su documentación, verificada por ellos el 2026-10-20); docs/plan/04-pagos.md §4.2",
+    credenciales: [
+      { nombre: "apiuser", titulo: "Usuario de API" },
+      { nombre: "password", titulo: "Contraseña de API" },
+      { nombre: "key", titulo: "Llave de integración" },
+    ],
+  },
+  {
+    pasarela: "paypal",
+    titulo: "PayPal",
+    explica:
+      "La comisión más alta de las tres; sirve para quien paga desde fuera de Panamá. Solo para el pago total.",
+    fuente: "docs/plan/04-pagos.md §4.3",
+    credenciales: [
+      { nombre: "client_id", titulo: "Client ID de la app REST" },
+      { nombre: "client_secret", titulo: "Secret de la app REST" },
+      { nombre: "webhook_id", titulo: "ID del webhook" },
+    ],
+  },
+];
+
+/** En qué modo está cada una ahora mismo. */
+const MODO_DE_PASARELA = { yappy: "prueba", tilopay: "real", paypal: "prueba" };
+
+/** Las encendidas. En producción esto es `ajustes.pasarelas_activas`, y aquí también. */
+const PASARELAS_ENCENDIDAS = ["yappy", "tilopay"];
+
+/**
+ * Quién encendió o apagó qué. Sale del historial del ajuste, no del libro de
+ * las pasarelas: encender es cambiar ese ajuste, y copiarlo serían dos relatos
+ * del mismo hecho. De la más nueva a la más vieja.
+ */
+const ENCENDIDAS_HISTORIAL = [
+  {
+    version: 3,
+    encendidas: PASARELAS_ENCENDIDAS,
+    cuando: Date.now() - 2 * dia,
+    quien: "duena@babycaleb.com",
+    motivo: "Tilopay ya cobró y reembolsó una prueba real",
+  },
+  {
+    version: 2,
+    encendidas: [],
+    cuando: Date.now() - 9 * dia,
+    quien: "duena@babycaleb.com",
+    motivo: "Las apago mientras el banco revisa la afiliación",
+  },
+  {
+    version: 1,
+    encendidas: ["yappy"],
+    cuando: Date.now() - 15 * dia,
+    quien: "duena@babycaleb.com",
+    motivo: "Primera prueba con el botón de Yappy",
+  },
+];
+
+/**
+ * `/pasarelas`: la forma de `EstadoDeLasPasarelas` (src/db/pasarelas.ts).
+ *
+ * Tampoco se había rendido nunca: sin muestra, la pantalla donde se configuran
+ * las formas de cobro contestaba 404 y el auditor medía la tarjeta de error.
+ *
+ * Aquí NO hay ni una credencial, y no porque se borre al final: lo que se
+ * declara arriba son NOMBRES de credenciales puestas, nunca valores. Es la
+ * misma defensa del servidor —su consulta no nombra siquiera la columna del
+ * secreto— llevada al decorado.
+ */
+function pasarelasDeMuestra() {
+  const puestaEn = Date.now() - 6 * dia;
+
+  const pasarelas = CONECTORES_DE_MUESTRA.map((c) => {
+    const modoActual = MODO_DE_PASARELA[c.pasarela];
+    const encendida = PASARELAS_ENCENDIDAS.includes(c.pasarela);
+
+    const modos = ["prueba", "real"].map((modo) => {
+      const puestas = CREDENCIALES_PUESTAS[c.pasarela][modo];
+      const faltan = c.credenciales.filter((cr) => !puestas.includes(cr.nombre));
+      return {
+        modo,
+        esElActual: modo === modoActual,
+        credenciales: c.credenciales.map((cr) => {
+          const puesta = puestas.includes(cr.nombre);
+          return {
+            nombre: cr.nombre,
+            puesta,
+            version: puesta ? 1 : null,
+            puesta_por: puesta ? "duena@babycaleb.com" : null,
+            puesta_en: puesta ? puestaEn : null,
+            llave_id: puesta ? "llave-2026-10" : null,
+          };
+        }),
+        faltan: faltan.map((cr) => cr.titulo),
+        completo: faltan.length === 0,
+      };
+    });
+
+    // La misma regla de `puedeEncenderse`: cuentan las credenciales DEL MODO EN
+    // QUE ESTÁ. Mirar el otro daría por lista una pasarela con las credenciales
+    // que no va a usar.
+    const faltanAhora = modos.find((m) => m.esElActual).faltan;
+    const puede = faltanAhora.length === 0;
+
+    return {
+      pasarela: c.pasarela,
+      titulo: c.titulo,
+      explica: c.explica,
+      por_confirmar: null,
+      fuente: c.fuente,
+      modo: modoActual,
+      modo_cambiado_por: "duena@babycaleb.com",
+      modo_cambiado_en: Date.now() - 5 * dia,
+      encendida,
+      modos,
+      puede_encenderse: puede,
+      por_que_no: puede
+        ? null
+        : `Para encender ${c.titulo} falta ${faltanAhora.map((f) => `«${f}»`).join(" y ")}.`,
+      incoherente: encendida && !puede,
+    };
+  });
+
+  return {
+    pasarelas,
+    llave_maestra_puesta: true,
+    llave_maestra_problema: null,
+    libro: [
+      {
+        id: "lib-5",
+        pasarela: "tilopay",
+        accion: "modo_cambiado",
+        modo: "real",
+        credencial: null,
+        version: null,
+        actor: "duena@babycaleb.com",
+        motivo: "Ya probamos un cobro en la caja de arena",
+        creado_en: Date.now() - 5 * dia,
+      },
+      {
+        id: "lib-4",
+        pasarela: "tilopay",
+        accion: "credencial_puesta",
+        modo: "real",
+        credencial: "key",
+        version: 1,
+        actor: "duena@babycaleb.com",
+        motivo: "Llegaron las de producción",
+        creado_en: Date.now() - 6 * dia,
+      },
+      // Quitar una credencial también se escribe, y la pantalla lo lee distinto
+      // («Se quitó…»). Sin una línea así, esa frase no se ve nunca.
+      {
+        id: "lib-3",
+        pasarela: "paypal",
+        accion: "credencial_quitada",
+        modo: "real",
+        credencial: "client_id",
+        version: null,
+        actor: "duena@babycaleb.com",
+        motivo: "Era la de la cuenta vieja",
+        creado_en: Date.now() - 8 * dia,
+      },
+      {
+        id: "lib-2",
+        pasarela: "yappy",
+        accion: "credencial_cambiada",
+        modo: "prueba",
+        credencial: "clave_secreta",
+        version: 2,
+        actor: "duena@babycaleb.com",
+        motivo: "La regeneramos en Yappy Comercial",
+        creado_en: Date.now() - 10 * dia,
+      },
+      {
+        id: "lib-1",
+        pasarela: "yappy",
+        accion: "credencial_puesta",
+        modo: "prueba",
+        credencial: "id_comercio",
+        version: 1,
+        actor: "duena@babycaleb.com",
+        motivo: "Primera configuración",
+        creado_en: Date.now() - 15 * dia,
+      },
+    ],
+    encendidas_historial: ENCENDIDAS_HISTORIAL,
+  };
+}
+
 const RESPUESTAS = {
   "/api/yo": ok({
     usuario: {
@@ -637,18 +1170,41 @@ const RESPUESTAS = {
    * un 404 y la auditoría seguiría diciendo «sin fallas» sobre las filas que
    * ya estaban.
    */
+  // La ruta del día y las pasarelas: las dos pantallas que el auditor medía
+  // como una tarjeta de error porque aquí no había nada que servirles.
+  "/api/entregas": (url) =>
+    ok(entregasDeMuestra(url.searchParams.get("fecha") ?? diaPanama(Date.now()))),
+
+  "/api/pasarelas": ok(pasarelasDeMuestra()),
+
   "/api/checkout": ok({
     interruptor: true,
-    cobra: false,
-    inerte: true,
-    listas: [],
-    enPrueba: [],
-    impedimentos: [
-      "Ninguna pasarela está encendida, así que no hay con qué cobrar. Se encienden una por una en Pasarelas de cobro, después de un cobro real de prueba y su reembolso.",
-      "A ninguna de las 3 pasarelas se le han puesto todavía sus credenciales: Yappy · Botón de Pago, Tilopay · tarjetas y cuotas, PayPal. Las da cada pasarela cuando aprueba el comercio.",
-      "El carrito de la web todavía no sabe mandar a pagar: termina en un mensaje de WhatsApp con el pedido ya escrito. Eso se programa cuando haya una pasarela con la que probarlo.",
-    ],
-    resumen: "Encendido, pero todavía sin efecto: la web no cobra. Abajo está lo que falta.",
+    // Esto NO se escribe a mano: en producción lo calcula `estadoDelCheckout`
+    // (src/dominio/checkout.ts) de las pasarelas y del interruptor, y aquí se
+    // calcula de las mismas pasarelas de arriba. Si se escribiera suelto, la
+    // muestra enseñaría una pantalla de Ajustes diciendo «ninguna pasarela
+    // encendida» al lado de una de Pasarelas con dos encendidas.
+    ...(() => {
+      const deCobro = pasarelasDeMuestra().pasarelas.map((p) => {
+        const suModo = p.modos.find((m) => m.esElActual);
+        return { titulo: p.titulo, encendida: p.encendida, completa: suModo.completo, modo: p.modo };
+      });
+      const listas = deCobro.filter((p) => p.encendida && p.completa && p.modo === "real");
+      const enPrueba = deCobro.filter((p) => p.encendida && p.completa && p.modo === "prueba");
+      return {
+        // `cobra` falso aunque haya una pasarela lista: el carrito de la web
+        // todavía no sabe mandar a pagar (`LA_WEB_TIENE_CHECKOUT`), y ese hecho
+        // es sobre el código desplegado, no sobre la configuración.
+        cobra: false,
+        inerte: true,
+        listas: listas.map((p) => p.titulo),
+        enPrueba: enPrueba.map((p) => p.titulo),
+        impedimentos: [
+          "El carrito de la web todavía no sabe mandar a pagar: termina en un mensaje de WhatsApp con el pedido ya escrito. Eso se programa cuando haya una pasarela con la que probarlo.",
+        ],
+        resumen: "Encendido, pero todavía sin efecto: la web no cobra. Abajo está lo que falta.",
+      };
+    })(),
     llave_maestra_puesta: true,
   }),
 
@@ -972,7 +1528,11 @@ const RESPUESTAS = {
         estado: "pausa",
         vehiculo: null,
         tiene_pin: false,
-        entregas_hoy: 0,
+        // Dos, que son las de su ruta sin despachar en `/api/entregas`: le
+        // armaron la ruta y después se puso en pausa. `entregas_hoy` cuenta
+        // los envíos de sus rutas de hoy (src/db/motorizados.ts), así que un
+        // cero aquí contradiría la otra pantalla.
+        entregas_hoy: 2,
       },
       {
         id: "m3",
@@ -1083,7 +1643,17 @@ const RESPUESTAS = {
         origen: "guardado", version: 1, vigente_desde: Date.now() - 30 * dia,
         cambiado_por: "duena@babycaleb.com", motivo: "El celular de siempre del negocio",
       }),
-      ajuste("pasarelas_activas", []),
+      // Encendidas: las mismas que dice `/api/pasarelas`, porque en producción
+      // es LITERALMENTE este ajuste quien lo decide (`src/db/pasarelas.ts`:
+      // «qué está encendido ya tiene dueño»). Dos listas aquí serían dos
+      // pantallas de la muestra contándose cosas distintas.
+      ajuste("pasarelas_activas", PASARELAS_ENCENDIDAS, {
+        origen: "guardado",
+        version: ENCENDIDAS_HISTORIAL[0].version,
+        vigente_desde: ENCENDIDAS_HISTORIAL[0].cuando,
+        cambiado_por: ENCENDIDAS_HISTORIAL[0].quien,
+        motivo: ENCENDIDAS_HISTORIAL[0].motivo,
+      }),
       ajuste("metodos_para_abono", ["yappy", "manual"]),
       ajuste("cotizacion_dias_validez", PENDIENTE),
       ajuste("reserva_minutos_pago_en_linea", 30, {
@@ -1091,18 +1661,11 @@ const RESPUESTAS = {
         cambiado_por: "duena@babycaleb.com", motivo: "Media hora alcanza para pagar por Yappy",
       }),
       ajuste("reserva_horas_comprobante", PENDIENTE),
-      ajuste("ventanas_entrega", [
-        { id: "manana", etiqueta: "Mañana", desde: "08:00", hasta: "12:00" },
-        { id: "tarde", etiqueta: "Tarde", desde: "13:00", hasta: "18:00" },
-      ], {
+      ajuste("ventanas_entrega", VENTANAS_DE_MUESTRA, {
         origen: "guardado", version: 2, vigente_desde: Date.now() - 20 * dia,
         cambiado_por: "duena@babycaleb.com", motivo: "Dos franjas, como las entregas de ahora",
       }),
-      ajuste("comisiones", {
-        yappy: { porcentaje_bp: 350, fijo_cents: 0, lleva_itbms: true },
-        tilopay: PENDIENTE,
-        paypal: PENDIENTE,
-      }, {
+      ajuste("comisiones", COMISIONES_DE_MUESTRA, {
         origen: "guardado", version: 1, vigente_desde: Date.now() - dia,
         cambiado_por: "duena@babycaleb.com", motivo: "Llegó el contrato de Yappy",
       }),

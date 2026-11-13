@@ -115,13 +115,18 @@ export function Caleb({ pantalla }: { pantalla?: string }) {
 
   return (
     <>
-      {/* Flotante y por encima de la barra del teléfono, que mide 64 px. En
-          computadora la barra no está, pero el margen no estorba. */}
+      {/* Flotante, y por eso no empuja nada: dónde se pone y cuánto mide lo
+          dice `.burbuja-caleb` en `estilos.css`, que es donde el contenido lee
+          el hueco que tiene que reservarle (§7f). Puesto aquí con
+          `bottom-20` y un alto que salía del relleno, las dos medidas se
+          separaron y la burbuja se sentó encima de «Confirmar: el dinero
+          entró», de dos filas de Existencias, de una zona y de una fila de
+          Pedidos y de Catálogo. */}
       <button
         type="button"
         onClick={() => setAbierta(true)}
         aria-label="Preguntarle a Caleb"
-        className="tactil fixed right-4 bottom-20 z-30 rounded-full border border-line bg-accent px-5 py-3 text-[15px] font-bold text-accent-fg shadow-lg md:bottom-6"
+        className="tactil burbuja-caleb rounded-full border border-line bg-accent px-5 text-[15px] font-bold text-accent-fg shadow-lg"
       >
         Caleb
       </button>

@@ -1,0 +1,71 @@
+# ¿Siguen conectados los cables entre la tienda y el sistema?
+#
+# Compara, contra producción de verdad, lo que el sistema publica con lo que la
+# tienda enseña. Solo LEE: no toca la base, no necesita credenciales y no
+# despliega nada, así que se puede correr cuando sea sin pensarlo dos veces.
+#
+# Existe porque esto ya falló y lo encontró una persona mirando la página, no
+# una prueba: un producto de prueba quedó publicado con ficha propia viva, y
+# unas toallitas de 1 200 llevan tiempo publicadas a $40 sin que ningún canal
+# sepa venderlas. Las dos cosas pasaron sin que nada se pusiera rojo.
+#
+# Se corre desde la pestaña Actions («Run workflow»), y además solo los lunes
+# por la mañana. El informe sale en el resumen del run, en español y sin jerga:
+# quien lo abre no tiene por qué leer un registro.
+name: Cables
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Lunes a las 13:17 UTC, que son las 8:17 de la mañana en Panamá. El minuto
+    # no es redondo a propósito: a las en punto se amontonan los trabajos de
+    # medio mundo y el run se queda esperando.
+    - cron: "17 13 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  mirar:
+    name: Comparar la tienda con el sistema
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # No hace falta instalar nada: el guion solo usa `fetch` y `node:fs`.
+      - name: Comparar
+        id: comparar
+        run: |
+          set +e
+          node sistema/scripts/cables.mjs > salida.txt 2>&1
+          echo "codigo=$?" >> "$GITHUB_OUTPUT"
+          cat salida.txt
+
+      - name: Contarlo en el resumen
+        if: always()
+        run: |
+          {
+            echo "## Los cables entre la tienda y el sistema"
+            echo
+            if [ "${{ steps.comparar.outputs.codigo }}" = "0" ]; then
+              echo "Todo cuadra: la tienda y el sistema dicen los mismos productos."
+            else
+              echo "**Hay cosas que mirar.** Lo de abajo sale tal cual del cotejo:"
+            fi
+            echo
+            echo '```'
+            cat salida.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # El rojo tiene que significar algo: si hay desconexión, el run falla.
+      # Un informe que siempre sale verde es un informe que nadie vuelve a
+      # abrir.
+      - name: Que el rojo signifique rojo
+        if: steps.comparar.outputs.codigo != '0'
+        run: exit 1

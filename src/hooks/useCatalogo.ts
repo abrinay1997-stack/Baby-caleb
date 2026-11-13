@@ -65,22 +65,69 @@ const DEL_BUILD: Catalogo = porCodigo(
   (respaldo as { variantes?: VariantePublica[] }).variantes ?? []
 );
 
+/**
+ * `true` cuando lo que se está enseñando es la copia del build, no el catálogo.
+ *
+ * Existía el dato y no lo leía nadie. El Worker lo manda en cada respuesta
+ * (`desdeRespaldo`) «para que la pantalla pueda avisar», y la pantalla no
+ * avisaba: el `fetch` contesta **200** aunque esté sirviendo el respaldo, así
+ * que el `catch` de abajo no salta y el navegador toma la copia por el
+ * catálogo de verdad, con toda confianza.
+ *
+ * Lo que se enseñaba ese día: los doce artículos en «agotado», los precios de
+ * la fecha en que se generó la copia y —porque el respaldo no trae el celular
+ * a propósito— **sin botón de pedir por WhatsApp**. Una tienda muerta con cara
+ * de tienda sana, y ni un aviso en ninguna parte.
+ */
+let sirviendoCopiaVieja = false;
+
+/**
+ * ¿Lo que se ve salió de la copia del build?
+ *
+ * Es distinto de `cargandoCatalogo()`: aquello es «todavía no llegó», esto es
+ * «llegó, y es la copia». «No se sabe» y «es viejo» son dos respuestas
+ * distintas y la pantalla no puede darlas igual.
+ */
+export const catalogoEsCopiaVieja = (): boolean => sirviendoCopiaVieja;
+
 let enVuelo: Promise<Catalogo> | null = null;
 /** Quién quiere enterarse de que el catálogo de verdad ya llegó. */
 const avisos = new Set<() => void>();
 let yaLlego = false;
 
-function pedirUnaVez(): Promise<Catalogo> {
+/**
+ * Pide el catálogo una sola vez y comparte la respuesta.
+ *
+ * Se exporta porque es la operación de verdad, y el hook de abajo solo la
+ * envuelve para React. Sin un punto de entrada que se pueda llamar desde
+ * fuera, lo único comprobable sería el hook —que necesita un árbol de React
+ * montado— y lo que hay que vigilar aquí no es el render: es de dónde salieron
+ * los precios que se están enseñando.
+ */
+export function pedirUnaVez(): Promise<Catalogo> {
   enVuelo ??= fetch('/api/catalogo')
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((d: { variantes?: VariantePublica[]; whatsapp?: { numero: string | null } }) => {
+    .then(
+      (d: {
+        variantes?: VariantePublica[];
+        whatsapp?: { numero: string | null };
+        desdeRespaldo?: boolean;
+      }) => {
       // El celular se guarda al llegar, con el catálogo: viene en el mismo
       // sobre y por la misma petición. Un segundo viaje para un dato que ya
       // está en la respuesta sería una consulta de más en cada visita.
       numeroDeWhatsapp = d.whatsapp?.numero ?? null;
+      // La respuesta llega con 200 en los dos casos: el Worker sirve la copia
+      // cuando el sistema no contesta y sigue devolviendo una página sana. Lo
+      // único que los distingue es este campo.
+      sirviendoCopiaVieja = d.desdeRespaldo === true;
       return porCodigo(d.variantes ?? []);
-    })
+      },
+    )
     .catch(() => {
+      // Aquí no hace falta mirar el campo: si la petición se cayó del todo, lo
+      // que queda es la copia y punto.
+      sirviendoCopiaVieja = true;
       // Sin catálogo del sistema nos quedamos con la copia del build. No se
       // vacía la promesa: reintentar en cada componente que se monte sería
       // castigar a un sistema que ya está caído.
@@ -136,16 +183,28 @@ export function useCatalogo(): Catalogo {
  * Aparte de `useCatalogo` para no cambiarle la forma a los sitios que solo
  * quieren precios y les da igual la espera.
  */
-export function useCatalogoConEstado(): { catalogo: Catalogo; cargando: boolean } {
+export function useCatalogoConEstado(): {
+  catalogo: Catalogo;
+  cargando: boolean;
+  /** `true` si lo que se está enseñando es la copia del build. */
+  copiaVieja: boolean;
+} {
   const catalogo = useCatalogo();
   const [cargando, setCargando] = useState(() => cargandoCatalogo());
+  const [copiaVieja, setCopiaVieja] = useState(() => catalogoEsCopiaVieja());
 
   useEffect(() => {
     if (!cargandoCatalogo()) {
       setCargando(false);
       return;
     }
-    const avisar = () => setCargando(false);
+    const avisar = () => {
+      setCargando(false);
+      // Se lee DESPUÉS de que llegue: antes todavía no se sabe de dónde salió,
+      // y enseñar el aviso mientras carga diría que algo va mal cuando lo
+      // único que pasa es que la respuesta no ha vuelto.
+      setCopiaVieja(catalogoEsCopiaVieja());
+    };
     avisos.add(avisar);
     // Puede haber llegado entre el render y este efecto.
     if (!cargandoCatalogo()) avisar();
@@ -154,7 +213,7 @@ export function useCatalogoConEstado(): { catalogo: Catalogo; cargando: boolean 
     };
   }, []);
 
-  return { catalogo, cargando };
+  return { catalogo, cargando, copiaVieja };
 }
 
 /** `5000` da `$50`; `4650` da `$46.50`. Los centavos solo salen si los hay. */

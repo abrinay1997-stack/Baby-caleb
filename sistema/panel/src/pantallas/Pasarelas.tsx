@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fecha, pedir, useCarga, type Yo } from "../api";
-import { Carga, Pastilla, Tarjeta } from "../componentes";
+import { Carga, Pastilla, Tarjeta, sinPuntoFinal } from "../componentes";
 import { Hoja } from "../armazon/Hoja";
 import { puedeEditar } from "../permisos";
 import {
@@ -11,6 +11,7 @@ import {
   type Modo,
   type Pasarela,
 } from "../../../src/dominio/pasarelas";
+import { estadoDelCheckout } from "../../../src/dominio/checkout";
 
 /**
  * Las pasarelas de cobro: dónde se configuran y dónde se encienden.
@@ -125,6 +126,90 @@ export interface EstadoDeLasPasarelas {
 // ---------------------------------------------------------------------------
 // Cómo se leen las cosas
 // ---------------------------------------------------------------------------
+
+/**
+ * ¿Esta pasarela está cobrando dinero de verdad, o no cobra nada?
+ *
+ * La tarjeta decía «Está cobrando.» a cualquier pasarela encendida, sin mirar
+ * el modo. Con Yappy encendida EN PRUEBA, eso es falso en lo único que esta
+ * pantalla existe para contestar: un cobro con credenciales de prueba deja a
+ * la clienta con un pedido que nadie pagó (`dominio/checkout.ts`).
+ *
+ * El veredicto NO se escribe a mano aquí: se le pregunta al mismo módulo que
+ * decide si la web puede cobrar, para que la tarjeta y el checkout no puedan
+ * discrepar. `interruptor` y `webTieneCheckout` van en `true` a propósito:
+ * esos dos son del sitio entero —el ajuste «Pagar desde la web» y el carrito—
+ * y esta tarjeta habla de UNA pasarela. `listas` y `enPrueba` no dependen de
+ * ellos.
+ */
+export function comoCobra(p: EstadoDePasarela): "real" | "prueba" | "no" {
+  const actual = p.modos.find((m) => m.modo === p.modo);
+  const estado = estadoDelCheckout({
+    interruptor: true,
+    webTieneCheckout: true,
+    pasarelas: [
+      {
+        pasarela: p.pasarela,
+        titulo: p.titulo,
+        encendida: p.encendida,
+        completa: actual?.completo ?? false,
+        modo: p.modo,
+        faltan: actual?.faltan ?? [],
+      },
+    ],
+  });
+  if (estado.listas.length > 0) return "real";
+  if (estado.enPrueba.length > 0) return "prueba";
+  return "no";
+}
+
+/**
+ * Lo PRIMERO que se lee de una pasarela.
+ *
+ * Decía «Encendida: se le ofrece a las clientas» para cualquiera que tuviera
+ * el interruptor puesto, sin mirar si podía cobrar. En producción las tres
+ * están encendidas y a las tres les faltan las credenciales, así que la
+ * tarjeta afirmaba que se les ofrece a las clientas algo que no puede cobrar
+ * nada — y tres renglones más abajo, la misma tarjeta decía «está encendida y
+ * no puede cobrar». La pantalla se contradecía a sí misma en el mismo cuadro.
+ *
+ * Lo vio una persona mirando el panel, no una prueba.
+ *
+ * Usa `comoCobra`, que es la misma clasificación del dominio que usa la frase
+ * de abajo: así las dos líneas de la misma tarjeta no pueden volver a decir
+ * cosas distintas. Es el arreglo de la frase de abajo, terminado: aquella se
+ * corrigió y ésta se quedó.
+ */
+export function etiquetaDeEncendida(p: EstadoDePasarela): string {
+  if (!p.encendida) return "Apagada";
+  switch (comoCobra(p)) {
+    case "real":
+      return "Encendida: se le ofrece a las clientas";
+    case "prueba":
+      return "Encendida, pero en prueba: no cobra";
+    default:
+      // Encendida y sin poder cobrar. Es el estado de las tres hoy, y es el
+      // que la etiqueta vieja pintaba de verde.
+      return "Encendida, pero todavía no puede cobrar";
+  }
+}
+
+/** Verde solo cuando de verdad está cobrando. Lo demás, neutro. */
+export function tonoDeLaPastilla(p: EstadoDePasarela): "bien" | "neutro" {
+  return p.encendida && comoCobra(p) === "real" ? "bien" : "neutro";
+}
+
+/** Lo que se lee debajo de las credenciales. Dice el modo, siempre. */
+export function fraseDeCobro(p: EstadoDePasarela): string {
+  switch (comoCobra(p)) {
+    case "real":
+      return "Está cobrando dinero de verdad.";
+    case "prueba":
+      return "Encendida en modo de prueba: NO le cobra nada a las clientas. Un pago hecho así deja a la clienta con un pedido que nadie pagó.";
+    default:
+      return "Lista para encender.";
+  }
+}
 
 /** El título de una credencial sale del catálogo, no de su nombre técnico. */
 export function tituloDeCredencial(pasarela: Pasarela, nombre: string): string {
@@ -400,7 +485,8 @@ function HojaDeAccion({
           {laQueHay?.puesta === true ? (
             <p className="mt-0 mb-4 rounded-[12px] border border-line p-3 text-[14px]">
               Ya hay una puesta: la puso {laQueHay.puesta_por}
-              {laQueHay.puesta_en === null ? "" : ` el ${fecha(laQueHay.puesta_en)}`}. El sistema no
+              {laQueHay.puesta_en === null ? "" : ` el ${sinPuntoFinal(fecha(laQueHay.puesta_en))}`}. El
+              sistema no
               la puede leer ni enseñar, así que lo que escriba aquí la reemplaza.
             </p>
           ) : null}
@@ -591,9 +677,7 @@ function TarjetaDePasarela({
       {/* Lo primero que se lee: encendida o apagada, y en qué modo. Las dos
           cosas con palabras. */}
       <p className="m-0 mt-2 flex flex-wrap gap-2">
-        <Pastilla tono={p.encendida ? "bien" : "neutro"}>
-          {p.encendida ? "Encendida: se le ofrece a las clientas" : "Apagada"}
-        </Pastilla>
+        <Pastilla tono={tonoDeLaPastilla(p)}>{etiquetaDeEncendida(p)}</Pastilla>
         <Pastilla tono={p.modo === "real" ? "aviso" : "neutro"}>{ETIQUETAS_MODO[p.modo]}</Pastilla>
       </p>
 
@@ -639,9 +723,7 @@ function TarjetaDePasarela({
 
           {/* Qué falta, por su nombre. Nunca «configuración incompleta». */}
           {p.puede_encenderse ? (
-            <p className="m-0 mt-3 font-bold">
-              {p.encendida ? "Está cobrando." : "Lista para encender."}
-            </p>
+            <p className="m-0 mt-3 font-bold">{fraseDeCobro(p)}</p>
           ) : (
             <p className="m-0 mt-3 font-bold">{p.por_que_no}</p>
           )}
@@ -715,7 +797,7 @@ function TarjetaDePasarela({
           {p.modo_cambiado_por === null ? null : (
             <p className="m-0 mt-2 text-[12px] text-muted">
               El modo lo puso {p.modo_cambiado_por}
-              {p.modo_cambiado_en === null ? "" : ` el ${fecha(p.modo_cambiado_en)}`}.
+              {p.modo_cambiado_en === null ? "" : ` el ${sinPuntoFinal(fecha(p.modo_cambiado_en))}`}.
             </p>
           )}
         </>

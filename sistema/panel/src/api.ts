@@ -57,6 +57,45 @@ function mensajeDeFallo(codigo: string | undefined, crudo: string | undefined): 
   }
 }
 
+/**
+ * Lo que ya se pidió antes de que React llegara a pedirlo.
+ *
+ * El panel hacía DOS viajes EN FILA antes de enseñar nada: no pintaba una
+ * línea hasta que volvía `/api/yo`, y solo entonces la pantalla empezaba a
+ * pedir sus datos. La espera era siempre la SUMA de las dos, nunca la mayor.
+ * Medido en el panel de verdad: 8.8 segundos en saber quién entra y 22.6 más
+ * en el Resumen. Treinta segundos mirando «Cargando el panel…», cada mañana.
+ *
+ * Las dos peticiones no se necesitan entre sí —quién entra lo comprueba el
+ * servidor en las dos, no el navegador— así que pueden salir a la vez. Esto
+ * las lanza al arrancar, antes de montar React, y `useCarga` recoge la que ya
+ * venía en camino en vez de empezar otra.
+ *
+ * Se consume UNA sola vez: la segunda vez que una pantalla se monta pide de
+ * nuevo, porque si no, volver a Resumen enseñaría los números de cuando se
+ * abrió el panel. Una precarga que se queda pegada es peor que no tenerla.
+ */
+const precargadas = new Map<string, Promise<unknown>>();
+
+/** Lanza una petición ahora para que esté lista cuando alguien la pida. */
+export function precargar(ruta: string): void {
+  if (precargadas.has(ruta)) return;
+  // El `catch` vacío es a propósito: si falla, `useCarga` la va a volver a
+  // pedir y va a tratar el error como siempre. Sin esto, un fallo aquí sería
+  // una promesa rechazada sin dueño y el navegador la escupe en la consola.
+  const p = pedir<unknown>(ruta);
+  p.catch(() => undefined);
+  precargadas.set(ruta, p);
+}
+
+/** La que ya venía en camino, si la hay. Se entrega una vez y se olvida. */
+function recoger<T>(ruta: string): Promise<T> | null {
+  const p = precargadas.get(ruta);
+  if (p === undefined) return null;
+  precargadas.delete(ruta);
+  return p as Promise<T>;
+}
+
 export async function pedir<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
   let respuesta: Response;
   try {
@@ -102,7 +141,8 @@ export function useCarga<T>(ruta: string, dependencias: unknown[] = []): Estado<
   useEffect(() => {
     let vivo = true;
     setEstado({ fase: "cargando" });
-    pedir<T>(ruta)
+    // La que salió al arrancar, si esta es la primera vez que se pide.
+    (recoger<T>(ruta) ?? pedir<T>(ruta))
       .then((datos) => {
         if (vivo) setEstado({ fase: "listo", datos });
       })
@@ -132,11 +172,36 @@ export function dinero(centavos: number): string {
   return `${signo}$${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
 }
 
-/** Una fecha en hora de Panamá, que es la del negocio. */
+/**
+ * Una fecha en hora de Panamá, que es la del negocio.
+ *
+ * El mes va con NOMBRE, no en número, y no es una preferencia de estilo.
+ *
+ * `dateStyle: "medium"` con la configuración regional `es-PA` imprime
+ * `11/10/2026` para el 10 de noviembre: mes primero, al estilo de Estados
+ * Unidos. La dueña es panameña y eso lo lee como «11 de octubre». El 1 de
+ * diciembre salía `12/01/2026`, que ella lee como «12 de enero»: dos meses y
+ * un año de diferencia en el mismo renglón.
+ *
+ * Se vio en el Resumen, que decía «el más viejo lleva esperando desde
+ * 11/12/2026» — hoy, 12 de noviembre, o sea «desde hoy», leído como una fecha
+ * que todavía no ha llegado, para algo que lleva esperando. Afecta además a
+ * Cobros, Pedidos, Llaves, la ficha de la clienta, Usuarios y «desde cuándo
+ * rige este abono mínimo», que es justo donde una fecha mal leída cambia lo
+ * que la dueña cree que cobró.
+ *
+ * Con el mes escrito no hay forma de leerlo al revés, en ningún país. Es lo
+ * que ya hacían por su cuenta el Resumen («9 nov») y Contabilidad («Entregado
+ * 9 nov 2026»), cada uno con su propio código: esta es la versión que vale
+ * para las trece pantallas.
+ */
 export function fecha(ms: number): string {
   return new Intl.DateTimeFormat("es-PA", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     timeZone: "America/Panama",
   }).format(new Date(ms));
 }
