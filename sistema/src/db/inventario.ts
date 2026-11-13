@@ -1,6 +1,9 @@
 import { fallo, ok } from "../contrato/resultado";
 import type { Fallo, Resultado } from "../contrato/resultado";
 import { ulid } from "../ids";
+import { mermaOMuestra } from "../dominio/contabilidad";
+import { fechaPanama } from "../dominio/metricas";
+import { enunciadosDeAsiento } from "./contabilidad";
 
 /**
  * Mover el inventario sin transacciones interactivas.
@@ -88,6 +91,17 @@ export const esTipoDeMovimiento = (v: unknown): v is TipoMovimiento =>
 
 /** Los que el esquema obliga a justificar. */
 const EXIGEN_MOTIVO = new Set(["ajuste", "merma", "muestra", "regalo", "conteo"]);
+
+/**
+ * Lo que sale del inventario SIN ser una venta: asiento 12.
+ *
+ * `ajuste` y `conteo` quedan fuera a propósito aunque también resten: un
+ * conteo que encuentra menos no es una pérdida del negocio, es que lo anotado
+ * estaba mal, y lo suyo es el asiento 18 de corrección — que tiene su propio
+ * camino. Meter los cuatro en 5201 mezclaría «se me rompió una caja» con «la
+ * cuenta estaba mal», y son cosas distintas para quien lee los libros.
+ */
+const SALEN_SIN_VENDER: ReadonlySet<string> = new Set(["merma", "muestra", "regalo"]);
 
 export interface Linea {
   readonly codigo: string;
@@ -336,7 +350,7 @@ export async function aplicar(
   ctx: Contexto,
   movimientos: readonly Movimiento[],
   referencia: { tipo: string; id: string },
-): Promise<Resultado<{ deshacerId: string }>> {
+): Promise<Resultado<{ deshacerId: string; sinAsiento: readonly string[] }>> {
   if (movimientos.length === 0) {
     return fallo("entrada_invalida", "no hay nada que mover");
   }
@@ -395,9 +409,15 @@ export async function aplicar(
   }
 
   const enunciados: D1PreparedStatement[] = [];
+  /** Los que salieron sin que se supiera su costo: sin asiento, y dicho. */
+  const sinAsiento: string[] = [];
 
   for (const [i, m] of movimientos.entries()) {
     const { efecto, despues } = plan[i] as { efecto: Efecto; despues: Promedio };
+    // El id se saca aparte porque el asiento de la merma apunta a ESTE
+    // movimiento: sin él, el contador tiene un gasto en los libros y ninguna
+    // forma de llegar a la caja que se perdió.
+    const movId = ulid(ctx.ahora);
     enunciados.push(
       ctx.db
         .prepare(
@@ -407,7 +427,7 @@ export async function aplicar(
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .bind(
-          ulid(ctx.ahora),
+          movId,
           m.codigo,
           m.bodegaId,
           m.delta,
@@ -431,6 +451,47 @@ export async function aplicar(
         .prepare("UPDATE existencias SET fisico = fisico + ? WHERE codigo = ? AND bodega_id = ?")
         .bind(m.delta, m.codigo, m.bodegaId),
     );
+
+    /**
+     * Y su ASIENTO, en el mismo batch.
+     *
+     * Una merma es mercancía que se fue y que nadie pagó: en los libros es un
+     * gasto. El asiento 12 —Debe 5201 · Haber 1301— estaba escrito, probado y
+     * documentado en `dominio/contabilidad.ts` desde el principio, y la cuenta
+     * 5201 «Mermas, muestras y regalos» existe en el plan desde la migración
+     * 0011. No lo llamaba nadie. Cuarta vez que aparece lo mismo en este
+     * repositorio: la pieza terminada sin caller (TRAMPAS §12).
+     *
+     * Qué costaba: la caja desaparecía del inventario y su costo se quedaba
+     * dentro del valor del inventario. El balance cuadraba —el promedio bajaba
+     * igual— pero el gasto no existía en ninguna parte, así que la ganancia
+     * salía más alta de lo que fue. Un negocio que pierde mercancía y cuyos
+     * libros no lo notan.
+     *
+     * En el MISMO batch y no después: un movimiento sin su asiento, o un
+     * asiento sin su movimiento, es justo lo que `enunciadosDeAsiento` existe
+     * para evitar.
+     *
+     * **Sin costo conocido no se inventa un asiento.** Si la mercancía entró
+     * sin que nadie dijera lo que costó, el promedio no alcanza y el asiento
+     * sería un número inventado — un cero diría que no costó nada (TRAMPAS §7).
+     * Se queda sin asiento y se devuelve en `sinAsiento`, que es la misma
+     * decisión que ya toma `marcarEntregada` con las ventas sin costo.
+     */
+    if (SALEN_SIN_VENDER.has(m.tipo) && m.delta < 0) {
+      if (efecto.costoUnitCents === null) {
+        sinAsiento.push(m.codigo);
+      } else {
+        const asiento = mermaOMuestra({
+          fecha: fechaPanama(ctx.ahora),
+          referencia: { tipo: "inventario", id: movId },
+          costoCents: Math.abs(m.delta) * efecto.costoUnitCents,
+          motivo: m.motivo ?? "",
+        });
+        if (!asiento.ok) return asiento;
+        enunciados.push(...enunciadosDeAsiento(ctx, asiento.datos).enunciados);
+      }
+    }
 
     // La fila de control. Mira el estado YA cambiado: si el UPDATE no encontró
     // su fila, o si dejó el físico por debajo de lo reservado, aquí `ok` sale 0
@@ -556,7 +617,10 @@ export async function aplicar(
     return fallo("sin_stock", comoSeLee(e, movimientos));
   }
 
-  return ok({ deshacerId: referencia.id });
+  // `sinAsiento` sube hasta quien llamó: lo que salió sin costo conocido no
+  // tiene gasto en los libros, y eso lo tiene que saber alguien. Callarlo
+  // dejaría una pérdida sin registrar y nadie se enteraría nunca.
+  return ok({ deshacerId: referencia.id, sinAsiento });
 }
 
 /**
