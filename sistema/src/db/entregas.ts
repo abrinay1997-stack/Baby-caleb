@@ -7,6 +7,7 @@ import { type EstadoEnvio, esEstadoEnvio, validarTransicionEnvio } from "../domi
 import { type Parada, ahorroDeLaRuta, proponerRuta } from "../dominio/rutas";
 import { type Candidato, sugerirMotorizado } from "../dominio/asignacion";
 import { type Punto, esPuntoValido } from "../dominio/geo";
+import { enunciadosDeParada } from "./paradas";
 import { esEstadoMotorizado, puedeRecibirEntregas } from "../dominio/motorizado";
 import reglas from "../../reglas.json";
 import { leerVigentes } from "./ajustes";
@@ -78,6 +79,7 @@ export interface ContextoPrueba extends ContextoEntrega {
 /** Las rutas de `idempotencia`, para que dos operaciones no compartan clave. */
 const RUTA_ENTREGAR = "entregas:entregar";
 const RUTA_FALLAR = "entregas:fallar";
+const RUTA_REINTENTAR = "entregas:reintentar";
 
 /** 48 horas, como pide el contrato (03-contratos §5). */
 const VENCE_IDEMPOTENCIA_MS = 48 * 60 * 60 * 1000;
@@ -273,79 +275,6 @@ const leerPedido = (db: D1Database, pedidoId: string) =>
     .bind(pedidoId)
     .first<FilaPedido>();
 
-/**
- * El cambio de estado de una parada, con su control y su bitácora.
- *
- * Son tres enunciados que van juntos siempre, y se devuelven en vez de
- * ejecutarse para que entren en el MISMO batch que lo que provocan — el stock,
- * el cobro, la transición del pedido.
- *
- * **El control mira los valores que este batch escribió**, no solo la versión.
- * La diferencia es la que ya costó dos veces en este proyecto: si otro guardó
- * en medio, la versión que se esperaba YA es la que hay, y un control que solo
- * mire el número pasa tan contento aunque el UPDATE no haya tocado nada.
- */
-function enunciadosDeParada(
-  ctx: ContextoEntrega,
-  envioId: string,
-  de: EstadoEnvio,
-  a: EstadoEnvio,
-  versionLeida: number,
-  extra: {
-    readonly nota?: string | undefined;
-    readonly punto?: Punto | undefined;
-    /** Columnas que este cambio escribe además del estado. */
-    readonly columnas?: { readonly sql: string; readonly valores: unknown[] } | undefined;
-    /** Condición añadida al control, sobre lo que acaba de escribirse. */
-    readonly controlExtra?: { readonly sql: string; readonly valores: unknown[] } | undefined;
-  } = {},
-): D1PreparedStatement[] {
-  const columnas = extra.columnas === undefined ? "" : `, ${extra.columnas.sql}`;
-  const valoresColumnas = extra.columnas?.valores ?? [];
-  const controlExtra = extra.controlExtra === undefined ? "" : ` AND ${extra.controlExtra.sql}`;
-  const valoresControl = extra.controlExtra?.valores ?? [];
-  const punto = extra.punto !== undefined && esPuntoValido(extra.punto) ? extra.punto : null;
-
-  return [
-    ctx.db
-      .prepare(
-        `UPDATE envios SET estado = ?${columnas}, version = version + 1
-          WHERE id = ? AND estado = ? AND version = ?`,
-      )
-      .bind(a, ...valoresColumnas, envioId, de, versionLeida),
-    ctx.db
-      .prepare(
-        `INSERT INTO controles (id, regla, ok, creado_en)
-         VALUES (?, ?, (SELECT COUNT(*) FROM envios
-                        WHERE id = ? AND version = ? AND estado = ?${controlExtra}), ?)`,
-      )
-      .bind(
-        ulid(ctx.ahora),
-        `envio:${de}->${a}`,
-        envioId,
-        versionLeida + 1,
-        a,
-        ...valoresControl,
-        ctx.ahora,
-      ),
-    ctx.db
-      .prepare(
-        `INSERT INTO envio_eventos (id,envio_id,de,a,actor,nota,lat,lng,creado_en)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-      )
-      .bind(
-        ulid(ctx.ahora),
-        envioId,
-        de,
-        a,
-        ctx.actor,
-        extra.nota ?? null,
-        punto?.lat ?? null,
-        punto?.lng ?? null,
-        ctx.ahora,
-      ),
-  ];
-}
 
 /** Lo mismo pedido dos veces se contesta una vez. */
 async function yaHecha<T>(
@@ -1751,6 +1680,130 @@ export async function marcarFallida(
     }
     return /CHECK|controles|UNIQUE|constraint|ABORT|abort/i.test(texto)
       ? fallo("conflicto_version", "algo cambió mientras se marcaba el fallo; vuelva a intentarlo")
+      : fallo("interno", texto);
+  }
+
+  return ok(respuesta);
+}
+
+export interface ReintentoDeEntrega {
+  readonly envioId: string;
+  /** La clave del intento: lo mismo pedido dos veces se hace una vez. */
+  readonly idempotencia: string;
+  /** Opcional: por qué se vuelve a intentar. Queda en la bitácora. */
+  readonly motivo?: string | undefined;
+}
+
+/**
+ * Una entrega fallida vuelve a la cola.
+ *
+ * **Esta transición existía y no la llamaba nadie.** `estado-envio.ts` declara
+ * `fallido: ["pendiente", "devuelto"]` desde el primer día, con su comentario
+ * —«un intento fallido se reintenta o se devuelve»— y hasta la descripción de
+ * `marcar_fallida` promete que «el pedido vuelve a agendado para
+ * reintentarlo». Pero no había una sola función, ruta ni herramienta que
+ * moviera el envío de vuelta a `pendiente`: una entrega fallida se quedaba
+ * fallida para siempre, y la única salida era devolverla.
+ *
+ * Es la trampa §12 en su forma más cara: código correcto, probado y
+ * documentado, sin nadie que lo llame. No falla ninguna prueba porque no hay
+ * nada roto — simplemente no se puede hacer.
+ *
+ * Qué NO toca, y por qué:
+ *
+ *  - **El stock.** La mercancía sigue apartada porque sigue siendo de esa
+ *    clienta. Liberarla la pondría a la venta mientras ella espera su segundo
+ *    intento.
+ *  - **El pedido.** `marcarFallida` ya lo devolvió a `agendado`. Volver a
+ *    moverlo aquí escribiría un evento que no pasó.
+ *
+ * El motorizado SÍ se borra: el envío vuelve a la cola sin dueño, y quien
+ * arme la próxima ruta decide. Dejar al mismo asignado haría que la ruta de
+ * mañana arrastrara al que ya no pudo.
+ */
+export async function reintentarEnvio(
+  ctx: ContextoEntrega,
+  e: ReintentoDeEntrega,
+): Promise<Resultado<{ envioId: string; yaEstaba: boolean }>> {
+  if (e.idempotencia.trim() === "") {
+    return fallo("entrada_invalida", "falta la clave del intento");
+  }
+
+  const huella = huellaDe([e.envioId, "reintentar"]);
+  const antes = await yaHecha<{ envioId: string; yaEstaba: boolean }>(
+    ctx.db,
+    e.idempotencia,
+    RUTA_REINTENTAR,
+    huella,
+    ctx.ahora,
+  );
+  if (antes !== null) {
+    return "respuesta" in antes
+      ? ok({ ...antes.respuesta, yaEstaba: true })
+      : fallo("repetido", "esa clave ya se usó para otra cosa");
+  }
+
+  const envio = await leerEnvio(ctx.db, e.envioId);
+  if (envio === null) return fallo("no_encontrado", "no existe esa entrega");
+  if (!esEstadoEnvio(envio.estado)) return fallo("interno", "esa entrega tiene un estado raro");
+
+  const mal = validarTransicionEnvio(envio.estado, "pendiente");
+  if (mal !== null) return fallo("transicion_invalida", mal.mensaje);
+
+  const respuesta = { envioId: e.envioId, yaEstaba: false };
+  const enunciados: D1PreparedStatement[] = [
+    enunciadoDeIdempotencia(ctx, e.idempotencia, RUTA_REINTENTAR, huella, respuesta),
+    ...enunciadosDeParada(ctx, e.envioId, envio.estado, "pendiente", envio.version, {
+      nota: e.motivo ?? "se vuelve a intentar",
+    }),
+    /**
+     * Y SUELTA LA RUTA, en un enunciado aparte del mismo batch.
+     *
+     * Aparte porque la base lo exige, y tiene razón. El trigger
+     * `envio_en_la_calle_no_cambia_de_ruta` prohíbe cambiar `ruta_id` cuando
+     * el estado de partida no es `pendiente` ni `asignado` — «esta parada ya
+     * salió: no se cambia de ruta»—, así que soltarla en el MISMO UPDATE que
+     * el cambio de estado aborta el batch entero: el estado viejo todavía es
+     * `fallido` cuando el trigger mira.
+     *
+     * Hecho en dos pasos, el segundo ve la fila ya en `pendiente` y pasa. Y
+     * el `WHERE ... AND estado = 'pendiente'` no es decorativo: ata este
+     * enunciado al anterior, así que si el primero no entró, éste tampoco
+     * toca nada.
+     *
+     * Por qué hay que soltarla: `entregasDelDia` agrupa las paradas por su
+     * ruta, y una parada con `ruta_id` puesto sale listada bajo la ruta de
+     * ayer —cerrada— en vez de en la cola de trabajo por hacer. Volvería a la
+     * cola sin que nadie la viera. Y con la ruta se va el motorizado, porque
+     * cuando hay ruta el dueño de ese dato es la ruta.
+     */
+    ctx.db
+      .prepare(
+        `UPDATE envios SET ruta_id = NULL, orden_ruta = NULL, motorizado_id = NULL
+          WHERE id = ? AND estado = 'pendiente'`,
+      )
+      .bind(e.envioId),
+    ctx.db
+      .prepare(
+        `INSERT INTO controles (id, regla, ok, creado_en)
+         VALUES (?, 'envio:vuelve-a-la-cola',
+                 (SELECT COUNT(*) FROM envios
+                   WHERE id = ? AND estado = 'pendiente'
+                     AND ruta_id IS NULL AND orden_ruta IS NULL AND motorizado_id IS NULL), ?)`,
+      )
+      .bind(ulid(ctx.ahora), e.envioId, ctx.ahora),
+  ];
+
+  try {
+    await ctx.db.batch(enunciados);
+  } catch (err) {
+    const texto = err instanceof Error ? err.message : String(err);
+    const ahoraMismo = await leerEnvio(ctx.db, e.envioId);
+    if (ahoraMismo !== null && ahoraMismo.estado === "pendiente") {
+      return ok({ ...respuesta, yaEstaba: true });
+    }
+    return /CHECK|controles|UNIQUE|constraint|ABORT|abort/i.test(texto)
+      ? fallo("conflicto_version", "algo cambió mientras se reintentaba; vuelva a intentarlo")
       : fallo("interno", texto);
   }
 

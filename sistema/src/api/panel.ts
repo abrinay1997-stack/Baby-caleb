@@ -111,7 +111,7 @@ import {
   marcarEntregada,
   marcarFallida,
   sugerirParaEnvio,
-} from "../db/entregas";
+  reintentarEnvio,} from "../db/entregas";
 
 /**
  * La API del panel.
@@ -2028,6 +2028,26 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
       envioId: c.req.param("envioId"),
       motivo: texto(b["motivo"]) ?? "",
       ...(punto === undefined ? {} : { punto }),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Vuelve a la cola: se intenta otra vez.
+   *
+   * La otra salida de una entrega fallida, y la que faltaba. Hasta ahora, de
+   * una parada fallida solo se podía salir devolviéndola —deshaciendo la
+   * venta—, aunque la máquina de estados permitiera el reintento desde el
+   * primer día y la propia pantalla dijera «vuelve a agendado para
+   * reintentarlo».
+   */
+  panel.post("/entregas/:envioId/reintentar", exigeEditar("pedidos"), async (c) => {
+    const b = (await cuerpo(c)) ?? {};
+    const motivo = texto(b["motivo"]);
+    const r = await reintentarEnvio(contextoEntrega(c), {
+      idempotencia: texto(b["idempotencia"]) ?? "",
+      envioId: c.req.param("envioId"),
+      ...(motivo === undefined ? {} : { motivo }),
     });
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });

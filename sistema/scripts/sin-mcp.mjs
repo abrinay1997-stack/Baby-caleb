@@ -119,6 +119,7 @@ const COBERTURA = {
   "POST /entregas/:envioId/devolucion": "devolver_parada",
   "POST /entregas/:envioId/entregada": "marcar_entregada",
   "POST /entregas/:envioId/fallida": "marcar_fallida",
+  "POST /entregas/:envioId/reintentar": "reintentar_entrega",
   "POST /entregas/pedidos/:pedidoId": "programar_entrega",
   "POST /entregas/rutas": "armar_ruta",
   "POST /entregas/rutas/:rutaId/cancelar": "cancelar_ruta",

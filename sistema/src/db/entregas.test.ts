@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { token, ulid } from "../ids";
 import { registrar as registrarMovimientos } from "./inventario";
 import { crearPedido } from "./pedidos";
-import { agendar } from "./transiciones";
+import { agendar, cancelar } from "./transiciones";
 import { guardar as guardarAjuste } from "./ajustes";
 import { revisionDeCierre } from "./contabilidad";
 import {
@@ -21,6 +21,7 @@ import {
   guardarPrueba,
   marcarEntregada,
   marcarFallida,
+  reintentarEnvio,
   sugerirParaEnvio,
 } from "./entregas";
 
@@ -2556,5 +2557,139 @@ describe("devolverPedidoEntregado", () => {
     expect(c.detalle).toContain("1 pedidos");
     const r = await revisionDeCierre({ db: env.DB, ahora: Date.now() }, "2025-08");
     expect(r.ok && r.datos.sePuedeCerrar).toBe(false);
+  });
+});
+
+describe("una entrega fallida se puede volver a intentar", () => {
+  /**
+   * La transición `fallido -> pendiente` estaba declarada desde el primer día
+   * y NO LA LLAMABA NADIE. Una entrega que fallaba se quedaba fallida para
+   * siempre: la única salida era devolverla y deshacer la venta.
+   *
+   * Trampa §12: código correcto, probado y documentado, sin nadie que lo
+   * llame. Ninguna prueba se ponía roja, porque nada estaba roto — era que no
+   * se podía hacer.
+   */
+  it("vuelve a la cola, sin motorizado", async () => {
+    const e = await enLaCalle();
+    const falla = await marcarFallida(ctx(), {
+      envioId: e.envioId,
+      motivo: "no había nadie en la casa",
+      idempotencia: token(),
+    });
+    expect(falla.ok).toBe(true);
+    expect((await leerEnvio(e.envioId))?.estado).toBe("fallido");
+
+    const r = await reintentarEnvio(ctx(), { envioId: e.envioId, idempotencia: token() });
+    expect(r.ok).toBe(true);
+
+    const despues = await leerEnvio(e.envioId);
+    expect(despues?.estado).toBe("pendiente");
+    // Sin dueño: quien arme la próxima ruta decide. Dejar al mismo asignado
+    // haría que la ruta de mañana arrastrara al que ya no pudo.
+    expect(despues?.motorizado_id).toBeNull();
+    // Y fuera de la ruta de ayer: si no, `entregasDelDia` la lista bajo una
+    // ruta cerrada en vez de en la cola de trabajo, y nadie la vuelve a ver.
+    expect(despues?.ruta_id).toBeNull();
+    expect(despues?.orden_ruta).toBeNull();
+  });
+
+  it("no libera la mercancía: sigue siendo de esa clienta", async () => {
+    const e = await enLaCalle();
+    await marcarFallida(ctx(), { envioId: e.envioId, motivo: "nadie", idempotencia: token() });
+    const antes = await env.DB.prepare(
+      "SELECT reservado FROM existencias WHERE codigo = ?",
+    ).bind(e.codigo).first<{ reservado: number }>();
+
+    await reintentarEnvio(ctx(), { envioId: e.envioId, idempotencia: token() });
+
+    const despues = await env.DB.prepare(
+      "SELECT reservado FROM existencias WHERE codigo = ?",
+    ).bind(e.codigo).first<{ reservado: number }>();
+    expect(despues?.reservado).toBe(antes?.reservado);
+  });
+
+  it("dos toques del mismo botón lo hacen una vez", async () => {
+    const e = await enLaCalle();
+    await marcarFallida(ctx(), { envioId: e.envioId, motivo: "nadie", idempotencia: token() });
+
+    const clave = token();
+    const a = await reintentarEnvio(ctx(), { envioId: e.envioId, idempotencia: clave });
+    const b = await reintentarEnvio(ctx(), { envioId: e.envioId, idempotencia: clave });
+    expect(a.ok && b.ok).toBe(true);
+    if (b.ok) expect(b.datos.yaEstaba).toBe(true);
+
+    // Un solo evento de vuelta a la cola, no dos. Se cuenta `fallido ->
+    // pendiente` y no cualquier `a = 'pendiente'`: el envío ya nació
+    // pendiente, y contar ese también daba 2 con el idempotente funcionando
+    // perfectamente.
+    const eventos = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM envio_eventos WHERE envio_id = ? AND de = 'fallido' AND a = 'pendiente'",
+    ).bind(e.envioId).first<{ n: number }>();
+    expect(eventos?.n).toBe(1);
+  });
+
+  it("lo que no ha fallado no se reintenta", async () => {
+    const e = await enLaCalle();
+    const r = await reintentarEnvio(ctx(), { envioId: e.envioId, idempotencia: token() });
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("cancelar un pedido no deja su entrega viva", () => {
+  /**
+   * `cancelar()` no tocaba `envios` ni una vez. El pedido quedaba cancelado y
+   * su entrega seguía en pie: un motorizado a la calle con un paquete que ya
+   * nadie quiere.
+   */
+  it("anula la entrega pendiente, en el mismo batch", async () => {
+    const e = await conEnvio();
+    expect((await leerEnvio(e.envioId))?.estado).toBe("pendiente");
+
+    const r = await cancelar(
+      { db: env.DB, ahora: ahora(), actor: "yarielis@babycaleb.com" },
+      e.pedidoId,
+      "la clienta se arrepintió",
+    );
+    expect(r.ok).toBe(true);
+    expect((await leerEnvio(e.envioId))?.estado).toBe("anulado");
+  });
+
+  it("y si ya está en una ruta armada, no se cancela a medias: se dice qué hacer", async () => {
+    /**
+     * El caso de verdad, y costó encontrarlo: la primera versión de esta
+     * prueba usaba un pedido YA EN LA CALLE, y pasaba con la guardia
+     * quitada. No porque la guardia funcionara, sino porque `cancelar()`
+     * rechaza antes cualquier pedido `en_ruta` por su propio estado: la
+     * guardia nueva no se ejecutaba nunca y la prueba no vigilaba nada.
+     *
+     * Lo destapó romperla a propósito. El hueco real es el de en medio:
+     * `armarRuta` deja el envío `asignado` y el PEDIDO sigue `agendado`
+     * —cancelable— hasta que alguien despacha. Ahí hay un motorizado con una
+     * tarea en la mano y un pedido que se puede cancelar.
+     */
+    const e = await conEnvio();
+    const m = await motorizadoNuevo();
+    const ruta = await armarRuta(ctx(), {
+      motorizadoId: m.id,
+      bodegaId,
+      envioIds: [e.envioId],
+      origen: { lat: 8.98, lng: -79.52 },
+    });
+    expect(ruta.ok).toBe(true);
+    expect((await leerEnvio(e.envioId))?.estado).toBe("asignado");
+
+    const r = await cancelar(
+      { db: env.DB, ahora: ahora(), actor: "yarielis@babycaleb.com" },
+      e.pedidoId,
+      "la clienta se arrepintió",
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      // El mensaje tiene que decirle a la dueña qué hacer, no solo que no.
+      expect(r.mensaje).toMatch(/ruta|fallida|devuelta/);
+    }
+    // Y nada se tocó a medias: la entrega sigue como estaba.
+    expect((await leerEnvio(e.envioId))?.estado).toBe("asignado");
   });
 });

@@ -2,6 +2,7 @@ import { ulid } from "../ids";
 import { fallo, ok, type Resultado } from "../contrato/resultado";
 import { estadoDePagoSegunSaldo, puedeAgendar } from "../dominio/abonos";
 import { bodegaQuePuede, componentesDe, enunciadosDeApartado } from "./pedidos";
+import { enunciadosDeParada } from "./paradas";
 
 /**
  * Mover un pedido de un estado a otro (F4.2).
@@ -420,7 +421,49 @@ export async function cancelar(
     .bind(pedidoId)
     .all<{ codigo: string; cantidad: number; bodega_id: string }>();
 
+  /**
+   * Y su ENTREGA. Cancelar el pedido y dejar el envío vivo manda a un
+   * motorizado a la calle con un paquete que ya nadie quiere.
+   *
+   * La máquina de estados ya permitía `pendiente -> anulado` desde siempre.
+   * Lo que no había era nadie que la llamara: `cancelar()` no tocaba `envios`
+   * ni una vez. Es la trampa §12 —una pieza terminada que nadie llama— y aquí
+   * se notaba solo el día que alguien cancelara un pedido ya agendado.
+   *
+   * Un envío `pendiente` todavía no es nada: sin motorizado, sin ruta, sin
+   * nadie esperándolo. Ese se anula aquí mismo, en el MISMO batch que la
+   * cancelación, para que no exista un instante con el pedido cancelado y la
+   * entrega viva.
+   *
+   * Desde `asignado` en adelante NO se anula solo, y se prefiere no cancelar
+   * el pedido a dejar las dos cosas a medias: ya hay una persona con una
+   * tarea, o un paquete en la calle. Se dice qué hacer primero.
+   */
+  const { results: envios } = await ctx.db
+    .prepare("SELECT id, estado, version FROM envios WHERE pedido_id = ?")
+    .bind(pedidoId)
+    .all<{ id: string; estado: string; version: number }>();
+
+  const vivos = envios.filter((e) => e.estado !== "anulado" && e.estado !== "devuelto" && e.estado !== "entregado");
+  const enMarcha = vivos.filter((e) => e.estado !== "pendiente");
+  if (enMarcha.length > 0) {
+    const cual = enMarcha[0];
+    return fallo(
+      "transicion_invalida",
+      `este pedido ya tiene una entrega ${cual === undefined ? "" : cual.estado} y hay que resolverla ` +
+        `antes de cancelarlo: sáquela de la ruta, o márquela fallida o devuelta si ya salió`,
+    );
+  }
+
   const enunciados = enunciadosDeTransicion(ctx, pedidoId, p.estado, "cancelado", { motivo });
+
+  for (const e of vivos) {
+    enunciados.push(
+      ...enunciadosDeParada(ctx, e.id, "pendiente", "anulado", e.version, {
+        nota: `el pedido se canceló: ${motivo}`,
+      }),
+    );
+  }
 
   for (const l of lineas) {
     // SIN guarda en el `WHERE`, y sin fila de control. A propósito, y con
