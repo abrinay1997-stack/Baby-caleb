@@ -113,6 +113,10 @@ describe("ver_stock", () => {
 });
 
 describe("movimientos", () => {
+  // El costo con que se siembra, en un solo sitio: la prueba que comprueba
+  // que NO sale y la siembra que lo mete tienen que hablar del mismo número.
+  const COSTO_SEMBRADO = 640;
+
   async function unMovimiento(
     codigo: string,
     bodega: string,
@@ -123,7 +127,7 @@ describe("movimientos", () => {
     await env.DB.prepare(
       `INSERT INTO movimientos_inventario (id,codigo,bodega_id,delta,tipo,costo_unit_cents,
          referencia_tipo,referencia_id,motivo,actor,creado_en)
-       VALUES (?,?,?,?,?,640,'compra','co-1',?,'duena@babycaleb.com',?)`,
+       VALUES (?,?,?,?,?,${COSTO_SEMBRADO},'compra','co-1',?,'duena@babycaleb.com',?)`,
     )
       .bind(id("mv"), codigo, bodega, delta, tipo, tipo === "ajuste" ? "conteo de octubre" : null, cuando)
       .run();
@@ -154,12 +158,45 @@ describe("movimientos", () => {
   it("NO devuelve quién lo hizo ni a cuánto costó", async () => {
     // `actor` puede ser una persona y el costo tiene su propio permiso: están
     // en la tabla, y que no estén aquí es a propósito (D-20).
+    //
+    // Se miran los VALORES, no la cadena del JSON entero. Esto era
+    // `not.toMatch(/640|costo/)` sobre un `JSON.stringify(...)` y se puso rojo
+    // en `main`, en verde en la corrida de al lado DEL MISMO COMMIT: los
+    // identificadores de esta prueba se arman con la hora, y aquel milisegundo
+    // fue 1794596946403 — que lleva un «640» dentro, en `…9464|03`. Lo mismo
+    // `cuando`, que es la hora en crudo.
+    //
+    // Es la trampa §11 otra vez, y el barrido que la cerró con un ULID y un
+    // «250» no vio esta porque buscó identificadores ALEATORIOS, y estos son
+    // marcas de tiempo. La propiedad sí importa y se queda entera; lo que
+    // estaba mal era la forma de comprobarla.
     const { codigo, bodega } = await sembrar({ fisico: 10, reservado: 0, minimo: null });
     await unMovimiento(codigo, bodega, 10, "compra", ahora());
 
-    const texto = JSON.stringify(await movimientos.ejecutar(ctx(), { codigo, cuantos: 20 }));
-    expect(texto).not.toContain("duena@babycaleb.com");
-    expect(texto).not.toMatch(/640|costo/);
+    const numeros: number[] = [];
+    const textos: string[] = [];
+    const nombres: string[] = [];
+    const recorrer = (v: unknown): void => {
+      if (typeof v === "number") numeros.push(v);
+      else if (typeof v === "string") textos.push(v);
+      else if (v !== null && typeof v === "object") {
+        for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+          nombres.push(k);
+          recorrer(x);
+        }
+      }
+    };
+    recorrer(await movimientos.ejecutar(ctx(), { codigo, cuantos: 20 }));
+
+    // Quién lo hizo: en ningún texto, ni suelto ni dentro de otro.
+    for (const t of textos) expect(t).not.toContain("duena@babycaleb.com");
+    // El costo: ni como número bajo cualquier nombre…
+    expect(numeros).not.toContain(COSTO_SEMBRADO);
+    // …ni escrito como dinero. Con frontera de dígito a los lados, porque un
+    // «640» metido dentro de 1794596946403 no es un costo, es la hora.
+    for (const t of textos) expect(t).not.toMatch(/(^|\D)(640|6[.,]40)(\D|$)/);
+    // Ni un campo que invite a ponerlo mañana.
+    for (const n of nombres) expect(n).not.toMatch(/costo|precio|valor|cents/i);
   });
 
   it("respeta cuántos se le piden", async () => {
