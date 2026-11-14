@@ -7,8 +7,8 @@ import { cuantasFichas, estadoEnLaTienda } from "./fichas";
  *
  * Esta es la mitad que faltaba del fallo que el dueño persiguió cuatro días: la
  * tienda ya no puede ofrecer lo que el sistema retiró, pero un producto creado
- * en el panel sigue sin salir, porque su descripción, su foto y su texto de
- * venta viven en `content.json` y nadie los escribió todavía.
+ * en el panel sigue sin salir, porque su texto de venta vive en `content.json`
+ * y nadie lo escribió todavía. (La foto ya no: esa llega del sistema.)
  *
  * Eso no es un error que se pueda arreglar solo: es trabajo que alguien tiene
  * que hacer. Lo que SÍ es un error es que nadie lo diga. Antes la dueña
@@ -52,6 +52,27 @@ describe("qué dice el panel de un artículo que no sale en la tienda", () => {
     const r = estadoEnLaTienda({ codigo: "NAT-M", publicado: 1, activo: 0 });
     expect(r.sale).toBe(false);
     expect(r.motivo).toContain("retirada");
+  });
+
+  it("no le dice que falta la foto, porque la foto ya llega del sistema", () => {
+    // Esta guarda existe porque el motivo SÍ decía «le falta la descripción, la
+    // foto y el texto de venta», y siguió diciéndolo después de que la foto del
+    // panel empezara a llegar a la tienda. Comprobado en producción el 14-nov:
+    // la página de ZZ-PRUEBA-01 pinta su foto desde el sistema, a 1080 px,
+    // mientras el panel le decía a la dueña que faltaba.
+    //
+    // Es la trampa §10 —un mensaje que nombra la causa equivocada— y la peor
+    // versión: le dice que falta justo lo que acaba de subir.
+    const m = estadoEnLaTienda({ codigo: "ZZ-INVENTADO", publicado: 1, activo: 1 }).motivo ?? "";
+    // Se mira la FRASE que habla de la foto, no el mensaje entero: un
+    // `/falta.*foto/` casa con «le falta el texto de venta. Su foto ya sale
+    // del sistema», que es justo lo que queremos que diga.
+    const sobreLaFoto = m.split(/(?<=\.)\s+/).filter((f) => /foto/i.test(f));
+    expect(sobreLaFoto.length, "el motivo ya no habla de la foto").toBeGreaterThan(0);
+    for (const f of sobreLaFoto) expect(f).not.toMatch(/falta|no tiene|sin foto/i);
+    // Y sí nombra lo único que de verdad falta, y a quién pedírselo.
+    expect(m).toContain("texto de venta");
+    expect(m).toContain("Juan");
   });
 
   it("el motivo está escrito para la dueña, no para un programador", () => {

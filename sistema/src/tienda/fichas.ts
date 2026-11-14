@@ -7,8 +7,10 @@ import contenido from "../../../content.json";
  *
  * La dueña crea un producto en el panel, lo publica, y no aparece en la
  * tienda. No hay ningún error: la lista de la tienda se arma con las fichas de
- * `content.json` —la descripción, la foto, el texto de venta—, y un producto
- * recién creado no tiene ninguna. El sistema manda en el precio, en la
+ * `content.json` —la descripción y el texto de venta—, y un producto recién
+ * creado no tiene ninguna. (La FOTO ya no entra en esa cuenta: desde el 14-nov
+ * la del panel llega a la tienda, así que nombrarla sería mandar a la dueña a
+ * arreglar algo que está bien.) El sistema manda en el precio, en la
  * existencia y (desde hoy) en si una ficha se enseña o no; lo que el sistema
  * NO tiene todavía es el texto con el que se vende.
  *
@@ -101,9 +103,16 @@ export function estadoEnLaTienda(v: VarianteParaLaTienda): EstadoEnLaTienda {
   if (!CON_FICHA.has(v.codigo)) {
     return {
       sale: false,
+      // La foto SALIÓ de esta lista el 14-nov. Antes era verdad que faltaba;
+      // desde que la foto del panel llega a la tienda, ya no lo es — se sirve
+      // desde el sistema y se ve en la página del producto. Un motivo que
+      // nombra una causa que ya no existe manda a la dueña a arreglar algo que
+      // está bien (trampa §10), y además la haría dudar de lo que sí acaba de
+      // subir. Lo único que de verdad falta es el texto de venta.
       motivo:
-        "La tienda todavía no tiene su ficha: le falta la descripción, la foto y el texto de venta. " +
-        "Está publicada y tiene precio, así que quien reciba su enlace directo sí la puede pedir.",
+        "La tienda arma su lista con fichas que todavía viven en el código, y esta no tiene la suya: " +
+        "le falta el texto de venta. Su foto y su precio ya salen del sistema, y quien reciba su " +
+        "enlace directo sí la puede pedir. Avísele a Juan para que la añada.",
     };
   }
   return { sale: true, motivo: null };
