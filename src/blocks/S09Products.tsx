@@ -5,9 +5,14 @@ import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
 import { buttonVariants } from '../components/ui/Button';
 import { Link } from 'react-router-dom';
-import { useCatalogoConEstado, desdeDe, laTiendaLoEnsena } from '../hooks/useCatalogo';
+import {
+  useCatalogoConEstado,
+  desdeDe,
+  laListaDeLaTienda,
+  productosDeLaTiendaDelSistema,
+} from '../hooks/useCatalogo';
 import { FilaPresentacion } from '../carrito/FilaPresentacion';
-import { FotoDeProducto, fotoDelProducto } from '../components/FotoDeProducto';
+import { FotoDeProducto, fotoPorCodigos } from '../components/FotoDeProducto';
 import { whatsappCon } from '../data/contacto';
 
 export default function S09Products() {
@@ -20,8 +25,22 @@ export default function S09Products() {
   // —`content.json`, escrito a mano—, así que retirar un producto desde el
   // panel no lo sacaba de la tienda: se quedaba en la lista con un
   // «Consultar». El porqué de cada regla está en `laTiendaLoEnsena`.
-  const data = getContentData().products.filter((p) =>
-    laTiendaLoEnsena(p, catalogo, { cargando }),
+  // QUIÉN DECIDE QUÉ PRODUCTOS HAY: el sistema.
+  //
+  // Hasta hoy lo decidía este archivo leyendo `content.json`, que nadie
+  // escribe desde ningún sitio: la dueña creaba un producto en el panel, le
+  // ponía precio, le subía la foto, lo publicaba — y no salía aquí. Tenía su
+  // página y se podía pedir por su enlace directo, pero no entraba en la lista
+  // hasta que un programador editara ese archivo y desplegara.
+  //
+  // `content.json` queda de respaldo: la foto de familia del producto que
+  // nunca recibió una desde el panel, y la lista entera mientras el catálogo
+  // no haya llegado. El porqué de cada regla está en `laListaDeLaTienda`.
+  const data = laListaDeLaTienda(
+    productosDeLaTiendaDelSistema(),
+    getContentData().products,
+    catalogo,
+    { cargando },
   );
 
   const containerRef = useGsapContext(() => {
@@ -73,13 +92,13 @@ export default function S09Products() {
           // La ficha de la primera presentación: es donde viven la foto
           // grande, el rango de peso y los datos estructurados que lee Google.
           // Sin este enlace esas páginas existían y no se llegaba a ninguna.
-          const primera = product.variants[0]?.codigo;
+          const primera = product.codigos[0];
           const slug = primera === undefined ? undefined : catalogo.get(primera)?.slug;
           // La foto de la tarjeta: la primera presentación que tenga foto
           // subida en el panel, y si ninguna la tiene, la del producto en
           // `content.json` — que es lo que se enseñaba hasta hoy. Así la dueña
           // que sube la foto de UNA caja ya ve cambiar la tarjeta.
-          const foto = fotoDelProducto(product, catalogo);
+          const foto = fotoPorCodigos(product.codigos, catalogo, product.ficha?.image);
           return (
             <div
               key={idx}
@@ -89,45 +108,54 @@ export default function S09Products() {
                 {foto === undefined ? null : (
                   <FotoDeProducto
                     foto={foto}
-                    alt={product.name}
+                    alt={product.nombre}
                     className="w-full h-full object-contain p-4 group-hover:scale-[1.03] transition-transform duration-500"
                     loading="lazy"
                   />
                 )}
                 <span className="absolute top-4 left-4 bg-bg/90 backdrop-blur text-fg font-bold text-xs px-3 py-1.5 rounded-pill border border-line">
-                  {desdeDe(catalogo, product.variants.map((v) => v.codigo))}
+                  {desdeDe(catalogo, product.codigos)}
                 </span>
               </div>
               <div className="p-8 flex flex-col flex-grow">
                 {/* Nombre de producto: no se traduce (ver FichaProducto). */}
                 <h3 translate="no" className="text-2xl text-fg mb-3 leading-tight">
                   {slug === undefined ? (
-                    product.name
+                    product.nombre
                   ) : (
                     <Link
                       to={`/productos/${slug}`}
                       className="hover:text-accent-strong focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 rounded-sm transition-colors"
                     >
-                      {product.name}
+                      {product.nombre}
                     </Link>
                   )}
                 </h3>
-                <p className="text-muted text-sm mb-6 leading-relaxed">
-                  {product.description}
-                </p>
+                {/*
+                  Sin texto de venta no se pinta el párrafo, en vez de pintar
+                  uno vacío: un producto recién creado desde el teléfono sale
+                  en la tienda igual, y la dueña puede escribirle el texto
+                  después desde el panel. Un hueco en blanco se lee como algo
+                  roto; una tarjeta sin párrafo, no.
+                */}
+                {product.descripcion === null ? null : (
+                  <p className="text-muted text-sm mb-6 leading-relaxed">
+                    {product.descripcion}
+                  </p>
+                )}
 
                 <div className="mb-6">
                   <span className="block mono text-xs text-muted mb-3">
                     Presentaciones · toca una para agregarla
                   </span>
                   <div className="space-y-2">
-                    {product.variants.map((v, vIdx) => (
+                    {product.presentaciones.map((p) => (
                       <FilaPresentacion
-                        key={vIdx}
-                        codigo={v.codigo}
-                        talla={v.size}
-                        unidades={v.units}
-                        variante={v.codigo === undefined ? undefined : catalogo.get(v.codigo)}
+                        key={p.codigo}
+                        codigo={p.codigo}
+                        talla={p.talla}
+                        unidades={p.unidades}
+                        variante={catalogo.get(p.codigo)}
                         cargando={cargando}
                       />
                     ))}
@@ -135,7 +163,7 @@ export default function S09Products() {
                 </div>
 
                 <a
-                  href={whatsappCon(`Hola Baby Caleb, me interesa: ${product.name}`)}
+                  href={whatsappCon(`Hola Baby Caleb, me interesa: ${product.nombre}`)}
                   target="_blank"
                   rel="noopener noreferrer"
                   // El nombre accesible EMPIEZA por el texto visible. Decía
@@ -144,7 +172,7 @@ export default function S09Products() {
                   // del nombre: quien dicta por voz «pulsa Pedir por WhatsApp»
                   // no acertaba el botón. Es WCAG 2.5.3, Nivel A, y axe lo
                   // marcaba en las cuatro tarjetas.
-                  aria-label={`Pedir por WhatsApp: ${product.name}`}
+                  aria-label={`Pedir por WhatsApp: ${product.nombre}`}
                   className={buttonVariants({ variant: 'outline', className: 'w-full mt-auto' })}
                 >
                   Pedir por WhatsApp

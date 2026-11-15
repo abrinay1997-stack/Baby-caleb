@@ -109,6 +109,53 @@ export interface VarianteDelCatalogo extends VariantePublica {
    * `variantes.imagen`, no sobre este campo. Ver `rpc/web.ts`.
    */
   readonly imagen: string | null;
+  /**
+   * A qué producto pertenece, para que la tienda pueda agruparla.
+   *
+   * Es el `slug` del producto, que es la clave de `CatalogoPublico.productos`.
+   * El `slug` de la propia variante NO sirve de clave: lleva el código pegado
+   * detrás (`panales-nateen-cierre-nat-m`) porque cada talla necesita su URL.
+   */
+  readonly productoSlug: string;
+}
+
+/**
+ * Un producto del catálogo tal como lo necesita la TIENDA para armar su lista.
+ *
+ * **Por qué existe este tipo.** Hasta hoy el catálogo salía como una lista
+ * plana de presentaciones y la tienda las agrupaba con las fichas de
+ * `content.json` —un archivo del repositorio de la web que nadie escribe—. O
+ * sea que la dueña podía crear un producto, publicarlo, subirle la foto, y la
+ * lista de babycaleb.com seguía siendo la de siempre hasta que un programador
+ * editara ese archivo. Tenía página y no tenía sitio en la lista.
+ *
+ * Desde aquí la lista sale del sistema: lo que está publicado, se ve.
+ *
+ * Va en `CatalogoPublico` y no en `listar`/`buscar` por lo mismo que la foto y
+ * el botón de WhatsApp: el asistente contesta WhatsApps con texto y no arma
+ * ninguna lista de tarjetas.
+ */
+export interface ProductoDelCatalogo {
+  /** El slug del producto, que es también la clave con la que se agrupan sus variantes. */
+  readonly slug: string;
+  /**
+   * Cómo lo titula la tienda.
+   *
+   * Ya resuelto aquí: `nombre_tienda` si la dueña escribió uno, y si no el
+   * nombre de operación. La regla de caer de uno al otro tiene un solo dueño y
+   * es esta función — con las dos columnas sueltas en el navegador, cambiarla
+   * exigiría desplegar la web.
+   */
+  readonly nombre: string;
+  /**
+   * El texto de venta, o `null` si todavía no se ha escrito.
+   *
+   * `null` es «falta», no «no hay nada que decir» (trampa §7). La tarjeta no
+   * pinta el párrafo y el panel puede avisar.
+   */
+  readonly descripcion: string | null;
+  /** Para ordenar la lista como la ordena el panel. */
+  readonly orden: number;
 }
 
 export interface CatalogoPublico {
@@ -116,6 +163,15 @@ export interface CatalogoPublico {
   readonly version: number;
   readonly generadoEn: number;
   readonly variantes: VarianteDelCatalogo[];
+  /**
+   * Los productos publicados, en el orden del panel.
+   *
+   * Solo los que tienen al menos una variante en `variantes`: un producto sin
+   * presentaciones visibles es una tarjeta vacía, y la tienda no tiene nada
+   * que enseñar de él. La regla se aplica aquí y no en el navegador porque es
+   * la misma pregunta que ya contesta la consulta.
+   */
+  readonly productos: ProductoDelCatalogo[];
   /**
    * A qué celular van los pedidos por WhatsApp. `null` = no hay ninguno.
    *
@@ -129,6 +185,13 @@ export interface CatalogoPublico {
 interface Fila {
   codigo: string;
   slug_producto: string;
+  /** El nombre de operación del producto. La tienda solo lo usa si no hay `nombre_tienda`. */
+  nombre_producto: string;
+  /** Cómo lo titula la tienda, o `null` si nadie escribió uno. Ver `migrations/0019`. */
+  nombre_tienda?: string | null;
+  /** El texto de venta, o `null` si todavía no se ha escrito. */
+  descripcion?: string | null;
+  orden_producto: number;
   nombre: string;
   talla: string | null;
   peso_min_lb: number | null;
@@ -295,6 +358,7 @@ export function fotoPublica(valor: unknown): string | null {
  */
 const CONSULTA = `
   SELECT v.codigo, p.slug AS slug_producto, v.nombre, v.talla,
+         p.nombre AS nombre_producto, p.nombre_tienda, p.descripcion, p.orden AS orden_producto,
          v.peso_min_lb, v.peso_max_lb, v.unidades_por_caja, v.precio_cents, v.version,
          v.pedir_por_whatsapp, v.imagen,
          -- La regla del combo tiene UN dueño: libresSQL en src/db/inventario.ts,
@@ -354,6 +418,64 @@ function aPublica(f: Fila, cantidad?: number, conNumero = false): VariantePublic
   };
 }
 
+/**
+ * Cómo titula la tienda un producto.
+ *
+ * Un solo dueño de la caída: `nombre_tienda` si lo hay, el nombre de operación
+ * si no. Si las dos columnas salieran sueltas hacia el navegador, la regla
+ * viviría en la web y cambiarla exigiría desplegarla — y un navegador con una
+ * versión vieja la aplicaría a su manera.
+ *
+ * El vacío cuenta como «no hay»: la base ya lo rechaza con un CHECK, pero una
+ * fila escrita antes de la migración, o por una herramienta futura que se
+ * salte la validación, dejaría la tarjeta sin título. Un título vacío no es un
+ * título.
+ */
+export function comoLoTitulaLaTienda(nombreTienda: unknown, nombre: string): string {
+  if (typeof nombreTienda === "string" && nombreTienda.trim() !== "") return nombreTienda.trim();
+  return nombre;
+}
+
+/**
+ * El texto de venta, o `null` si todavía no se ha escrito.
+ *
+ * El vacío NO es un texto de venta: es que falta. Devolver `""` haría que la
+ * tarjeta pintara un párrafo en blanco y que el panel no pudiera avisar de que
+ * falta — un cero afirmando que la cifra es cero (trampa §7).
+ */
+export function textoDeVenta(descripcion: unknown): string | null {
+  if (typeof descripcion !== "string") return null;
+  const limpio = descripcion.trim();
+  return limpio === "" ? null : limpio;
+}
+
+/**
+ * Los productos que la tienda puede pintar, sacados de las MISMAS filas que
+ * las variantes.
+ *
+ * No es una segunda consulta a propósito. Con dos consultas, una variante
+ * publicada de un producto que la otra no trajo deja una tarjeta huérfana o un
+ * producto sin presentaciones — y las dos dependerían de que los dos `WHERE`
+ * se mantengan iguales para siempre. Agrupando las filas que ya se leyeron,
+ * «producto con al menos una variante visible» es cierto por construcción.
+ */
+export function productosDeLasFilas(filas: readonly Fila[]): ProductoDelCatalogo[] {
+  const porSlug = new Map<string, ProductoDelCatalogo>();
+  for (const f of filas) {
+    if (porSlug.has(f.slug_producto)) continue;
+    porSlug.set(f.slug_producto, {
+      slug: f.slug_producto,
+      nombre: comoLoTitulaLaTienda(f.nombre_tienda, f.nombre_producto),
+      descripcion: textoDeVenta(f.descripcion),
+      orden: f.orden_producto,
+    });
+  }
+  // El ORDER BY de la consulta ya las trae ordenadas por `p.orden`, así que el
+  // Map conserva ese orden. No se vuelve a ordenar aquí: dos sitios ordenando
+  // lo mismo acaban ordenando distinto.
+  return [...porSlug.values()];
+}
+
 export async function catalogoPublico(db: D1Database, ahora: number): Promise<CatalogoPublico> {
   const [{ results }, negocio] = await Promise.all([
     db.prepare(`${CONSULTA} ORDER BY p.orden, p.nombre, v.talla, v.codigo`).all<Fila>(),
@@ -362,6 +484,7 @@ export async function catalogoPublico(db: D1Database, ahora: number): Promise<Ca
 
   return {
     whatsapp: { numero: negocio.numero },
+    productos: productosDeLasFilas(results),
     // La versión más alta de las variantes publicadas. La web la usa para
     // saber si su copia sirve todavía sin comparar el catálogo entero.
     version: results.reduce((maxima, f) => Math.max(maxima, f.version), 0),
@@ -378,6 +501,7 @@ export async function catalogoPublico(db: D1Database, ahora: number): Promise<Ca
       // es esta función (trampa §12 — una pieza que nadie llama, y su
       // contraria: dos piezas que dicen lo mismo y se separan).
       imagen: fotoPublica(f.imagen),
+      productoSlug: f.slug_producto,
     })),
   };
 }

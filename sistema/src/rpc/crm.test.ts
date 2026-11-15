@@ -78,12 +78,25 @@ describe("SistemaWeb · lo que llega a un navegador", () => {
     // navegación desde el primer día. El navegador lo necesita para armar el
     // enlace `wa.me`. No lleva nada de ninguna clienta, ni el costo, ni
     // existencias.
+    // `productos` entró con la migración 0019, cuando la lista de la tienda
+    // dejó de salir de `content.json` y pasó a salir del sistema. La revisión
+    // a mano dice que sí puede salir: son el slug, el título y el texto de
+    // venta de cada producto PUBLICADO — lo mismo que cualquiera lee abriendo
+    // babycaleb.com, y lo que hasta ayer estaba escrito a mano en el
+    // repositorio de la web. No lleva costo, ni existencias, ni nada de
+    // ninguna clienta.
     expect(Object.keys(r.datos).sort()).toEqual([
       "generadoEn",
+      "productos",
       "variantes",
       "version",
       "whatsapp",
     ]);
+
+    // Y el sobre de los productos también se revisa, por lo mismo: es la
+    // puerta nueva y es la que todavía no tiene costumbre.
+    const costoEnProductos = JSON.stringify(r.datos.productos);
+    expect(costoEnProductos).not.toMatch(/costo|fisico|reservado|libres|margen/i);
 
     // Y lo que se revisa letra por letra son las variantes, NO el sobre: el
     // sello de tiempo es un número de 13 dígitos y a ciertas horas del día

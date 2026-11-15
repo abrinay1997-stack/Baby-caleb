@@ -18,6 +18,7 @@ import {
   comoSeBorra,
   crearProducto,
   crearProductoConVariante,
+  ponerFichaDeTienda,
   crearVariante,
   editarVariante,
   leerReceta,
@@ -438,7 +439,8 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
     const { results } = await c.env.DB.prepare(
       `SELECT v.codigo, v.nombre, v.talla, v.unidades_por_caja, v.precio_cents,
               v.tasa_itbms_bp, v.publicado, v.activo, v.version, v.imagen, v.es_combo,
-              v.pedir_por_whatsapp, p.familia, p.nombre AS producto
+              v.pedir_por_whatsapp, p.familia, p.nombre AS producto,
+              p.id AS producto_id, p.nombre_tienda, p.descripcion
               ${conCosto ? ", vi.unidades AS costo_unidades, vi.valor_cents AS costo_valor_cents" : ""}
        FROM variantes v
        JOIN productos p ON p.id = v.producto_id
@@ -449,15 +451,25 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
     // Y, por cada una, si la TIENDA la está enseñando — y si no, por qué.
     //
     // Es la pregunta que la dueña hace cuando publica algo y no aparece en
-    // babycaleb.com, y hasta hoy no la contestaba nadie: ni la tienda, ni el
-    // panel, ni un error. La respuesta no sale de la base: sale de las fichas
-    // de `content.json`, que es donde viven la descripción, la foto y el texto
-    // de venta. Un producto recién creado tiene precio y existencia pero no
-    // tiene ficha, así que la tienda no lo sabe pintar.
+    // babycaleb.com, y durante mucho tiempo no la contestaba nadie: ni la
+    // tienda, ni el panel, ni un error. Desde la migración 0019 la respuesta
+    // sale de la BASE y de nada más: la lista de la tienda se arma del
+    // catálogo del sistema, así que publicado y activo quiere decir que se ve.
+    // El texto de venta ya no impide salir; se avisa aparte.
     const variantes = results.map((fila) => {
-      const v = fila as { codigo: string; publicado: number; activo: number };
-      const enLaTienda = estadoEnLaTienda(v);
-      return { ...fila, saleEnLaTienda: enLaTienda.sale, porQueNoSale: enLaTienda.motivo };
+      const v = fila as {
+        codigo: string;
+        publicado: number;
+        activo: number;
+        descripcion: string | null;
+      };
+      const enLaTienda = estadoEnLaTienda({ ...v, descripcionDelProducto: v.descripcion });
+      return {
+        ...fila,
+        saleEnLaTienda: enLaTienda.sale,
+        porQueNoSale: enLaTienda.motivo,
+        avisoDeLaTienda: enLaTienda.aviso,
+      };
     });
 
     return c.json(ok({ variantes, muestraCosto: conCosto }));
@@ -513,6 +525,38 @@ function registrarRutas(panel: Hono<Entorno>, hacerProveedor?: HacerProveedor): 
       },
     );
     return c.json(r, r.ok ? 201 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * La ficha con la que la TIENDA enseña un producto: su título y su texto de
+   * venta.
+   *
+   * Es lo que faltaba para que crear un producto desde el teléfono llegara
+   * hasta la lista de babycaleb.com y no solo hasta su página. Hasta la
+   * migración 0019 ese texto vivía en `content.json`, en el repositorio de la
+   * web, y nadie lo escribía desde ningún sitio.
+   *
+   * `null` borra, ausente no toca: así corregir el título no borra el texto de
+   * venta de paso.
+   */
+  panel.patch("/catalogo/productos/:id/ficha", exigeEditar("precios_y_stock"), async (c) => {
+    const b = await cuerpo(c);
+    if (b === null) return c.json(fallo("entrada_invalida", "falta el cuerpo"), 400);
+
+    // `texto()` devuelve `undefined` tanto si la clave no vino como si vino
+    // nula, y aquí esas dos cosas son distintas — se mira la clave.
+    const campo = (clave: string): string | null | undefined => {
+      if (!(clave in b)) return undefined;
+      const v = b[clave];
+      if (v === null) return null;
+      return typeof v === "string" ? v : undefined;
+    };
+
+    const r = await ponerFichaDeTienda(contextoCatalogo(c), c.req.param("id"), {
+      ...(campo("nombreTienda") === undefined ? {} : { nombreTienda: campo("nombreTienda") as string | null }),
+      ...(campo("descripcion") === undefined ? {} : { descripcion: campo("descripcion") as string | null }),
+    });
+    return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
   });
 
   panel.post("/catalogo/variantes", exigeEditar("precios_y_stock"), async (c) => {

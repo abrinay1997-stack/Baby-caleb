@@ -5,7 +5,7 @@ import { aCentavos, aPuntosBasicos, deCentavos, dePuntosBasicos } from "../diner
 import { prepararFoto } from "../imagen";
 // Las mismas piezas que las demás hojas. Una copia por pantalla es cómo se
 // acaba teniendo un campo a 14 px que hace zoom en el teléfono (§7b).
-import { BOTON, Campo, ENTRADA } from "../formulario";
+import { AREA, BOTON, Campo, ENTRADA } from "../formulario";
 
 /**
  * Editar una variante del catálogo, y borrarla.
@@ -39,6 +39,14 @@ export interface VarianteEditable {
   es_combo: number;
   /** `null` = «lo que diga Ajustes». Ver `migrations/0013`. */
   pedir_por_whatsapp: number | null;
+  /** El producto al que pertenece: la ficha de la tienda es SUYA, no de la talla. */
+  producto_id?: string;
+  /** El nombre de operación del PRODUCTO. Es a lo que cae la tienda sin título propio. */
+  producto?: string;
+  /** Cómo lo titula la tienda. `null` = se llama como se llama por dentro. */
+  nombre_tienda?: string | null;
+  /** El texto de venta del producto. `null` = todavía no se ha escrito. */
+  descripcion?: string | null;
 }
 
 interface Ingrediente {
@@ -94,6 +102,10 @@ export function EditarVariante({
    */
   const [botonWhatsapp, setBotonWhatsapp] = useState("");
   const [motivo, setMotivo] = useState("");
+  // La ficha con la que la TIENDA enseña el producto. Es del producto, no de
+  // esta talla: ver el bloque de la hoja, donde se le dice a la dueña.
+  const [tituloTienda, setTituloTienda] = useState("");
+  const [textoVenta, setTextoVenta] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [veredicto, setVeredicto] = useState<Veredicto | null>(null);
@@ -129,6 +141,8 @@ export function EditarVariante({
       variante.pedir_por_whatsapp === null ? "" : variante.pedir_por_whatsapp === 1 ? "si" : "no",
     );
     setMotivo("");
+    setTituloTienda(variante.nombre_tienda ?? "");
+    setTextoVenta(variante.descripcion ?? "");
     setError(null);
     setVeredicto(null);
     setFoto(variante.imagen);
@@ -235,6 +249,32 @@ export function EditarVariante({
           version: variante.version,
         }),
       });
+      // La ficha de la tienda va aparte, y solo si cambió.
+      //
+      // Es otro recurso —es del PRODUCTO, no de esta talla— y por eso no cabe
+      // en el PATCH de la variante. Va después a propósito: si la variante no
+      // se pudo guardar, no tiene sentido haber cambiado el texto de un
+      // producto cuyo precio acaba de rechazarse.
+      //
+      // Y solo si cambió: mandarla siempre escribiría la ficha del producto
+      // entero cada vez que alguien corrige el precio de UNA talla, subiendo
+      // la versión de sus seis variantes sin que nada haya cambiado.
+      const tituloNuevo = tituloTienda.trim();
+      const textoNuevo = textoVenta.trim();
+      const cambioTitulo = tituloNuevo !== (variante.nombre_tienda ?? "");
+      const cambioTexto = textoNuevo !== (variante.descripcion ?? "");
+      if (variante.producto_id !== undefined && (cambioTitulo || cambioTexto)) {
+        await pedir(`/api/catalogo/productos/${encodeURIComponent(variante.producto_id)}/ficha`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            // Vacío quiere decir «bórrelo», y el servidor lo entiende: la base
+            // no admite una cadena en blanco en estas columnas.
+            ...(cambioTitulo ? { nombreTienda: tituloNuevo === "" ? null : tituloNuevo } : {}),
+            ...(cambioTexto ? { descripcion: textoNuevo === "" ? null : textoNuevo } : {}),
+          }),
+        });
+      }
       alGuardar();
       cerrar();
     } catch (e) {
@@ -465,6 +505,53 @@ export function EditarVariante({
       <Campo etiqueta="Nombre">
         <input className={ENTRADA} value={nombre} onChange={(e) => setNombre(e.target.value)} />
       </Campo>
+
+      {/*
+        LA FICHA DE LA TIENDA, y por qué está en la hoja de una talla.
+        
+        El texto de venta es del PRODUCTO: las seis cajas de Nateen comparten un
+        párrafo. Podría tener su propia hoja, pero la dueña llega aquí justo
+        cuando acaba de publicar algo y está mirando por qué se ve como se ve
+        — y el panel se usa con una mano, en el teléfono, así que una pantalla
+        menos vale más que una separación limpia.
+        
+        Lo que NO se puede hacer es dejarlo ambiguo: si parece de la talla,
+        escribirlo desde la M y verlo aparecer en la XXL se lee como un fallo.
+        Por eso la ayuda lo dice con el nombre del producto delante.
+      */}
+      {variante.producto_id === undefined ? null : (
+        <>
+          <Campo
+            etiqueta="Título en la tienda"
+            // El nombre del PRODUCTO, no el de la talla: es a lo que cae
+            // `comoLoTitulaLaTienda` cuando no hay título propio. Puesto el de
+            // la talla, la ayuda prometía «Body manga larga pima» y la tienda
+            // iba a enseñar «Body manga larga algodón pima» — una pantalla que
+            // dice lo que el sistema no hace.
+            ayuda={`Cómo se llama en babycaleb.com. Vacío = «${variante.producto ?? variante.nombre}». Es del producto entero, no de esta talla.`}
+          >
+            <input
+              className={ENTRADA}
+              value={tituloTienda}
+              onChange={(e) => setTituloTienda(e.target.value)}
+              maxLength={120}
+            />
+          </Campo>
+
+          <Campo
+            etiqueta="Texto de venta"
+            ayuda="El párrafo que sale debajo del nombre en la tienda. Es del producto entero: vale para todas sus tallas. Si lo deja vacío, la tarjeta sale sin párrafo."
+          >
+            <textarea
+              className={AREA}
+              rows={4}
+              value={textoVenta}
+              onChange={(e) => setTextoVenta(e.target.value)}
+              maxLength={600}
+            />
+          </Campo>
+        </>
+      )}
 
       <Campo etiqueta="Talla" ayuda="Déjelo vacío si este producto no tiene tallas.">
         <input className={ENTRADA} value={talla} onChange={(e) => setTalla(e.target.value)} />

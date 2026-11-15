@@ -95,6 +95,7 @@ const COBERTURA = {
   "POST /bodegas": "crear_bodega",
   "POST /bodegas/traslados": "trasladar_stock",
   "POST /catalogo/altas": "dar_de_alta_producto",
+  "PATCH /catalogo/productos/:id/ficha": "poner_ficha_de_tienda",
   "POST /catalogo/productos": "crear_producto",
   "POST /catalogo/variantes": "crear_variante",
   "POST /clientes": "dar_de_alta_clienta",

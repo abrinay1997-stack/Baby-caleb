@@ -7,7 +7,10 @@ import {
   crearVariante,
   editarVariante,
   explicar,
+  ponerFichaDeTienda,
   ponerReceta,
+  TOPE_DESCRIPCION,
+  TOPE_NOMBRE_TIENDA,
 } from "../../db/catalogo-admin";
 import { type Contexto, definir } from "../registro";
 
@@ -608,6 +611,68 @@ export const ponerRecetaDeCombo = definir({
   },
 });
 
+/**
+ * El título y el texto de venta con los que la TIENDA enseña un producto.
+ *
+ * **Por qué es una herramienta y no un campo de `editar_variante`.** La ficha
+ * es del producto, no de la talla: las seis cajas de Nateen comparten un solo
+ * párrafo. Metido en `editar_variante`, escribirlo desde la M lo cambiaría
+ * también para la XXL sin decirlo, y quien lo leyera creería estar editando
+ * una talla.
+ *
+ * **Por qué `construccion` y no `sensible`.** No toca precio, ni existencias,
+ * ni ITBMS, ni publica nada: cambia el texto con el que se vende. Equivocarse
+ * aquí se arregla volviendo a escribirlo, y se ve de inmediato en la tienda.
+ */
+export const ponerFichaDeLaTienda = definir({
+  nombre: "poner_ficha_de_tienda",
+  descripcion:
+    "Escribe el título y el texto de venta con los que la tienda enseña un producto: el párrafo que sale debajo del nombre en la tarjeta de babycaleb.com. Es del PRODUCTO entero, así que vale para todas sus tallas. Un producto publicado ya sale en la tienda sin esto; lo que falta sin ficha es el texto. Ejemplo: poner_ficha_de_tienda con producto «Water wipes Dany Baby», titulo «Wipes de agua Dany Baby» y texto «Toallitas de agua 99% pura, sin alcohol ni perfumes.». Para cambiar precio, talla o si se publica, use editar_variante.",
+  parametros: z.object({
+    producto: nombreDeProducto,
+    titulo: z
+      .string()
+      .max(TOPE_NOMBRE_TIENDA)
+      .nullable()
+      .optional()
+      .describe(
+        "Cómo lo titula la tienda. Déjelo fuera para no tocarlo; mándelo nulo para que vuelva a llamarse como se llama por dentro.",
+      ),
+    texto: z
+      .string()
+      .max(TOPE_DESCRIPCION)
+      .nullable()
+      .optional()
+      .describe(
+        "El texto de venta que sale debajo del nombre. Déjelo fuera para no tocarlo; mándelo nulo para borrarlo.",
+      ),
+    motivo,
+  }),
+  nivel: "construccion",
+  categoria: "catalogo",
+  roles: ["duena"],
+
+  async ejecutar(ctx, args) {
+    const id = await elProducto(ctx.db, args.producto);
+    const r = await ponerFichaDeTienda(paraCatalogo(ctx), id, {
+      ...(args.titulo === undefined ? {} : { nombreTienda: args.titulo }),
+      ...(args.texto === undefined ? {} : { descripcion: args.texto }),
+    });
+    if (!r.ok) throw new Error(r.mensaje);
+    return {
+      producto: args.producto,
+      titulo: r.datos.nombreTienda,
+      texto: r.datos.descripcion,
+      // Decirlo es la mitad del trabajo: sin esto, quien la use no sabe si lo
+      // que escribió ya se ve o si falta algo más.
+      aviso:
+        r.datos.descripcion === null
+          ? "El producto sale en la tienda si está publicado, pero su tarjeta queda sin texto de venta."
+          : null,
+    };
+  },
+});
+
 export const HERRAMIENTAS_DE_CATALOGO_ESCRITURA = [
   crearProductoDelCatalogo,
   crearVarianteDelCatalogo,
@@ -616,4 +681,5 @@ export const HERRAMIENTAS_DE_CATALOGO_ESCRITURA = [
   verRetiroDeVariante,
   retirarVariante,
   ponerRecetaDeCombo,
+  ponerFichaDeLaTienda,
 ] as const;

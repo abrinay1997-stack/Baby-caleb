@@ -25,6 +25,11 @@ interface Variante {
    */
   saleEnLaTienda?: boolean;
   porQueNoSale?: string | null;
+  /** Sale, pero algo le falta para verse bien. Ver `src/tienda/fichas.ts`. */
+  avisoDeLaTienda?: string | null;
+  producto_id?: string;
+  nombre_tienda?: string | null;
+  descripcion?: string | null;
   activo: number;
   version: number;
   imagen: string | null;
@@ -92,10 +97,10 @@ export function Catalogo() {
               */}
               <p className="m-0 text-muted">
                 Este es el único lugar donde vive el precio, y la tienda lo pregunta aquí: cambiarlo
-                aquí lo cambia en la web sin publicar nada. El bot de WhatsApp todavía no:
+                aquí lo cambia en la web sin publicar nada. Un producto que usted publique sale en
+                la tienda solo, sin que nadie toque nada. El bot de WhatsApp todavía no:
                 lee su propia copia, así que un precio cambiado aquí hay que cambiarlo también
-                allá hasta que se conecten. Y un producto NUEVO no sale solo en la tienda aunque
-                diga «En la web»: avísele a Juan para que lo añada.
+                allá hasta que se conecten.
                 {d.muestraCosto ? null : " Su rol no ve el costo ni el margen."}
               </p>
             </Tarjeta>
@@ -173,7 +178,18 @@ export function Catalogo() {
                     {v.activo !== 1 ? (
                       <Pastilla tono="neutro">Descatalogado</Pastilla>
                     ) : v.saleEnLaTienda === true ? (
-                      <Pastilla tono="bien">En la web</Pastilla>
+                      // Sale, y aun así puede faltarle algo. El aviso va
+                      // DEBAJO de la pastilla verde y no la cambia a naranja:
+                      // «le falta el texto» no es «no se ve», y confundirlos
+                      // es lo que tenía a la dueña sin publicar, esperando.
+                      <>
+                        <Pastilla tono="bien">En la web</Pastilla>
+                        {v.avisoDeLaTienda ? (
+                          <span className="mt-1 block text-[12px] font-normal text-muted">
+                            {v.avisoDeLaTienda}
+                          </span>
+                        ) : null}
+                      </>
                     ) : (
                       // La pastilla y el motivo salen de los MISMOS hechos, así
                       // que no pueden decir cosas distintas. Separados —la

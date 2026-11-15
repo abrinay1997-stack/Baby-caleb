@@ -79,12 +79,38 @@ export function fotoDelProducto(
   producto: ProductoDeContenido,
   catalogo: Catalogo,
 ): Foto | undefined {
-  for (const v of producto.variants ?? []) {
-    if (v.codigo === undefined) continue;
-    const sistema = delSistema(catalogo.get(v.codigo)?.imagen);
-    if (sistema !== undefined) return { src: sistema, respaldo: producto.image };
+  return fotoPorCodigos(
+    (producto.variants ?? []).map((v) => v.codigo),
+    catalogo,
+    producto.image,
+  );
+}
+
+/**
+ * La misma regla, por códigos sueltos.
+ *
+ * Existe porque desde que la lista de la tienda la arma el SISTEMA hay
+ * productos que no tienen ficha en `content.json` —los que la dueña crea desde
+ * el panel— y por tanto no hay un `producto` que pasarle a la función de
+ * arriba. La regla es una y vive aquí: la primera presentación con foto subida
+ * manda, y si ninguna la tiene se cae a la del archivo, que es lo que se
+ * enseñaba ayer.
+ *
+ * Partirla en dos reglas habría significado que una tarjeta armada por el
+ * sistema y la misma tarjeta armada del archivo pudieran enseñar fotos
+ * distintas.
+ */
+export function fotoPorCodigos(
+  codigos: readonly (string | undefined)[],
+  catalogo: Catalogo,
+  respaldo: string | undefined,
+): Foto | undefined {
+  for (const codigo of codigos) {
+    if (codigo === undefined) continue;
+    const sistema = delSistema(catalogo.get(codigo)?.imagen);
+    if (sistema !== undefined) return { src: sistema, respaldo };
   }
-  return producto.image === undefined ? undefined : { src: producto.image };
+  return respaldo === undefined ? undefined : { src: respaldo };
 }
 
 /**
