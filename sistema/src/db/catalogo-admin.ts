@@ -866,3 +866,119 @@ export async function leerReceta(
     .all<{ codigo: string; nombre: string; cantidad: number; libres: number }>();
   return ok(results);
 }
+
+// ---------------------------------------------------------------------------
+// La ficha de la tienda: el título y el texto de venta (migración 0019)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lo que la dueña puede escribir de un producto para la tienda.
+ *
+ * `undefined` = no se toca. `null` = se borra. Son cosas distintas y por eso no
+ * se colapsan: un panel que mande siempre las dos columnas borraría el texto de
+ * venta cada vez que alguien corrige solo el título.
+ */
+export interface FichaDeTienda {
+  /** Cómo lo titula la tienda. `null` lo devuelve al nombre de operación. */
+  readonly nombreTienda?: string | null;
+  /** El texto de venta. `null` lo deja en «todavía no se ha escrito». */
+  readonly descripcion?: string | null;
+}
+
+/**
+ * Cuánto texto admite cada columna.
+ *
+ * No hay CHECK de largo en la base a propósito: el tope es de producto, no de
+ * integridad, y aquí se puede contestar con un mensaje que se entienda en vez
+ * de con «constraint failed». El título cabe en una línea de tarjeta; la
+ * descripción es el párrafo que va debajo y más allá de esto no lo lee nadie.
+ */
+export const TOPE_NOMBRE_TIENDA = 120;
+export const TOPE_DESCRIPCION = 600;
+
+/**
+ * Escribe la ficha con la que la tienda enseña un producto.
+ *
+ * **Por qué sube la versión de las variantes.** `productos` no tiene columna
+ * `version`; la del catálogo es la más alta de `variantes.version`, y es lo que
+ * la web mira para saber si su copia sirve. Cambiando solo la descripción, esa
+ * versión no se movía: la web habría seguido creyendo vigente una copia con el
+ * texto viejo hasta que alguien tocara un precio. Un dato que cambia sin que
+ * cambie su versión es una caché que miente.
+ *
+ * Va en el MISMO batch que el UPDATE del producto: en dos llamadas, un fallo
+ * entre medias deja el texto nuevo con la versión vieja, que es exactamente el
+ * caso que esto viene a evitar.
+ */
+export async function ponerFichaDeTienda(
+  ctx: ContextoCatalogo,
+  productoId: string,
+  ficha: FichaDeTienda,
+): Promise<Resultado<{ nombreTienda: string | null; descripcion: string | null }>> {
+  if (ficha.nombreTienda === undefined && ficha.descripcion === undefined) {
+    return fallo("entrada_invalida", "no se pidió ningún cambio");
+  }
+
+  /**
+   * El vacío se guarda como NULL, no como «».
+   *
+   * Es lo que la dueña quiere decir cuando borra el campo y guarda, y es lo
+   * único que la base admite: las dos columnas llevan un CHECK que rechaza una
+   * cadena en blanco. Sin esto, vaciar el campo en el panel contestaría
+   * «constraint failed», que no le dice nada a nadie (trampa §10).
+   */
+  const limpiar = (v: string | null, tope: number, campo: string): string | null | string[] => {
+    if (v === null) return null;
+    const t = v.trim();
+    if (t === "") return null;
+    if (t.length > tope) return [`el ${campo} no puede pasar de ${tope} caracteres`];
+    return t;
+  };
+
+  const campos: string[] = [];
+  const valores: unknown[] = [];
+
+  if (ficha.nombreTienda !== undefined) {
+    const v = limpiar(ficha.nombreTienda, TOPE_NOMBRE_TIENDA, "título de la tienda");
+    if (Array.isArray(v)) return fallo("entrada_invalida", v[0] as string);
+    campos.push("nombre_tienda = ?");
+    valores.push(v);
+  }
+  if (ficha.descripcion !== undefined) {
+    const v = limpiar(ficha.descripcion, TOPE_DESCRIPCION, "texto de venta");
+    if (Array.isArray(v)) return fallo("entrada_invalida", v[0] as string);
+    campos.push("descripcion = ?");
+    valores.push(v);
+  }
+
+  const actual = await ctx.db
+    .prepare("SELECT id FROM productos WHERE id = ?")
+    .bind(productoId)
+    .first<{ id: string }>();
+  if (actual === null) return fallo("no_encontrado", "no existe ese producto");
+
+  await ctx.db.batch([
+    ctx.db
+      .prepare(`UPDATE productos SET ${campos.join(", ")} WHERE id = ?`)
+      .bind(...valores, productoId),
+    // Solo las variantes de ESTE producto, y solo las que la web puede ver:
+    // subirle la versión a una retirada no le dice nada a nadie y ensucia su
+    // historial.
+    ctx.db
+      .prepare(
+        `UPDATE variantes SET version = version + 1, actualizado_en = ?
+          WHERE producto_id = ? AND activo = 1`,
+      )
+      .bind(ctx.ahora, productoId),
+  ]);
+
+  const fila = await ctx.db
+    .prepare("SELECT nombre_tienda, descripcion FROM productos WHERE id = ?")
+    .bind(productoId)
+    .first<{ nombre_tienda: string | null; descripcion: string | null }>();
+
+  return ok({
+    nombreTienda: fila?.nombre_tienda ?? null,
+    descripcion: fila?.descripcion ?? null,
+  });
+}

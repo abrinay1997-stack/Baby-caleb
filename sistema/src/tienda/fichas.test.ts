@@ -1,92 +1,94 @@
 import { describe, expect, it } from "vitest";
 
-import { cuantasFichas, estadoEnLaTienda } from "./fichas";
+import { estadoEnLaTienda } from "./fichas";
 
 /**
- * Por qué un artículo publicado no sale en la tienda.
+ * Qué dice el panel de un artículo, y qué dejó de decir.
  *
- * Esta es la mitad que faltaba del fallo que el dueño persiguió cuatro días: la
- * tienda ya no puede ofrecer lo que el sistema retiró, pero un producto creado
- * en el panel sigue sin salir, porque su texto de venta vive en `content.json`
- * y nadie lo escribió todavía. (La foto ya no: esa llega del sistema.)
+ * Esta era la mitad que faltaba del fallo que el dueño persiguió cuatro días:
+ * un producto creado en el panel no salía en la tienda porque la lista se
+ * armaba con las fichas de `content.json` —un archivo del repositorio de la
+ * web que nadie escribe— y el suyo no tenía ninguna.
  *
- * Eso no es un error que se pueda arreglar solo: es trabajo que alguien tiene
- * que hacer. Lo que SÍ es un error es que nadie lo diga. Antes la dueña
- * publicaba, abría la tienda, no veía su producto, y no tenía forma de saber
- * si se había equivocado ella, si tardaba, o si estaba roto.
+ * Desde la migración 0019 la lista sale del catálogo del sistema, así que esa
+ * razón YA NO EXISTE: publicado y activo quiere decir que se ve. Lo que queda
+ * del texto de venta es un aviso, y la diferencia entre un aviso y un motivo
+ * es justo lo que estas pruebas fijan — porque confundirlos devolvería a la
+ * dueña a no publicar esperando a escribir un párrafo.
  */
 
-describe("qué dice el panel de un artículo que no sale en la tienda", () => {
-  it("lee las fichas de verdad del archivo, no una lista copiada", () => {
-    // Si este número fuera 0, todo lo demás diría «le falta la ficha» sobre
-    // TODOS los artículos, y sonaría razonable. Es la trampa §1: un control
-    // que aprueba —o en este caso acusa— siempre.
-    expect(cuantasFichas()).toBeGreaterThan(5);
-  });
+const suelta = { codigo: "NAT-M", publicado: 1, activo: 1 };
 
-  it("lo que está publicado y tiene ficha, sale", () => {
-    const r = estadoEnLaTienda({ codigo: "NAT-M", publicado: 1, activo: 1 });
+describe("qué dice el panel de un artículo y la tienda", () => {
+  it("publicada y activa SALE, aunque nadie haya escrito su ficha", () => {
+    // Esta es la prueba del cambio entero. Antes salía `sale: false` con el
+    // motivo «la tienda todavía no tiene su ficha», y era verdad: hoy sería
+    // mentira.
+    const r = estadoEnLaTienda({ ...suelta, descripcionDelProducto: null });
     expect(r.sale).toBe(true);
     expect(r.motivo).toBeNull();
   });
 
-  it("lo creado en el panel sin ficha no sale, y lo explica", () => {
-    const r = estadoEnLaTienda({ codigo: "ZZ-INVENTADO", publicado: 1, activo: 1 });
-    expect(r.sale).toBe(false);
-    expect(r.motivo).toContain("ficha");
-    // Y dice la parte que de verdad sorprende: sí se puede pedir por enlace.
-    expect(r.motivo).toContain("enlace");
+  it("y si le falta el texto de venta lo dice como AVISO, no como motivo", () => {
+    const r = estadoEnLaTienda({ ...suelta, descripcionDelProducto: null });
+    expect(r.aviso).toContain("texto de venta");
+    // Lo que no puede pasar: que el aviso se lea como la razón de no salir.
+    expect(r.sale).toBe(true);
+    expect(r.motivo).toBeNull();
   });
 
-  it("lo despublicado dice que está despublicado, no que le falta la ficha", () => {
-    // El orden de las razones importa: se dice primero la que la dueña puede
-    // arreglar de un toque. Si le contáramos lo de la ficha, arreglaría eso y
-    // seguiría sin salir.
-    const r = estadoEnLaTienda({ codigo: "NAT-M", publicado: 0, activo: 1 });
+  it("con texto de venta no avisa de nada", () => {
+    const r = estadoEnLaTienda({ ...suelta, descripcionDelProducto: "Hipoalergénicos y suaves." });
+    expect(r.sale).toBe(true);
+    expect(r.aviso).toBeNull();
+  });
+
+  it("un texto en blanco cuenta como que falta, no como texto", () => {
+    // Un `"   "` guardado por una herramienta que se salte la validación haría
+    // que la tarjeta pintara un párrafo vacío y que el panel no avisara.
+    const r = estadoEnLaTienda({ ...suelta, descripcionDelProducto: "   " });
+    expect(r.aviso).toContain("texto de venta");
+  });
+
+  it("sin publicar no sale, y esa es la razón que se dice primero", () => {
+    const r = estadoEnLaTienda({ codigo: "NAT-M", publicado: 0, activo: 1, descripcionDelProducto: null });
     expect(r.sale).toBe(false);
     expect(r.motivo).toContain("publicada");
-    expect(r.motivo).not.toContain("ficha");
+    // Y NO se le habla del texto: arreglaría eso y seguiría sin salir.
+    expect(r.aviso).toBeNull();
   });
 
-  it("lo retirado lo dice antes que nada", () => {
-    const r = estadoEnLaTienda({ codigo: "NAT-M", publicado: 1, activo: 0 });
+  it("retirada gana a sin publicar", () => {
+    const r = estadoEnLaTienda({ codigo: "NAT-M", publicado: 0, activo: 0 });
     expect(r.sale).toBe(false);
     expect(r.motivo).toContain("retirada");
   });
 
-  it("no le dice que falta la foto, porque la foto ya llega del sistema", () => {
-    // Esta guarda existe porque el motivo SÍ decía «le falta la descripción, la
-    // foto y el texto de venta», y siguió diciéndolo después de que la foto del
-    // panel empezara a llegar a la tienda. Comprobado en producción el 14-nov:
-    // la página de ZZ-PRUEBA-01 pinta su foto desde el sistema, a 1080 px,
-    // mientras el panel le decía a la dueña que faltaba.
-    //
-    // Es la trampa §10 —un mensaje que nombra la causa equivocada— y la peor
-    // versión: le dice que falta justo lo que acaba de subir.
-    const m = estadoEnLaTienda({ codigo: "ZZ-INVENTADO", publicado: 1, activo: 1 }).motivo ?? "";
-    // Se mira la FRASE que habla de la foto, no el mensaje entero: un
-    // `/falta.*foto/` casa con «le falta el texto de venta. Su foto ya sale
-    // del sistema», que es justo lo que queremos que diga.
-    const sobreLaFoto = m.split(/(?<=\.)\s+/).filter((f) => /foto/i.test(f));
-    expect(sobreLaFoto.length, "el motivo ya no habla de la foto").toBeGreaterThan(0);
-    for (const f of sobreLaFoto) expect(f).not.toMatch(/falta|no tiene|sin foto/i);
-    // Y sí nombra lo único que de verdad falta, y a quién pedírselo.
-    expect(m).toContain("texto de venta");
-    expect(m).toContain("Juan");
-  });
-
-  it("el motivo está escrito para la dueña, no para un programador", () => {
-    // Nada de nombres de archivo, de columnas ni de códigos de error: lo que
-    // sale aquí se le enseña TAL CUAL en el panel.
-    const motivos = [
-      estadoEnLaTienda({ codigo: "ZZ-INVENTADO", publicado: 1, activo: 1 }).motivo,
+  it("ya no le dice que falta la foto: la foto llega del sistema", () => {
+    // La guarda de ayer, que sigue valiendo. El motivo decía «le falta la
+    // descripción, la foto y el texto de venta» y lo siguió diciendo después
+    // de que la foto del panel empezara a llegar a la tienda: le avisaba de
+    // que faltaba justo lo que acababa de subir (trampa §10).
+    const textos = [
+      estadoEnLaTienda({ ...suelta, descripcionDelProducto: null }).aviso,
       estadoEnLaTienda({ codigo: "NAT-M", publicado: 0, activo: 1 }).motivo,
       estadoEnLaTienda({ codigo: "NAT-M", publicado: 1, activo: 0 }).motivo,
     ];
-    for (const m of motivos) {
-      expect(m).not.toBeNull();
-      expect(m).not.toMatch(/content\.json|null|undefined|SELECT|variantes\.|_id\b/);
-      expect((m ?? "").endsWith(".")).toBe(true);
+    for (const t of textos) expect(t ?? "").not.toMatch(/foto/i);
+  });
+
+  it("lo que se enseña está escrito para la dueña, no para un programador", () => {
+    // Nada de nombres de archivo, de columnas ni de códigos de error: lo que
+    // sale aquí se le enseña TAL CUAL en el panel.
+    const textos = [
+      estadoEnLaTienda({ ...suelta, descripcionDelProducto: null }).aviso,
+      estadoEnLaTienda({ codigo: "NAT-M", publicado: 0, activo: 1 }).motivo,
+      estadoEnLaTienda({ codigo: "NAT-M", publicado: 1, activo: 0 }).motivo,
+    ];
+    for (const t of textos) {
+      expect(t).not.toBeNull();
+      expect(t).not.toMatch(/content\.json|null|undefined|SELECT|productos\.|_id\b/);
+      expect((t ?? "").endsWith(".")).toBe(true);
     }
   });
 });

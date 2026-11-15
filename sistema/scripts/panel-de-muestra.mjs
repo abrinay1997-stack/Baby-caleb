@@ -1453,27 +1453,46 @@ const RESPUESTAS = {
       { codigo: "BC-001-03", nombre: "Body manga larga pima", talla: "0-3m", unidades_por_caja: 12,
         precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Ropa",
         pedir_por_whatsapp: null,
-        saleEnLaTienda: false, porQueNoSale: "La tienda todavía no tiene su ficha: le falta la descripción, la foto y el texto de venta. Está publicada y tiene precio, así que quien reciba su enlace directo sí la puede pedir.",
+        // ESTA FILA LLEVABA LA MISMA CLAVE TRES VECES.
+        //
+        // `saleEnLaTienda` y `porQueNoSale` estaban escritas tres veces
+        // seguidas en el mismo objeto, y en JavaScript gana la última: la fila
+        // salía como «En la web» y el estado «le falta la ficha» —el que el
+        // comentario de arriba dice que hay que ver— NO SE RENDERIZÓ NUNCA.
+        // El auditor seguía diciendo «sin fallas», porque medía una pantalla
+        // en la que ese caso no existía.
+        //
+        // Ahora cada fila lleva UN estado, y están repartidos: sale con aviso,
+        // sale limpia, retirada, y sin publicar (el combo de más abajo).
         saleEnLaTienda: true, porQueNoSale: null,
-        saleEnLaTienda: true, porQueNoSale: null,
+        avisoDeLaTienda: "Su tarjeta sale sin texto de venta. Escríbalo en el producto para que se vea mejor.",
+        producto_id: "p-body", nombre_tienda: null, descripcion: null,
         producto: "Body manga larga algodón pima", costo_unidades: 23, costo_valor_cents: 14720 },
       { codigo: "BC-001-36", nombre: "Body manga larga pima", talla: "3-6m", unidades_por_caja: 12,
         precio_cents: 1250, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Ropa",
         pedir_por_whatsapp: null,
-        saleEnLaTienda: true, porQueNoSale: null,
+        saleEnLaTienda: true, porQueNoSale: null, avisoDeLaTienda: null,
+        // Con ficha escrita: así la hoja se mide con los dos campos llenos y
+        // no solo vacíos, que es donde se ve si el párrafo desborda.
+        producto_id: "p-body", nombre_tienda: "Bodies de pima",
+        descripcion: "Algodón pima peinado, suave desde el primer lavado. Costuras planas y broches en la entrepierna para cambiar sin desvestir.",
         producto: "Body manga larga algodón pima", costo_unidades: 11, costo_valor_cents: 7040 },
       { codigo: "BC-002-U", nombre: "Set de 3 mantas de muselina", talla: "Única", unidades_por_caja: 6,
         precio_cents: 2890, tasa_itbms_bp: 700, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Textil",
         pedir_por_whatsapp: 1,
+        producto_id: "p-manta", nombre_tienda: null, descripcion: "Muselina de doble gasa, más suave en cada lavada.",
         producto: "Set de 3 mantas de muselina", costo_unidades: 2, costo_valor_cents: 3020 },
       { codigo: "BC-003-RN", nombre: "Gorro de punto recién nacido", talla: "RN", unidades_por_caja: 24,
         precio_cents: 790, tasa_itbms_bp: 0, publicado: 1, activo: 1, version: 1, imagen: null, es_combo: 0, familia: "Accesorios",
         pedir_por_whatsapp: null,
+        producto_id: "p-gorro", nombre_tienda: null, descripcion: null,
+        avisoDeLaTienda: "Su tarjeta sale sin texto de venta. Escríbalo en el producto para que se vea mejor.",
         producto: "Gorro de punto recién nacido", costo_unidades: 0, costo_valor_cents: 0 },
       { codigo: "BC-004-U", nombre: "Pañalera impermeable grande", talla: "Única", unidades_por_caja: 4,
         precio_cents: 4550, tasa_itbms_bp: 700, publicado: 0, activo: 0, version: 1, imagen: null, es_combo: 0, familia: "Bolsos",
         pedir_por_whatsapp: 0,
         saleEnLaTienda: false, porQueNoSale: "Está retirada del catálogo.",
+        producto_id: "p-panalera", nombre_tienda: null, descripcion: null,
         producto: "Pañalera impermeable grande", costo_unidades: 11, costo_valor_cents: 26400 },
           {
         codigo: "BC-COMBO-1", producto: "Combo recién nacido", nombre: "Combo recién nacido",

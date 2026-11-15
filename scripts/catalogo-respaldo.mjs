@@ -63,6 +63,14 @@ const anterior = JSON.parse(readFileSync(DESTINO, "utf8"));
 // la web ofrecería «Pedir por WhatsApp» a un número que ya no contesta. Sin él,
 // el botón no sale mientras el sistema no conteste — que es lo honesto: si no
 // se puede preguntar, no se promete el canal.
+// Los PRODUCTOS tampoco se copian, y es la misma decisión que la del celular,
+// no la de la foto. La lista de la tienda sale de ellos desde la migración
+// 0019; congelada aquí, un día con el sistema caído la web seguiría ofreciendo
+// un producto que la dueña retiró ayer, y nada lo avisaría. Sin ellos, la
+// tienda cae a las fichas de `content.json` — que es exactamente lo que
+// enseñaba antes de este cambio, y lo que `laListaDeLaTienda` hace cuando no
+// le llegan productos. Una tienda con los cuatro de siempre es mejor que una
+// tienda con uno que ya no se vende.
 const salida = {
   _comentario: anterior._comentario,
   version: datos.version,

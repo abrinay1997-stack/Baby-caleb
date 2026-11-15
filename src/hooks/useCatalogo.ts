@@ -42,6 +42,17 @@ export interface VariantePublica {
    */
   readonly pedirPorWhatsapp?: boolean;
   /**
+   * El slug del PRODUCTO al que pertenece, para agrupar las presentaciones.
+   *
+   * No es `slug`: ese lleva el código pegado detrás
+   * (`panales-nateen-cierre-nat-m`) porque cada talla necesita su propia URL.
+   *
+   * Opcional porque la copia del build se generó antes de que el catálogo
+   * llevara productos. Ausente quiere decir que no se puede agrupar por el
+   * sistema, y entonces manda `content.json` — ver `laListaDeLaTienda`.
+   */
+  readonly productoSlug?: string;
+  /**
    * La foto que la dueña subió desde el panel, o `null` si no subió ninguna.
    *
    * **Desde hoy la foto tiene un solo dueño y es el sistema.** La tienda la
@@ -77,6 +88,34 @@ export interface VariantePublica {
 let numeroDeWhatsapp: string | null = null;
 
 export const whatsappDePedidos = (): string | null => numeroDeWhatsapp;
+
+/**
+ * Un producto tal como lo manda el sistema.
+ *
+ * Es el espejo de `ProductoDelCatalogo` del sistema. No se comparte el tipo
+ * porque son dos paquetes que se despliegan por separado: lo que los mantiene
+ * de acuerdo es `test/la-foto-del-sistema.test.ts` y el contrato, no un
+ * import.
+ */
+export interface ProductoDelSistema {
+  readonly slug: string;
+  readonly nombre: string;
+  readonly descripcion: string | null;
+  readonly orden: number;
+}
+
+/**
+ * Los productos del último catálogo que llegó.
+ *
+ * Vacío mientras no haya llegado nada, y vacío también cuando el sistema
+ * contesta con la copia del build —que se generó antes de que el catálogo
+ * llevara productos—. Las dos cosas significan lo mismo para la tienda: no se
+ * sabe, así que manda `content.json`.
+ */
+let productosDelSistema: readonly ProductoDelSistema[] = [];
+
+export const productosDeLaTiendaDelSistema = (): readonly ProductoDelSistema[] =>
+  productosDelSistema;
 
 export type Catalogo = ReadonlyMap<string, VariantePublica>;
 
@@ -132,6 +171,7 @@ export function pedirUnaVez(): Promise<Catalogo> {
     .then(
       (d: {
         variantes?: VariantePublica[];
+        productos?: ProductoDelSistema[];
         whatsapp?: { numero: string | null };
         desdeRespaldo?: boolean;
       }) => {
@@ -139,6 +179,10 @@ export function pedirUnaVez(): Promise<Catalogo> {
       // sobre y por la misma petición. Un segundo viaje para un dato que ya
       // está en la respuesta sería una consulta de más en cada visita.
       numeroDeWhatsapp = d.whatsapp?.numero ?? null;
+      // Los PRODUCTOS llegan en el mismo sobre que las variantes, y por la
+      // misma razón que el celular: están en la respuesta, pedirlos aparte
+      // sería un viaje de más en cada visita.
+      productosDelSistema = d.productos ?? [];
       // La respuesta llega con 200 en los dos casos: el Worker sirve la copia
       // cuando el sistema no contesta y sigue devolviendo una página sana. Lo
       // único que los distingue es este campo.
@@ -318,4 +362,172 @@ export function laTiendaLoEnsena(
   if (codigos.length === 0) return true;
 
   return codigos.some((c) => catalogo.has(c));
+}
+
+// ---------------------------------------------------------------------------
+// La lista de la tienda: qué productos se enseñan y con qué texto
+// ---------------------------------------------------------------------------
+
+/** Una ficha de `content.json`, con lo que la tienda todavía saca de ahí. */
+export interface FichaDelArchivo {
+  readonly id?: string;
+  readonly name?: string;
+  readonly description?: string;
+  readonly image?: string;
+  readonly descatalogado?: boolean;
+  readonly variants?: readonly {
+    readonly codigo?: string;
+    readonly size?: string;
+    readonly units?: string;
+    readonly image?: string;
+  }[];
+}
+
+/** Una presentación lista para su fila, con las palabras que la tienda enseña. */
+export interface PresentacionParaPintar {
+  readonly codigo: string;
+  readonly talla: string;
+  readonly unidades: string;
+}
+
+/**
+ * Cómo se nombra una presentación que NO tiene ficha en `content.json`.
+ *
+ * Las que sí la tienen conservan sus palabras tal cual —«Caja RN», «160 uds»,
+ * y «ajustable» en el fular, que no es un número— porque esas frases están
+ * redactadas y el diseño de la web no se cambia de paso. Esto es solo para los
+ * productos que la dueña crea desde el panel, que no tienen ninguna.
+ */
+export function comoSeLlamaLaPresentacion(v: VariantePublica | undefined): {
+  talla: string;
+  unidades: string;
+} {
+  const talla = v?.talla ?? null;
+  const n = v?.unidadesPorCaja;
+  return {
+    talla: talla === null || talla.trim() === '' ? 'Única' : talla,
+    // «1 uds» es la clase de detalle que hace que una tienda parezca
+    // automática. Un portabebés viene de uno en uno.
+    unidades: n === undefined ? '' : n === 1 ? '1 unidad' : `${n} uds`,
+  };
+}
+
+/** Un producto ya listo para pintar, venga de donde venga. */
+export interface ProductoParaPintar {
+  /** La clave de agrupación: el slug del producto en el sistema, o el id de la ficha. */
+  readonly clave: string;
+  readonly nombre: string;
+  /** El párrafo de debajo del nombre. `null` = no hay, y no se pinta. */
+  readonly descripcion: string | null;
+  /** Los códigos de sus presentaciones, en el orden en que se enseñan. */
+  readonly codigos: readonly string[];
+  /** Esas mismas presentaciones, con las palabras con que se enseñan. */
+  readonly presentaciones: readonly PresentacionParaPintar[];
+  /** La ficha de `content.json`, si la tiene: de ahí sale la foto de respaldo. */
+  readonly ficha: FichaDelArchivo | undefined;
+}
+
+/**
+ * Qué productos enseña la tienda, y con qué nombre y qué texto.
+ *
+ * **EL FALLO QUE CIERRA.** La lista salía de `content.json`, un archivo del
+ * repositorio de esta web que nadie escribe desde ningún sitio. La dueña
+ * creaba un producto en el panel, le ponía precio, le subía la foto y lo
+ * publicaba — y no aparecía. Tenía su página, tenía su foto y se podía pedir
+ * por su enlace directo, pero no entraba en la lista hasta que un programador
+ * editara ese archivo y desplegara. El dueño preguntó cuatro días seguidos.
+ *
+ * Desde aquí manda el sistema: lo que la dueña publica, se ve.
+ *
+ * **Qué queda de `content.json`, y por qué no se borra.** La FOTO de respaldo.
+ * El sistema ya es el dueño del nombre, del texto de venta, del precio, de la
+ * existencia y de la foto cuando la hay; lo que no tiene es una foto de
+ * familia para el producto que nunca recibió una desde el panel. Mientras eso
+ * siga así, la ficha del archivo se empareja por los códigos de sus
+ * presentaciones — no por su `id`, que nadie garantiza que coincida con el
+ * slug del sistema.
+ *
+ * **Falla abierta, igual que antes.** Sin catálogo —todavía no llegó, o el
+ * sistema no contesta y lo que hay es la copia del build, que se generó antes
+ * de que el catálogo llevara productos— se enseña `content.json` entero, que
+ * es lo que se enseñaba ayer. Una tienda con un producto de más es un pedido
+ * que hay que aclarar; una tienda vacía es una tienda cerrada.
+ */
+export function laListaDeLaTienda(
+  delSistema: readonly ProductoDelSistema[],
+  delArchivo: readonly FichaDelArchivo[],
+  catalogo: Catalogo,
+  estado: { readonly cargando: boolean },
+): ProductoParaPintar[] {
+  const porCodigoDeFicha = new Map<string, FichaDelArchivo>();
+  for (const f of delArchivo) {
+    for (const v of f.variants ?? []) {
+      if (typeof v.codigo === 'string' && v.codigo !== '') porCodigoDeFicha.set(v.codigo, f);
+    }
+  }
+
+  // El camino de respaldo: lo de siempre, con la regla de siempre.
+  if (estado.cargando || delSistema.length === 0) {
+    return delArchivo
+      .filter((f) => f.descatalogado !== true)
+      .filter((f) => laTiendaLoEnsena(f, catalogo, estado))
+      .map((f) => {
+        const codigos = (f.variants ?? [])
+          .map((v) => v.codigo)
+          .filter((c): c is string => typeof c === 'string' && c !== '');
+        return {
+          clave: f.id ?? f.name ?? '',
+          nombre: f.name ?? '',
+          descripcion: f.description ?? null,
+          codigos,
+          presentaciones: codigos.map((codigo) => {
+            const dela = (f.variants ?? []).find((v) => v.codigo === codigo);
+            const puesto = comoSeLlamaLaPresentacion(catalogo.get(codigo));
+            return {
+              codigo,
+              talla: dela?.size ?? puesto.talla,
+              unidades: dela?.units ?? puesto.unidades,
+            };
+          }),
+          ficha: f,
+        };
+      });
+  }
+
+  const variantes = [...catalogo.values()];
+  return delSistema
+    .map((p) => {
+      // El orden de las presentaciones lo decide el sistema, que ya las manda
+      // ordenadas por talla. Reordenarlas aquí sería un segundo dueño del
+      // orden.
+      const codigos = variantes
+        .filter((v) => v.productoSlug === p.slug)
+        .map((v) => v.codigo);
+      const ficha = codigos.map((c) => porCodigoDeFicha.get(c)).find((f) => f !== undefined);
+      // Las palabras de la ficha mandan donde las hay: «Caja RN · 160 uds» y
+      // «ajustable» están redactadas, y deducirlas del sistema le pondría al
+      // fular «Caja Unitalla · 1 uds». Donde no las hay —un producto creado
+      // desde el panel— se deducen, que es mejor que dejar la fila muda.
+      const presentaciones = codigos.map((codigo) => {
+        const dela = (ficha?.variants ?? []).find((v) => v.codigo === codigo);
+        const puesto = comoSeLlamaLaPresentacion(catalogo.get(codigo));
+        return {
+          codigo,
+          talla: dela?.size ?? puesto.talla,
+          unidades: dela?.units ?? puesto.unidades,
+        };
+      });
+      return {
+        clave: p.slug,
+        nombre: p.nombre,
+        descripcion: p.descripcion,
+        codigos,
+        presentaciones,
+        ficha,
+      };
+    })
+    // Un producto sin ninguna presentación visible es una tarjeta vacía. El
+    // sistema ya los filtra, pero el catálogo y la lista de productos pueden
+    // llegar desacompasados si alguna vez se sirven de cachés distintas.
+    .filter((p) => p.codigos.length > 0);
 }

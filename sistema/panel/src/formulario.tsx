@@ -21,6 +21,20 @@ export const ENTRADA =
   "focus-visible:outline-accent-edge focus-visible:outline-2";
 
 /**
+ * Lo mismo, para un párrafo.
+ *
+ * `tactil` pone `min-height: 44px` Y `min-width: 44px`: en un `<input>` de una
+ * línea eso es justo lo que hace falta, pero un `<textarea>` necesita alto
+ * para varias líneas, así que el alto lo pone `rows` y aquí se deja el mínimo
+ * táctil como suelo. El 16 px de §7b sigue saliendo del CSS base: no se baja
+ * con ninguna clase de texto, porque por debajo iOS hace zoom al enfocar.
+ *
+ * `resize-y` y no `resize`: a lo ancho, arrastrar la esquina desborda la hoja
+ * en el teléfono.
+ */
+export const AREA = `${ENTRADA} resize-y leading-normal`;
+
+/**
  * `rounded-[14px]` y no `rounded-pill`: esa clase NO existe en este proyecto
  * —se usa `rounded-full` o el radio de la marca— y una clase de Tailwind que
  * no existe no da ningún error, simplemente no hace nada.
