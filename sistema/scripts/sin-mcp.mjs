@@ -47,6 +47,8 @@ const COBERTURA = {
   // haciendo algo. Por MCP se pide con `ver_checkout`, que contesta lo mismo:
   // las dos puertas leen `verCheckout`, no dos cálculos distintos.
   "GET /checkout": "ver_checkout",
+  "GET /asistente/acciones":
+    "solo_panel: es la puerta humana. Si el asistente pudiera listar y permitir sus propias\n     acciones pendientes por MCP, la confirmación dejaría de confirmar nada",
   "GET /cobros/:pagoId/comprobante": "solo_panel: devuelve una imagen, no datos",
   "GET /contabilidad": "ver_contabilidad (sin el estado de resultados: el costo tiene su propio permiso)",
   "GET /contabilidad/cierre": "ver_cierre",

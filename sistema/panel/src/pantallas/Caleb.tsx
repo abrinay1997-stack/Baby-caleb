@@ -135,6 +135,39 @@ export function Caleb({
     final.current?.scrollIntoView({ block: "end" });
   }, [burbujas, pensando]);
 
+  /**
+   * AL ABRIR, SE MIRA SI HAY ALGO ESPERANDO PERMISO.
+   *
+   * Sin esto, la tarjeta de permiso solo aparecía con la respuesta del mensaje
+   * que creó la acción. Una acción pedida por MCP —sin conversación y sin
+   * mensaje de chat— no se veía en ninguna parte del panel: solo podía vencer
+   * a los 30 minutos. Al dueño le pasó dos veces seguidas con el mismo
+   * producto, creyendo las dos que la había aprobado.
+   *
+   * Se pide al abrir la hoja y no cada cierto tiempo: una acción vive 30
+   * minutos, y abrir a Caleb es justo lo que hace alguien cuando le dijeron
+   * que algo le espera ahí.
+   *
+   * Si ya hay una tarjeta en pantalla no se pisa: la que está mirando ahora es
+   * la que iba a decidir.
+   */
+  useEffect(() => {
+    if (!abierta) return;
+    let vigente = true;
+    void pedir<{ pendientes: { accionId: string; resumen: string }[] }>("/api/asistente/acciones")
+      .then((r) => {
+        const primera = r.pendientes[0];
+        if (!vigente || primera === undefined) return;
+        setPermiso((actual) => actual ?? { accionId: primera.accionId, resumen: primera.resumen });
+      })
+      // Que no se pueda consultar no es motivo para romper el chat: se puede
+      // seguir escribiendo, y la tarjeta aparecerá con la respuesta como antes.
+      .catch(() => undefined);
+    return () => {
+      vigente = false;
+    };
+  }, [abierta]);
+
   const aplicar = (r: Respuesta): void => {
     setHistorial(r.historial);
     if (r.texto.trim() !== "") setBurbujas((b) => [...b, { de: "caleb", texto: r.texto }]);
