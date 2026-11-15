@@ -166,7 +166,32 @@ let yaLlego = false;
  * los precios que se están enseñando.
  */
 export function pedirUnaVez(): Promise<Catalogo> {
-  enVuelo ??= fetch('/api/catalogo')
+  enVuelo ??= fetch('/api/catalogo', {
+    /**
+     * EL NAVEGADOR NO GUARDA ESTO, Y NO ES UNA PRECAUCIÓN: ES UN ARREGLO.
+     *
+     * El Worker pide `max-age=30` (`worker/catalogo.ts`) y producción devuelve
+     * `max-age=14400` — cuatro horas. Medido el 15-nov en babycaleb.com. Son
+     * los 4 h por defecto del «Browser Cache TTL» de la zona de Cloudflare,
+     * que PISA la cabecera del origen salvo que se ponga en «Respect Existing
+     * Headers».
+     *
+     * Con eso, la dueña publicaba un producto en el panel, recargaba la tienda
+     * y seguía viendo el catálogo viejo. Durante cuatro horas. No había nada
+     * roto que mirar: la base estaba bien, la API contestaba bien, y una
+     * petición nueva —un `curl`, otro navegador— lo veía al instante. Solo su
+     * pestaña mentía. El dueño lo persiguió días.
+     *
+     * `no-store` lo decide el JavaScript, no una negociación de cabeceras, así
+     * que ningún ajuste de la zona lo puede pisar. El borde sigue cacheando
+     * 60 s (`s-maxage`), que es lo que protege a la D1: lo que se quita es la
+     * copia privada del navegador, que no protegía a nadie.
+     *
+     * El ajuste de la zona conviene cambiarlo igual —arregla de paso cualquier
+     * otra ruta de `/api/*`—, pero esto no depende de eso.
+     */
+    cache: 'no-store',
+  })
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
     .then(
       (d: {

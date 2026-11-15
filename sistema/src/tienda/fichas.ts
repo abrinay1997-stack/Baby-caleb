@@ -86,8 +86,15 @@ export function estadoEnLaTienda(v: VarianteParaLaTienda): EstadoEnLaTienda {
   return {
     sale: true,
     motivo: null,
+    // DICE DÓNDE, no solo qué falta.
+    //
+    // La primera versión decía «Escríbalo en el producto para que se vea
+    // mejor» y el dueño preguntó, con razón, dónde se edita eso: suena a otro
+    // sitio al que hay que ir, y el campo está justo detrás de la fila que
+    // está mirando. Un aviso que nombra una tarea sin nombrar el botón deja a
+    // la persona buscando.
     aviso: hayTexto(v.descripcionDelProducto)
       ? null
-      : "Su tarjeta sale sin texto de venta. Escríbalo en el producto para que se vea mejor.",
+      : "Su tarjeta sale sin texto de venta. Toque esta fila y escriba «Texto de venta».",
   };
 }

@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { z } from "zod";
 import { conversar, type Conversacion, type Final } from "../asistente/conversar";
-import { confirmar } from "../asistente/ejecutar";
+import { confirmar, pendientesDe } from "../asistente/ejecutar";
 import { catalogo as catalogoDeHerramientas } from "../asistente/index";
 import { promptDeCaleb } from "../asistente/prompt";
 import {
@@ -240,6 +240,19 @@ export function registrarRutasDelAsistente(
     const usuario = c.get("usuario");
     const r = await revocarLlave(c.env.DB, usuario.id, c.req.param("id"), Date.now());
     return c.json(r, r.ok ? 200 : codigoHttp(r.codigo));
+  });
+
+  /**
+   * Lo que está esperando que una persona lo permita.
+   *
+   * Sin esto, una acción pedida por MCP no aparecía en ninguna pantalla y solo
+   * podía vencer: el chat de Caleb solo sabe de la que él mismo acaba de
+   * crear. El porqué largo está en `pendientesDe`.
+   */
+  panel.get("/asistente/acciones", async (c) => {
+    const usuario = c.get("usuario");
+    const pendientes = await pendientesDe(c.env.DB, usuario.id, Date.now());
+    return c.json(ok({ pendientes }));
   });
 
   /**

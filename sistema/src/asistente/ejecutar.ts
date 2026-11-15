@@ -338,3 +338,54 @@ function comoSeLee(clave: string, valor: unknown): string {
   }
   return String(valor);
 }
+
+/**
+ * Lo que está esperando que una persona lo permita.
+ *
+ * **POR QUÉ ESTO NO EXISTÍA Y POR QUÉ ES UN FALLO CARO.** Una acción sensible
+ * quedaba en `acciones` con estado `por_confirmar`, y la ÚNICA forma de
+ * permitirla era la tarjeta que el chat de Caleb pinta con la respuesta del
+ * mensaje que la creó: el id salía de esa respuesta, no de ninguna consulta.
+ *
+ * O sea que una acción nacida por **MCP** —sin conversación, sin mensaje de
+ * chat, sin botón de Telegram— no aparecía en NINGUNA pantalla. Solo podía
+ * vencer a los 30 minutos. Dos veces seguidas le pasó al dueño con el mismo
+ * producto, y las dos veces él creyó haberla aprobado: el mensaje de error le
+ * decía «está esperando en el chat de Caleb», y ahí no estaba (trampa §10).
+ *
+ * El efecto es que TODA herramienta sensible por MCP era inusable:
+ * `cambiar_precio`, `ajustar_stock`, `registrar_merma`, `retirar_variante`,
+ * `editar_variante`, `trasladar_stock`, `confirmar_abono`, `anular_pedido`.
+ * Construidas, probadas, con su ejecutor escrito — y sin nadie que pudiera
+ * decirles que sí. Es la trampa §12 en la puerta de salida.
+ *
+ * Se filtra por USUARIO: una acción la permite quien la pidió. Y se recalcula
+ * el vencimiento aquí en vez de confiar en que el cron ya haya pasado, porque
+ * el cron corre cada cinco minutos y enseñar como viva una acción muerta hace
+ * que la persona toque «Permitir» y reciba un error.
+ */
+export async function pendientesDe(
+  db: D1Database,
+  usuarioId: string,
+  ahora: number,
+): Promise<{ accionId: string; resumen: string; creadoEn: number; venceEn: number }[]> {
+  const limite = ahora - 30 * 60_000;
+  const { results } = await db
+    .prepare(
+      `SELECT id, resumen, creado_en FROM acciones
+        WHERE estado = 'por_confirmar' AND usuario_id = ? AND creado_en > ?
+        ORDER BY creado_en ASC`,
+    )
+    .bind(usuarioId, limite)
+    .all<{ id: string; resumen: string | null; creado_en: number }>();
+
+  return results.map((f) => ({
+    accionId: f.id,
+    // El resumen es lo que la persona LEE antes de decidir. Sin él no se puede
+    // decidir nada, así que una fila sin resumen se nombra por lo que es en
+    // vez de enseñar un hueco.
+    resumen: f.resumen ?? "Una acción quedó esperando y no dejó dicho cuál.",
+    creadoEn: f.creado_en,
+    venceEn: f.creado_en + 30 * 60_000,
+  }));
+}
