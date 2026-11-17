@@ -118,7 +118,18 @@ describe('el nombre accesible empieza por el texto visible', () => {
   const PAREJAS: { archivo: string; visible: string }[] = [
     { archivo: 'src/components/PedirPorWhatsapp.tsx', visible: 'Pedir por WhatsApp' },
     { archivo: 'src/components/PedirPorWhatsapp.tsx', visible: 'Avísenme cuando entre' },
-    { archivo: 'src/blocks/S09Products.tsx', visible: 'Pedir por WhatsApp' },
+    // AQUÍ HABÍA UNA CUARTA PAREJA, y que ya no esté es la mejora.
+    //
+    // `S09Products.tsx` tenía su PROPIO botón de WhatsApp, genérico por
+    // producto, con su propio `aria-label` que había que vigilar aparte. Al
+    // desagruparse la tienda ese botón desapareció y en su sitio quedó
+    // `PedirPorWhatsapp` —el de la variante, que además respeta el interruptor
+    // del panel, cosa que el genérico no hacía—. Una sola copia del botón es
+    // una sola regla que vigilar, y es la primera fila de esta lista.
+    //
+    // Lo que `S09Products.tsx` tiene ahora es «Consultar por WhatsApp» SIN
+    // `aria-label`: su nombre accesible es literalmente el texto visible, que
+    // es justo lo que esta regla pide.
     { archivo: 'src/components/CompartirProducto.tsx', visible: 'Compartir este producto' },
   ];
 

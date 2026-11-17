@@ -177,15 +177,19 @@ describe('la copia del build no mete fotos de otro dominio', () => {
  * construido menos el último cable— y lo que volvería a pasar si mañana
  * alguien pinta una foto de `content.json` a mano «porque es más corto».
  *
- * Son las tres pantallas que enseñan la foto de un producto: la ficha, la
- * tarjeta del catálogo y la rejilla de presentaciones. Si nace una cuarta,
- * esta lista hay que tocarla (trampa §8: la otra lista que alguien tiene que
+ * Son las pantallas que enseñan la foto de un producto. Si nace una más, esta
+ * lista hay que tocarla (trampa §8: la otra lista que alguien tiene que
  * acordarse de tocar).
+ *
+ * `S09Products.tsx` salió de la lista cuando la tienda se desagrupó: ya no
+ * pinta tarjetas, las reparte. Quien pinta la foto ahora es
+ * `TarjetaDeArticulo.tsx`, y es el que está vigilado. La regla no se aflojó —
+ * se mudó con el código que vigila.
  */
 describe('las pantallas que enseñan fotos preguntan quién gana', () => {
   const PANTALLAS = [
     'src/pages/FichaProducto.tsx',
-    'src/blocks/S09Products.tsx',
+    'src/blocks/TarjetaDeArticulo.tsx',
     'src/blocks/S10Gallery.tsx',
   ];
 
