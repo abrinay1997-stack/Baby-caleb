@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { pedir } from "../api";
 import { Hoja } from "../armazon/Hoja";
 import { aCentavos, aPuntosBasicos, deCentavos, dePuntosBasicos } from "../dinero";
@@ -6,6 +6,7 @@ import { prepararFoto } from "../imagen";
 // Las mismas piezas que las demás hojas. Una copia por pantalla es cómo se
 // acaba teniendo un campo a 14 px que hace zoom en el teléfono (§7b).
 import { AREA, BOTON, Campo, ENTRADA } from "../formulario";
+import { Girando } from "../componentes";
 
 /**
  * Editar una variante del catálogo, y borrarla.
@@ -108,9 +109,28 @@ export function EditarVariante({
   const [textoVenta, setTextoVenta] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  /**
+   * Si acaba de guardarse, para poder decirlo.
+   *
+   * `guardando` solo sabe decir «ahora mismo estoy ocupado», y cuando el
+   * guardado tarda ochenta milisegundos eso es un parpadeo que nadie ve: se
+   * toca «Guardar», no se ve nada moverse, y se vuelve a tocar. Lo que
+   * faltaba era la señal de DESPUÉS. Se borra sola a los tres segundos: un
+   * «Guardado» que se queda para siempre acaba hablando de un guardado de
+   * hace diez minutos.
+   */
+  const [recienGuardado, setRecienGuardado] = useState(false);
   const [veredicto, setVeredicto] = useState<Veredicto | null>(null);
   const [foto, setFoto] = useState<string | null>(null);
   const [subiendo, setSubiendo] = useState(false);
+  /**
+   * Si la foto que hay no se puede cargar.
+   *
+   * Un `<img>` que falla no deja ningún rastro visible: el hueco se queda en
+   * blanco, y en blanco se lee como «no se subió» en vez de como «se subió y
+   * no se ve». Son dos problemas distintos y llevan a dos sitios distintos.
+   */
+  const [fotoRota, setFotoRota] = useState(false);
   /**
    * El fallo de la FOTO va aparte del `error` de la hoja.
    *
@@ -131,6 +151,7 @@ export function EditarVariante({
   // cada tecla se perdería al volver a pintar.
   if (variante !== null && cargado !== variante.codigo) {
     setCargado(variante.codigo);
+    setRecienGuardado(false);
     setNombre(variante.nombre);
     setTalla(variante.talla ?? "");
     setPorCaja(String(variante.unidades_por_caja));
@@ -146,6 +167,7 @@ export function EditarVariante({
     setError(null);
     setVeredicto(null);
     setFoto(variante.imagen);
+    setFotoRota(false);
     setErrorFoto(null);
     setNotaFoto(null);
     setReceta(null);
@@ -157,6 +179,16 @@ export function EditarVariante({
         .catch(() => setReceta([]));
     }
   }
+
+  // El «Guardado» se va solo. Se limpia al desmontar para no dejar un temporizador
+  // tocando un componente que ya no está — React avisa de eso en la consola y
+  // tiene razón: en una hoja que se abre y se cierra treinta veces seguidas,
+  // treinta temporizadores vivos son treinta avisos.
+  useEffect(() => {
+    if (!recienGuardado) return undefined;
+    const t = setTimeout(() => setRecienGuardado(false), 3000);
+    return () => clearTimeout(t);
+  }, [recienGuardado]);
 
   if (variante === null) return null;
 
@@ -181,6 +213,7 @@ export function EditarVariante({
     setSubiendo(true);
     setErrorFoto(null);
     setNotaFoto(null);
+    setFotoRota(false);
     try {
       // Se encoge y se convierte a WebP aquí, en el teléfono, antes de que
       // viaje. Una foto de cámara pesa 3 o 4 MB y mide 4 000 píxeles; en la
@@ -284,6 +317,7 @@ export function EditarVariante({
           ? "Alguien cambió este producto mientras usted lo tenía abierto. Cierre y vuelva a abrirlo para ver lo que hay ahora."
           : err.message,
       );
+      setRecienGuardado(true);
     } finally {
       setGuardando(false);
     }
@@ -379,6 +413,14 @@ export function EditarVariante({
       abierta
       titulo={variante.codigo}
       alCerrar={cerrar}
+      /* La foto se sube aparte del resto —es otra escritura en el servidor— y
+         tarda más, porque antes se encoge en el propio teléfono. Así que el
+         aviso de arriba habla de la foto cuando es la foto lo que está
+         ocupado: decir «Guardando…» mientras lo que viaja son 4 MB de imagen
+         sería contar otra cosa. */
+      guardado={
+        subiendo || guardando ? "guardando" : recienGuardado ? "guardado" : "quieto"
+      }
       /* El pie dice lo mismo que el de las otras seis hojas: a la izquierda la
          salida, a la derecha guardar.
 
@@ -402,7 +444,14 @@ export function EditarVariante({
             disabled={guardando}
             className={`${BOTON} bg-accent text-accent-fg disabled:opacity-50`}
           >
-            {guardando ? "Guardando…" : "Guardar"}
+            {guardando ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Girando />
+                Guardando…
+              </span>
+            ) : (
+              "Guardar"
+            )}
           </button>
         </>
       }
@@ -460,19 +509,56 @@ export function EditarVariante({
         ayuda="Tome la foto con el teléfono y súbala tal cual: se encoge y se convierte sola para que la tienda cargue rápido. Se cambia al momento, sin esperar a Guardar."
       >
         <div className="flex items-center gap-3">
-          {foto === null ? (
-            <span className="grid h-16 w-16 shrink-0 place-items-center rounded-[12px] border border-dashed border-line text-[12px] text-muted">
-              Sin foto
-            </span>
-          ) : (
-            <img
-              src={foto}
-              alt=""
-              className="h-16 w-16 shrink-0 rounded-[12px] border border-line object-cover"
-            />
-          )}
+          {/*
+            El aviso de que la foto está subiendo va ENCIMA de la foto, y no
+            solo en el botón.
+
+            Es el caso que contó el dueño con todas sus palabras: «cargo una
+            foto, no hay estado o un cambio, pero si actualizo la página
+            aparece la foto cargada». Dos cosas lo explican y las dos se
+            arreglan aquí:
+
+             1. El único aviso estaba dentro del botón, que el dedo tapa.
+             2. La foto se encoge y se convierte EN EL TELÉFONO antes de
+                viajar. Una foto de cámara pesa 3 o 4 MB, y ese trabajo son
+                varios segundos de nada visible — ni barra, ni cambio, ni
+                error. La pantalla se queda igual y parece que el botón no hizo
+                nada.
+
+            Y si la imagen nueva no carga, se dice. Antes un `<img>` roto
+            dejaba un hueco, y un hueco se lee como «no pasó nada» en vez de
+            como «subió pero no se puede ver».
+          */}
+          <span className="relative grid h-16 w-16 shrink-0 place-items-center">
+            {foto === null || fotoRota ? (
+              <span className="grid h-16 w-16 place-items-center rounded-[12px] border border-dashed border-line text-center text-[12px] text-muted">
+                {fotoRota ? "No carga" : "Sin foto"}
+              </span>
+            ) : (
+              <img
+                src={foto}
+                alt=""
+                onError={() => setFotoRota(true)}
+                className="h-16 w-16 rounded-[12px] border border-line object-cover"
+              />
+            )}
+            {subiendo ? (
+              <span className="absolute inset-0 grid place-items-center rounded-[12px] bg-bg/80 text-fg">
+                <Girando />
+              </span>
+            ) : null}
+          </span>
           <label className="tactil flex cursor-pointer items-center rounded-[14px] border border-line px-4 py-2.5 font-bold focus-within:outline-accent-edge focus-within:outline-2">
-            {subiendo ? "Subiendo…" : foto === null ? "Poner foto" : "Cambiar foto"}
+            {subiendo ? (
+              <span className="inline-flex items-center gap-2">
+                <Girando />
+                Subiendo…
+              </span>
+            ) : foto === null ? (
+              "Poner foto"
+            ) : (
+              "Cambiar foto"
+            )}
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp,image/avif"

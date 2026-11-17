@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { editarVariante } from "../../db/catalogo-admin";
-import { aplicar, bodegaPorNombre, trasladar } from "../../db/inventario";
+import {
+  TOPE_DE_LINEAS,
+  aplicar,
+  bodegaPorNombre,
+  registrar,
+  trasladar,
+} from "../../db/inventario";
 import { ulid } from "../../ids";
 import { definir } from "../registro";
 
@@ -23,6 +29,15 @@ const codigo = z
   .min(1)
   .max(40)
   .describe("El código del artículo, como NAT-M o DANY-AW600.");
+
+/**
+ * Cuántos renglones acepta un conteo.
+ *
+ * Es el mismo tope del motor (`TOPE_DE_LINEAS` en `db/inventario.ts`), traído
+ * y no reescrito: dos topes distintos significan que uno de los dos rechaza
+ * algo que el otro aceptaría, y el mensaje saldría del sitio equivocado.
+ */
+const TOPE_DE_RENGLONES = TOPE_DE_LINEAS;
 
 const motivo = z
   .string()
@@ -186,6 +201,93 @@ export const ajustarStock = definir({
   },
 });
 
+export const contarInventario = definir({
+  nombre: "contar_inventario",
+  descripcion:
+    "Registra un CONTEO completo de inventario: cada renglón dice cuánto se contó de un artículo en una bodega. Lo que ya cuadra no escribe nada. Es lo que se usa para cargar el inventario de una vez o para el conteo del mes, en vez de artículo por artículo. Ejemplo: contar_inventario con renglones [{codigo: «NAT-M», bodega: «Bodega Ciudad de Panamá», contado: 8}, {codigo: «NAT-S», bodega: «Bodega Ciudad de Panamá», contado: 4}].",
+  parametros: z.object({
+    renglones: z
+      .array(
+        z.object({
+          codigo,
+          bodega: z
+            .string()
+            .min(1)
+            .max(60)
+            .describe("El nombre de la bodega, tal como aparece en el panel."),
+          contado: z
+            .number()
+            .int()
+            .min(0)
+            .max(1_000_000)
+            .describe("Lo que se contó en el estante. El movimiento sale de la diferencia."),
+        }),
+      )
+      .min(1)
+      .max(TOPE_DE_RENGLONES)
+      .describe("Un renglón por artículo y bodega contados."),
+    motivo,
+  }),
+  nivel: "sensible",
+  categoria: "inventario",
+  roles: ["duena"],
+
+  /**
+   * POR QUÉ EXISTE, ADEMÁS DE `ajustar_stock`
+   *
+   * `ajustar_stock` corrige UN artículo en UNA bodega. Un conteo de verdad son
+   * decenas de renglones, y con una herramienta de a uno eso son decenas de
+   * confirmaciones: la dueña toca «Permitir» dieciséis veces para un solo
+   * conteo, y a la cuarta deja de leer lo que permite. Peor: si se cansa en la
+   * novena, el inventario queda contado a medias y nada dice cuál.
+   *
+   * La ruta del panel (`POST /existencias/movimientos`) ya aceptaba muchos
+   * renglones desde el principio. Lo que no había era forma de hacerlo por
+   * MCP, y eso es exactamente la trampa §13: una capacidad que solo se alcanza
+   * desde una pantalla no está terminada. Aquí se termina.
+   *
+   * Un conteo, una confirmación, un solo lote en la base: o entra entero o no
+   * entra.
+   */
+  async ejecutar(ctx, args) {
+    // El asistente habla de bodegas por su nombre y el motor por su id. Se
+    // traducen TODAS antes de escribir nada: con un nombre mal escrito en el
+    // renglón doce, traducir sobre la marcha habría dejado once movimientos
+    // puestos y el conteo a medias.
+    const lineas = [];
+    for (const r of args.renglones) {
+      const bodega = await bodegaPorNombre(ctx.db, r.bodega);
+      if (bodega === null) throw new Error(`no existe la bodega «${r.bodega}»`);
+      lineas.push({ codigo: r.codigo, bodegaId: bodega.id, contado: r.contado });
+    }
+
+    // Y lo escribe `registrar`, el MISMO que llama el panel: es el que traduce
+    // lo contado a un movimiento comparándolo con lo que hay en ese instante,
+    // el que deja el asiento 18 de corrección donde va y el que mueve el costo
+    // promedio. Un segundo camino hacia el inventario acabaría discrepando, y
+    // el que se equivoque del lado flojo es el que nadie revisa.
+    const r = await registrar({ db: ctx.db, actor: ctx.usuario.id, ahora: ctx.ahora }, {
+      tipo: "conteo",
+      motivo: args.motivo,
+      lineas,
+    });
+    if (!r.ok) throw new Error(r.mensaje);
+
+    // `movimientos: 0` NO es un fallo: es el conteo que cuadra, que es el caso
+    // bueno. Se dice con palabras para que quien lo lea no crea que no pasó
+    // nada por un error.
+    return {
+      renglones: args.renglones.length,
+      movimientos: r.datos.movimientos,
+      cuadraba:
+        r.datos.movimientos === 0
+          ? "todo lo contado ya coincidía con lo anotado: no hizo falta corregir nada"
+          : `se corrigieron ${r.datos.movimientos} de ${args.renglones.length} renglones`,
+      deshacerId: r.datos.deshacerId,
+    };
+  },
+});
+
 export const trasladarStock = definir({
   nombre: "trasladar_stock",
   descripcion:
@@ -343,6 +445,7 @@ export const cambiarBotonWhatsapp = definir({
 export const HERRAMIENTAS_DE_PRECIOS_Y_STOCK = [
   cambiarPrecio,
   ajustarStock,
+  contarInventario,
   trasladarStock,
   registrarMerma,
   cambiarBotonWhatsapp,

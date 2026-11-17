@@ -1718,6 +1718,24 @@ const RESPUESTAS = {
 const servidor = createServer(async (pet, res) => {
   const ruta = new URL(pet.url ?? "/", "http://x").pathname;
 
+  /**
+   * Un GUARDADO tarda. Aquí, a propósito.
+   *
+   * Sin esto, el estado «Guardando…» no existe en el panel de muestra: la
+   * respuesta vuelve en el mismo milisegundo, el aviso aparece y desaparece
+   * entre dos fotogramas, y el auditor no tiene nada que medir. Entonces las
+   * piezas que avisan de que algo está pasando —justo lo que el dueño pidió
+   * porque «cliqueo y cliqueo y cliqueo guardar»— quedarían SIN MEDIR, y una
+   * pantalla que no se mide no dice que está bien: no dice nada
+   * (docs/TRAMPAS.md §4).
+   *
+   * Medio segundo es además lo que de verdad tarda desde un teléfono con
+   * señal regular, que es el caso que importa.
+   */
+  if (pet.method !== "GET" && pet.method !== "HEAD" && ruta.startsWith("/api/")) {
+    await new Promise((listo) => setTimeout(listo, 500));
+  }
+
   if (Object.hasOwn(RESPUESTAS, ruta)) {
     const respuesta = RESPUESTAS[ruta];
     res.writeHead(200, { "content-type": "application/json; charset=utf-8" });

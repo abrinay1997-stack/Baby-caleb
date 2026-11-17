@@ -550,3 +550,36 @@ a[role="button"].border-line {
     margin: auto;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Lo que gira mientras se guarda (`Girando` en componentes.tsx).
+
+   Por qué hay algo que se mueve y no solo una palabra: en un teléfono el dedo
+   tapa el botón justo cuando lo pulsa, así que «Guardando…» escrito DENTRO del
+   botón no se ve. Algo que gira se nota por el rabillo del ojo.
+
+   El `border-t-transparent` lo pone la clase de Tailwind; aquí solo vive el
+   giro, que es lo que Tailwind no trae por sí mismo en este proyecto.
+   --------------------------------------------------------------------------- */
+@keyframes girar {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.girando {
+  animation: girar 0.7s linear infinite;
+}
+
+/* Y se PARA del todo cuando el sistema pide menos movimiento.
+   La regla general de arriba pone `animation-duration: 0.01ms`, que en una
+   animación infinita no la apaga: la vuelve un parpadeo a doscientas vueltas
+   por segundo, que es peor que no animar nada para quien la animación le da
+   náuseas o le dispara una migraña. Así que aquí se declara `none`.
+   El círculo se queda quieto —sigue ahí, con su hueco arriba— y el texto de al
+   lado sigue diciendo lo que está pasando, que es lo que de verdad informa. */
+@media (prefers-reduced-motion: reduce) {
+  .girando {
+    animation: none !important;
+  }
+}
