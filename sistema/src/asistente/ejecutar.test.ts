@@ -418,6 +418,76 @@ describe("el resumen", () => {
   it("y nombra la herramienta en palabras", () => {
     expect(resumir("ajustar_stock", "sensible", { cantidad: 3 }, "x")).toContain("ajustar stock");
   });
+
+  /**
+   * Una lista se lee renglón por renglón.
+   *
+   * ESTO PASÓ DE VERDAD, en producción, el 2026-11-17. La primera herramienta
+   * que recibió una lista de objetos —`contar_inventario`, con los dieciséis
+   * renglones de un conteo— sacó esta tarjeta:
+   *
+   *     cambiar «contar inventario» — renglones: [object Object]… (×16)
+   *
+   * El dueño la aprobó. Los números estaban bien, pero él no podía saberlo:
+   * la aprobó por confianza en quien se los dio. Y esa tarjeta existe
+   * exactamente para que no haga falta confiar en nadie.
+   */
+  it("enseña lo que hay dentro de una lista, no «[object Object]»", () => {
+    const texto = resumir(
+      "contar_inventario",
+      "sensible",
+      {
+        renglones: [
+          { codigo: "NAT-RN", bodega: "Bodega Ciudad de Panamá", contado: 4 },
+          { codigo: "NAT-M", bodega: "Bodega Ciudad de Panamá", contado: 8 },
+        ],
+        motivo: "conteo del lunes",
+      },
+      "x",
+    );
+    expect(texto).not.toContain("[object Object]");
+    // Los códigos y los números, que es lo que hay que poder comprobar.
+    expect(texto).toContain("NAT-RN");
+    expect(texto).toContain("NAT-M");
+    expect(texto).toContain("Bodega Ciudad de Panamá");
+    expect(texto).toMatch(/NAT-RN[^;]*\b4\b/);
+    expect(texto).toMatch(/NAT-M[^;]*\b8\b/);
+    // Y cuántos son, delante: es lo que deja ver si falta alguno.
+    expect(texto).toContain("renglones: 2");
+  });
+
+  it("una lista larga dice cuántos renglones NO se están enseñando", () => {
+    // Una lista cortada que no dice que está cortada es peor que una lista
+    // corta: quien la lee cree que aprobó lo que vio.
+    const muchos = Array.from({ length: 40 }, (_, i) => ({
+      codigo: `BC-${i}`,
+      bodega: "Bodega Ciudad de Panamá",
+      contado: i,
+    }));
+    const texto = resumir("contar_inventario", "sensible", { renglones: muchos }, "x");
+    expect(texto).toContain("40 en total");
+    expect(texto).toContain("y 15 más");
+    expect(texto).not.toContain("[object Object]");
+  });
+
+  it("una lista vacía lo dice con una palabra", () => {
+    // `0 — ` con nada detrás deja la tarjeta diciendo una frase a medias.
+    expect(resumir("contar_inventario", "sensible", { renglones: [] }, "x")).toContain("ninguno");
+  });
+
+  it("los centavos siguen leyéndose en dólares DENTRO de un renglón", () => {
+    // El formato de dinero se aplicaba solo en el primer nivel. Un precio
+    // dentro de una lista salía como «1500», que es la cifra que nadie
+    // confirma a ojo — el mismo fallo, una capa más abajo.
+    const texto = resumir(
+      "poner_precios",
+      "sensible",
+      { renglones: [{ codigo: "NAT-M", precio_cents: 1500 }] },
+      "x",
+    );
+    expect(texto).toContain("$15.00");
+    expect(texto).not.toContain("1500");
+  });
 });
 
 /**
