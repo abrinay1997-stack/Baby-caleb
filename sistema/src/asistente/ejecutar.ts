@@ -329,14 +329,94 @@ export function resumir(
   return partes.length > 0 ? `${que} — ${partes.join(", ")} (${porque})` : `${que} (${porque})`;
 }
 
-/** Los centavos se leen en dólares: nadie confirma «150000» a ojo. */
+/**
+ * Cuántos renglones de una lista se enseñan enteros.
+ *
+ * Un conteo del mes puede traer doscientos. Enseñarlos todos convierte la
+ * tarjeta en una pared que nadie lee, y leerla es justo lo único que esa
+ * tarjeta tiene que conseguir. Veinticinco caben en una pantalla de teléfono;
+ * de ahí en adelante se dice cuántos quedan fuera, en vez de cortar en seco.
+ */
+const RENGLONES_A_LA_VISTA = 25;
+
+/**
+ * Los centavos se leen en dólares: nadie confirma «150000» a ojo.
+ *
+ * Y una LISTA se lee renglón por renglón.
+ *
+ * **EL FALLO QUE CIERRA.** La primera herramienta que recibió una lista de
+ * objetos —`contar_inventario`, dieciséis renglones de un conteo— produjo esta
+ * tarjeta:
+ *
+ *     cambiar «contar inventario» — renglones: [object Object],[object Object],
+ *     [object Object]… (×16)
+ *
+ * El dueño la aprobó. Los números estaban bien, pero él no podía saberlo: la
+ * aprobó por confianza en quien se los dio, no porque la tarjeta se lo dijera.
+ * Y esa tarjeta existe exactamente para que no haga falta confiar en nadie —
+ * «¿permite contar_inventario?» no es una pregunta que nadie pueda contestar
+ * bien; «deje NAT-M en 8 cajas» sí.
+ *
+ * `String(valor)` sobre un array de objetos da `[object Object]`. No era un
+ * fallo de esa herramienta: lo habría dado cualquiera que mande una lista, y
+ * ahora las habrá más.
+ */
 function comoSeLee(clave: string, valor: unknown): string {
-  if (clave.endsWith("_cents") && typeof valor === "number") {
-    const signo = valor < 0 ? "-" : "";
-    const abs = Math.abs(valor);
-    return `${signo}$${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
-  }
+  if (clave.endsWith("_cents") && typeof valor === "number") return enDolares(valor);
+  if (Array.isArray(valor)) return comoSeLeeLaLista(valor);
+  if (esObjetoLlano(valor)) return comoSeLeeElRenglon(valor);
   return String(valor);
+}
+
+function enDolares(valor: number): string {
+  const signo = valor < 0 ? "-" : "";
+  const abs = Math.abs(valor);
+  return `${signo}$${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+}
+
+const esObjetoLlano = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * Un renglón, con sus valores y sin sus etiquetas.
+ *
+ * «NAT-RN · Bodega Ciudad de Panamá · 4» se entiende de un vistazo. Poniendo
+ * las etiquetas —«codigo: NAT-RN, bodega: …, contado: 4»— cada renglón mide el
+ * triple, y dieciséis así no se leen: se saltan. El contexto lo da el nombre
+ * del campo, que ya sale delante de la lista entera.
+ *
+ * Lo que va DENTRO de un renglón no se vuelve a desplegar: una lista anidada
+ * se dice con cuántas cosas trae. Si algún día hiciera falta enseñarla, el
+ * problema sería que el argumento está mal pensado, no que falte formato.
+ */
+function comoSeLeeElRenglon(o: Record<string, unknown>): string {
+  const trozos: string[] = [];
+  for (const [k, v] of Object.entries(o)) {
+    if (v === undefined || v === null) continue;
+    if (Array.isArray(v)) trozos.push(`${v.length} ${k}`);
+    else if (esObjetoLlano(v)) trozos.push(k);
+    else trozos.push(k.endsWith("_cents") && typeof v === "number" ? enDolares(v) : String(v));
+  }
+  return trozos.join(" · ");
+}
+
+/**
+ * Una lista, diciendo PRIMERO cuántos renglones trae.
+ *
+ * El número va delante a propósito: es lo que deja ver que faltan renglones
+ * cuando la lista se recorta. Una lista cortada que no dice que está cortada
+ * es peor que una lista corta — quien la lee cree que aprobó lo que vio.
+ */
+function comoSeLeeLaLista(lista: readonly unknown[]): string {
+  if (lista.length === 0) return "ninguno";
+  const vistos = lista
+    .slice(0, RENGLONES_A_LA_VISTA)
+    .map((x) => (esObjetoLlano(x) ? comoSeLeeElRenglon(x) : String(x)))
+    .join("; ");
+  const faltan = lista.length - RENGLONES_A_LA_VISTA;
+  return faltan > 0
+    ? `${lista.length} en total — ${vistos}; y ${faltan} más`
+    : `${lista.length} — ${vistos}`;
 }
 
 /**
