@@ -26,6 +26,30 @@ async function resumen(periodo?: "hoy" | "semana") {
   return r.datos;
 }
 
+/**
+ * Cuántas filas de existencias ve el resumen en esta base.
+ *
+ * Se CALCULA, no se escribe. Era 36 —doce variantes por tres bodegas— y la
+ * migración 0020 la dejó en 48 al añadir los cuatro artículos que el CRM
+ * vendía y el sistema no conocía. Un número escrito a mano aquí hay que
+ * subirlo con cada producto nuevo, y un número que se sube sin mirar deja de
+ * ser un control: lo que importa no es que sean 48, es que haya UNA fila por
+ * variante y bodega, ninguna de más y ninguna de menos.
+ *
+ * De paso lo comprueba, que es la parte que un 48 a secas no diría.
+ */
+async function filasDeExistencias(): Promise<number> {
+  const r = await env.DB.prepare(
+    `SELECT (SELECT COUNT(*) FROM variantes WHERE activo = 1)
+          * (SELECT COUNT(*) FROM bodegas  WHERE activa = 1) AS esperadas,
+            (SELECT COUNT(*) FROM existencias e
+               JOIN variantes v ON v.codigo = e.codigo AND v.activo = 1
+               JOIN bodegas   b ON b.id     = e.bodega_id AND b.activa = 1) AS hay`,
+  ).first<{ esperadas: number; hay: number }>();
+  expect(r?.hay).toBe(r?.esperadas);
+  return r?.hay ?? -1;
+}
+
 describe("la base casi vacía de hoy", () => {
   it("arranca de verdad vacía: es el supuesto de todo lo demás", async () => {
     // Si esto cambia (una migración que siembre pedidos, por ejemplo), las
@@ -36,10 +60,10 @@ describe("la base casi vacía de hoy", () => {
     expect(await cuenta("pedidos")).toBe(0);
     expect(await cuenta("pagos")).toBe(0);
     expect(await cuenta("movimientos_inventario")).toBe(0);
-    // Y sin embargo las existencias YA existen: doce variantes por tres
-    // bodegas, todas en cero. Son las que creó la carga inicial porque
+    // Y sin embargo las existencias YA existen: una fila por variante y
+    // bodega, todas en cero. Las creó la carga inicial porque
     // `movimientos_inventario` lleva llave foránea a (codigo, bodega_id).
-    expect(await cuenta("existencias")).toBe(36);
+    expect(await filasDeExistencias()).toBeGreaterThan(0);
     expect(
       (await env.DB.prepare("SELECT SUM(fisico) s FROM existencias").first<{ s: number }>())?.s,
     ).toBe(0);
@@ -47,18 +71,18 @@ describe("la base casi vacía de hoy", () => {
 
   it("no da por agotado lo que nunca entró", async () => {
     const inv = (await resumen()).inventario!;
-    // 36 filas en cero NO son 36 artículos agotados: son 36 filas que la
+    // Las filas en cero NO son artículos agotados: son las filas que la
     // migración creó para que se pueda registrar la primera entrada. Decir
     // «agotado» aquí haría salir a alguien a comprar lo que nadie ha contado.
     expect(inv.cargado).toBe(false);
-    expect(inv.filas).toBe(36);
+    expect(inv.filas).toBe(await filasDeExistencias());
     // Ni agotadas ni lista existen en esta forma: no hay cifra que enseñar.
     expect(inv).not.toHaveProperty("agotadas");
     expect(inv).not.toHaveProperty("porAcabarse");
     expect(inv).not.toHaveProperty("lista");
     // Lo que sí se dice es lo que falta configurar: ninguna fila tiene mínimo,
     // así que hoy la alarma de «se está acabando» no puede avisar de nada.
-    expect(inv.sinMinimo).toBe(36);
+    expect(inv.sinMinimo).toBe(await filasDeExistencias());
   });
 
   it("distingue «nada pendiente» de «todavía no hay nada»", async () => {

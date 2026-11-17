@@ -17,6 +17,16 @@ import respaldo from '../data/catalogo.respaldo.json';
  * componentes: la promesa se comparte.
  */
 
+/**
+ * Los tres estados, con nombre.
+ *
+ * Estaba escrito a mano dentro de `VariantePublica` y no se podía nombrar
+ * desde fuera, así que cualquier otro archivo que quisiera razonar sobre los
+ * estados tenía que volver a escribir la lista — y una lista escrita dos veces
+ * es una lista que un día dirá dos cosas.
+ */
+export type Disponibilidad = 'disponible' | 'pocas' | 'agotado';
+
 export interface VariantePublica {
   readonly codigo: string;
   readonly slug: string;
@@ -26,7 +36,7 @@ export interface VariantePublica {
   readonly pesoMaxLb: number | null;
   readonly unidadesPorCaja: number;
   readonly precioCents: number;
-  readonly disponibilidad: 'disponible' | 'pocas' | 'agotado';
+  readonly disponibilidad: Disponibilidad;
   /**
    * Si la web enseña el botón «Pedir por WhatsApp» en este artículo.
    *
@@ -102,6 +112,10 @@ export interface ProductoDelSistema {
   readonly nombre: string;
   readonly descripcion: string | null;
   readonly orden: number;
+  /** La marca, o `null` si el producto no la tiene puesta. */
+  readonly marca?: string | null;
+  /** 'panal' | 'pants' | 'wipes' | 'portabebe' | … Tal cual la manda el sistema. */
+  readonly familia?: string;
 }
 
 /**

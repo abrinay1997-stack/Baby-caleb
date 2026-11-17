@@ -113,6 +113,11 @@ beforeEach(async () => {
     // primera prueba que cambió un precio por la API: hasta entonces ninguna
     // escribía ahí y el orden alcanzaba.
     real.DB.prepare("DELETE FROM precios_historial"),
+    // `combo_componentes` también apunta a `variantes`, por los dos extremos.
+    // Lo destapó la migración 0020, que convirtió la promoción de 2 cajas de
+    // wipes en un combo de verdad: hasta entonces ninguna receta venía de una
+    // migración y la base de las pruebas no tenía ninguna.
+    real.DB.prepare("DELETE FROM combo_componentes"),
     real.DB.prepare("DELETE FROM existencias"),
     real.DB.prepare("DELETE FROM valor_inventario"),
     real.DB.prepare("DELETE FROM variantes"),
