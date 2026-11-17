@@ -9,7 +9,12 @@ import {
   type ArticuloDeLaTienda,
   type Filtros,
 } from '../src/tienda/articulos';
-import type { Catalogo, Disponibilidad, ProductoDelSistema } from '../src/hooks/useCatalogo';
+import type {
+  Catalogo,
+  Disponibilidad,
+  ProductoDelSistema,
+  VariantePublica,
+} from '../src/hooks/useCatalogo';
 
 /**
  * La tienda desagrupada, artículo por artículo.
@@ -32,7 +37,7 @@ function v(
   talla: string | null,
   precioCents: number,
   disponibilidad: Disponibilidad,
-) {
+): VariantePublica & { productoSlug: string } {
   return {
     codigo,
     slug: `${productoSlug}-${codigo.toLowerCase()}`,
@@ -47,19 +52,19 @@ function v(
   };
 }
 
-const CATALOGO: Catalogo = new Map(
-  (
-    [
-      v('NAT-S', 'panales-nateen-cierre', 'S', 5000, 'pocas'),
-      v('NAT-M', 'panales-nateen-cierre', 'M', 5000, 'disponible'),
-      v('NAT-XXL', 'panales-nateen-cierre', 'XXL', 4500, 'pocas'),
-      v('VELVEE-P', 'panales-velvee', 'S', 3500, 'pocas'),
-      v('VELVEE-M', 'panales-velvee', 'M', 3500, 'pocas'),
-      v('VELVEE-L', 'panales-velvee', 'L', 3300, 'agotado'),
-      v('DANY-AW600', 'water-wipes-dany-baby', null, 2000, 'disponible'),
-    ] as never[]
-  ).map((x: { codigo: string }) => [x.codigo, x]),
-) as Catalogo;
+/** Un catálogo con tipos, sin forzarlos: si el contrato cambia, esto se rompe. */
+const deVariantes = (vs: readonly VariantePublica[]): Catalogo =>
+  new Map(vs.map((x) => [x.codigo, x]));
+
+const CATALOGO: Catalogo = deVariantes([
+  v('NAT-S', 'panales-nateen-cierre', 'S', 5000, 'pocas'),
+  v('NAT-M', 'panales-nateen-cierre', 'M', 5000, 'disponible'),
+  v('NAT-XXL', 'panales-nateen-cierre', 'XXL', 4500, 'pocas'),
+  v('VELVEE-P', 'panales-velvee', 'S', 3500, 'pocas'),
+  v('VELVEE-M', 'panales-velvee', 'M', 3500, 'pocas'),
+  v('VELVEE-L', 'panales-velvee', 'L', 3300, 'agotado'),
+  v('DANY-AW600', 'water-wipes-dany-baby', null, 2000, 'disponible'),
+]);
 
 const sinFoto = () => undefined;
 const sinUnidades = () => ({ talla: null, unidades: null });
@@ -80,8 +85,8 @@ describe('desagrupar el catálogo', () => {
   it('una presentación sin su producto no se pinta a medias', () => {
     const huerfana: Catalogo = new Map([
       ...CATALOGO,
-      ['RARO', v('RARO', 'producto-que-no-llego', 'M', 100, 'disponible')],
-    ] as never) as Catalogo;
+      ['RARO', v('RARO', 'producto-que-no-llego', 'M', 100, 'disponible')] as const,
+    ]);
     const as = articulosDeLaTienda(PRODUCTOS, huerfana, sinFoto, sinUnidades);
     // Siete, no ocho: sin producto no hay nombre ni marca, y una tarjeta con el
     // título en blanco es peor que una tarjeta que no está.
@@ -93,7 +98,7 @@ describe('desagrupar el catálogo', () => {
     const sinFamilia: ProductoDelSistema[] = [
       { slug: 'algo', nombre: 'Algo', descripcion: null, orden: 9 },
     ];
-    const uno: Catalogo = new Map([['X', v('X', 'algo', null, 500, 'disponible')]] as never) as Catalogo;
+    const uno: Catalogo = deVariantes([v('X', 'algo', null, 500, 'disponible')]);
     const as = articulosDeLaTienda(sinFamilia, uno, sinFoto, sinUnidades);
     expect(as[0]?.familia).toBe('otro');
     expect(as[0]?.marca).toBeNull();

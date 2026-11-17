@@ -1,58 +1,102 @@
+import { useMemo, useState } from 'react';
 import { gsap } from 'gsap';
+
 import { getContentData } from '../data/content';
 import { useGsapContext } from '../hooks/useGsapContext';
 import { Section } from '../components/ui/Section';
 import { SectionHeader } from '../components/ui/SectionHeader';
 import { buttonVariants } from '../components/ui/Button';
-import { Link } from 'react-router-dom';
 import {
+  comoSeLlamaLaPresentacion,
   useCatalogoConEstado,
-  desdeDe,
-  laListaDeLaTienda,
   productosDeLaTiendaDelSistema,
 } from '../hooks/useCatalogo';
-import { FilaPresentacion } from '../carrito/FilaPresentacion';
-import { FotoDeProducto, fotoPorCodigos } from '../components/FotoDeProducto';
+import { fotoPorCodigos } from '../components/FotoDeProducto';
 import { whatsappCon } from '../data/contacto';
+import {
+  SIN_FILTROS,
+  articulosDeLaTienda,
+  filtrar,
+  opcionesDe,
+  type Filtros,
+} from '../tienda/articulos';
+import { FiltrosDelCatalogo } from './FiltrosDelCatalogo';
+import { TarjetaDeArticulo } from './TarjetaDeArticulo';
 
+/**
+ * La tienda, artículo por artículo.
+ *
+ * ## Qué cambió y por qué
+ *
+ * Había una tarjeta por PRODUCTO con sus tallas dentro. El dueño lo dijo tres
+ * veces: «no me agrada para nada que yo voy a pedir un producto y está
+ * agrupado… todo debería estar separado, no en grupos». Y tenía razón por un
+ * motivo que se puede medir: desde que hay dos marcas de pañal con quince
+ * dólares de diferencia, comparar la M de una con la M de la otra exigía abrir
+ * dos tarjetas y acordarse de un precio. Eso es dejar la venta en la mesa.
+ *
+ * Ahora cada talla de cada marca es su propia tarjeta, y encima van los
+ * filtros: categoría, marca y talla, con el orden aparte.
+ *
+ * ## Dónde vive cada decisión
+ *
+ * Aquí NO hay reglas de negocio. Qué se enseña, en qué orden y qué cuenta como
+ * agotado está en `src/tienda/articulos.ts`, que son funciones puras con sus
+ * veinte pruebas. Este archivo pinta.
+ *
+ * Esa separación no es gusto: el fallo de «creo un producto y no sale en la
+ * tienda» vivió cuatro días porque la regla de qué se enseñaba estaba metida
+ * dentro de un componente, donde una prueba no llega.
+ */
 export default function S09Products() {
   const { catalogo, cargando, copiaVieja } = useCatalogoConEstado();
-  // Lo que no existe no se pinta: vender lo que no existe acaba en un pedido
-  // que nadie puede cumplir, y en un bot diciéndole a la clienta lo contrario
-  // que la web.
-  //
-  // Quién decide: la D1 del sistema. Hasta hoy lo decidía SOLO este archivo
-  // —`content.json`, escrito a mano—, así que retirar un producto desde el
-  // panel no lo sacaba de la tienda: se quedaba en la lista con un
-  // «Consultar». El porqué de cada regla está en `laTiendaLoEnsena`.
-  // QUIÉN DECIDE QUÉ PRODUCTOS HAY: el sistema.
-  //
-  // Hasta hoy lo decidía este archivo leyendo `content.json`, que nadie
-  // escribe desde ningún sitio: la dueña creaba un producto en el panel, le
-  // ponía precio, le subía la foto, lo publicaba — y no salía aquí. Tenía su
-  // página y se podía pedir por su enlace directo, pero no entraba en la lista
-  // hasta que un programador editara ese archivo y desplegara.
-  //
-  // `content.json` queda de respaldo: la foto de familia del producto que
-  // nunca recibió una desde el panel, y la lista entera mientras el catálogo
-  // no haya llegado. El porqué de cada regla está en `laListaDeLaTienda`.
-  const data = laListaDeLaTienda(
-    productosDeLaTiendaDelSistema(),
-    getContentData().products,
-    catalogo,
-    { cargando },
+  const [filtros, setFiltros] = useState<Filtros>(SIN_FILTROS);
+
+  const productos = productosDeLaTiendaDelSistema();
+  const delArchivo = getContentData().products;
+
+  /**
+   * La foto de respaldo, emparejada por CÓDIGO y no por slug.
+   *
+   * `content.json` tiene sus propios ids, y nadie garantiza que coincidan con
+   * los slugs del sistema. Lo que sí coincide son los códigos de las
+   * presentaciones, que es lo que las dos listas comparten.
+   */
+  const fotoDeRespaldo = useMemo(() => {
+    const porCodigo = new Map<string, string>();
+    for (const f of delArchivo) {
+      if (f.image === undefined) continue;
+      for (const v of f.variants ?? []) {
+        if (typeof v.codigo === 'string' && v.codigo !== '') porCodigo.set(v.codigo, f.image);
+      }
+    }
+    return porCodigo;
+  }, [delArchivo]);
+
+  const articulos = useMemo(
+    () =>
+      articulosDeLaTienda(
+        productos,
+        catalogo,
+        (codigo) => fotoPorCodigos([codigo], catalogo, fotoDeRespaldo.get(codigo))?.src,
+        (v) => {
+          const puesto = comoSeLlamaLaPresentacion(v);
+          return { talla: puesto.talla, unidades: puesto.unidades };
+        },
+      ),
+    [productos, catalogo, fotoDeRespaldo],
   );
+
+  const opciones = useMemo(() => opcionesDe(articulos), [articulos]);
+  const visibles = useMemo(() => filtrar(articulos, filtros), [articulos, filtros]);
 
   const containerRef = useGsapContext(() => {
     gsap.from('.product-card', {
       y: 40,
       duration: 0.8,
-      stagger: 0.15,
+      stagger: 0.06,
       ease: 'power3.out',
-      scrollTrigger: {
-        trigger: containerRef.current,
-        start: 'top 80%',
-      },
+      scrollTrigger: { trigger: containerRef.current, start: 'top 80%' },
     });
   });
 
@@ -65,16 +109,12 @@ export default function S09Products() {
 
       {/*
         Cuando el sistema no contesta, la web sigue en pie con una copia de los
-        precios del día del despliegue, y hasta hoy no lo decía en ninguna
+        precios del día del despliegue, y hasta hace poco no lo decía en ninguna
         parte: el `fetch` contesta 200 igual, así que el navegador tomaba la
-        copia por el catálogo de verdad. Lo que se enseñaba era todo «agotado»,
-        con precios viejos y sin botón de pedir — una tienda muerta con cara de
-        tienda sana.
+        copia por el catálogo de verdad.
 
         Enseñar un precio viejo en silencio es peor que no enseñar ninguno:
-        quien lo lee se lo cree y escribe pidiéndolo. Así que se dice, y se
-        dice en términos de lo que le importa a quien está comprando —si puede
-        fiarse del precio— y no del fallo técnico que lo causó.
+        quien lo lee se lo cree y escribe pidiéndolo.
       */}
       {copiaVieja ? (
         <p
@@ -82,105 +122,76 @@ export default function S09Products() {
           className="mb-8 rounded-2xl border border-line bg-surface px-5 py-4 text-sm text-muted"
         >
           <strong className="font-semibold text-fg">Estamos actualizando el catálogo.</strong>{' '}
-          Los precios y la disponibilidad que ve aquí pueden no estar al día. Antes de
-          hacer su pedido, confírmelos con nosotras por WhatsApp.
+          Los precios y la disponibilidad que ve aquí pueden no estar al día. Antes de hacer su
+          pedido, confírmelos con nosotras por WhatsApp.
         </p>
       ) : null}
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {data.map((product, idx) => {
-          // La ficha de la primera presentación: es donde viven la foto
-          // grande, el rango de peso y los datos estructurados que lee Google.
-          // Sin este enlace esas páginas existían y no se llegaba a ninguna.
-          const primera = product.codigos[0];
-          const slug = primera === undefined ? undefined : catalogo.get(primera)?.slug;
-          // La foto de la tarjeta: la primera presentación que tenga foto
-          // subida en el panel, y si ninguna la tiene, la del producto en
-          // `content.json` — que es lo que se enseñaba hasta hoy. Así la dueña
-          // que sube la foto de UNA caja ya ve cambiar la tarjeta.
-          const foto = fotoPorCodigos(product.codigos, catalogo, product.ficha?.image);
-          return (
-            <div
-              key={idx}
-              className="product-card group flex flex-col h-full bg-surface rounded-2xl overflow-hidden shadow-soft border border-line hover:shadow-[0_20px_60px_-25px_rgba(27,50,70,0.25)] hover:-translate-y-1 transition-all duration-300"
-            >
-              <div className="aspect-[4/3] bg-sage/15 relative overflow-hidden flex items-center justify-center">
-                {foto === undefined ? null : (
-                  <FotoDeProducto
-                    foto={foto}
-                    alt={product.nombre}
-                    className="w-full h-full object-contain p-4 group-hover:scale-[1.03] transition-transform duration-500"
-                    loading="lazy"
-                  />
-                )}
-                <span className="absolute top-4 left-4 bg-bg/90 backdrop-blur text-fg font-bold text-xs px-3 py-1.5 rounded-pill border border-line">
-                  {desdeDe(catalogo, product.codigos)}
-                </span>
-              </div>
-              <div className="p-8 flex flex-col flex-grow">
-                {/* Nombre de producto: no se traduce (ver FichaProducto). */}
-                <h3 translate="no" className="text-2xl text-fg mb-3 leading-tight">
-                  {slug === undefined ? (
-                    product.nombre
-                  ) : (
-                    <Link
-                      to={`/productos/${slug}`}
-                      className="hover:text-accent-strong focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 rounded-sm transition-colors"
-                    >
-                      {product.nombre}
-                    </Link>
-                  )}
-                </h3>
-                {/*
-                  Sin texto de venta no se pinta el párrafo, en vez de pintar
-                  uno vacío: un producto recién creado desde el teléfono sale
-                  en la tienda igual, y la dueña puede escribirle el texto
-                  después desde el panel. Un hueco en blanco se lee como algo
-                  roto; una tarjeta sin párrafo, no.
-                */}
-                {product.descripcion === null ? null : (
-                  <p className="text-muted text-sm mb-6 leading-relaxed">
-                    {product.descripcion}
-                  </p>
-                )}
+      {articulos.length === 0 ? (
+        <p className="text-muted">
+          {cargando ? 'Cargando el catálogo…' : 'El catálogo no está disponible en este momento.'}
+        </p>
+      ) : (
+        <>
+          <FiltrosDelCatalogo
+            opciones={opciones}
+            filtros={filtros}
+            alCambiar={setFiltros}
+            cuantosSalen={visibles.length}
+            cuantosHay={articulos.length}
+          />
 
-                <div className="mb-6">
-                  <span className="block mono text-xs text-muted mb-3">
-                    Presentaciones · toca una para agregarla
-                  </span>
-                  <div className="space-y-2">
-                    {product.presentaciones.map((p) => (
-                      <FilaPresentacion
-                        key={p.codigo}
-                        codigo={p.codigo}
-                        talla={p.talla}
-                        unidades={p.unidades}
-                        variante={catalogo.get(p.codigo)}
-                        cargando={cargando}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <a
-                  href={whatsappCon(`Hola Baby Caleb, me interesa: ${product.nombre}`)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  // El nombre accesible EMPIEZA por el texto visible. Decía
-                  // «Pedir <producto> por WhatsApp», y entonces «Pedir por
-                  // WhatsApp» —lo que se lee en la pantalla— no estaba dentro
-                  // del nombre: quien dicta por voz «pulsa Pedir por WhatsApp»
-                  // no acertaba el botón. Es WCAG 2.5.3, Nivel A, y axe lo
-                  // marcaba en las cuatro tarjetas.
-                  aria-label={`Pedir por WhatsApp: ${product.nombre}`}
-                  className={buttonVariants({ variant: 'outline', className: 'w-full mt-auto' })}
-                >
-                  Pedir por WhatsApp
-                </a>
-              </div>
+          {visibles.length === 0 ? (
+            /*
+              Un callejón sin salida con la salida puesta. «No hay resultados»
+              a secas deja a la clienta mirando una pantalla vacía sin saber
+              qué tocar para deshacerlo.
+            */
+            <div className="rounded-2xl border border-line bg-surface p-8 text-center">
+              <p className="m-0 mb-4 font-bold text-fg">
+                No hay artículos con esos filtros.
+              </p>
+              <button
+                type="button"
+                onClick={() => setFiltros({ ...SIN_FILTROS, orden: filtros.orden })}
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                Ver todo el catálogo
+              </button>
             </div>
-          );
-        })}
+          ) : (
+            /*
+              Una LISTA, no una pila de divs: un lector de pantalla anuncia
+              «lista de 15 artículos» y quien escucha sabe cuánto hay por
+              delante antes de empezar a recorrerla.
+
+              Las columnas crecen con la pantalla y la tarjeta más estrecha
+              cabe en un teléfono de 320 px sin desbordarse.
+            */
+            <ul className="m-0 grid list-none grid-cols-1 gap-6 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {visibles.map((a) => (
+                <TarjetaDeArticulo
+                  key={a.codigo}
+                  articulo={a}
+                  variante={catalogo.get(a.codigo)}
+                  foto={a.foto === undefined ? undefined : { src: a.foto }}
+                  cargando={cargando}
+                />
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      <div className="mt-10 text-center">
+        <a
+          href={whatsappCon('Hola Baby Caleb, tengo una consulta sobre el catálogo')}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonVariants({ variant: 'outline' })}
+        >
+          Consultar por WhatsApp
+        </a>
       </div>
     </Section>
   );
