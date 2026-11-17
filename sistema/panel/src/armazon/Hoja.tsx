@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { EstadoDeGuardado, type Guardado } from "../componentes";
 import { IconoCerrar } from "./Iconos";
 
 /**
@@ -21,6 +22,7 @@ export function Hoja({
   alCerrar,
   children,
   pie,
+  guardado,
 }: {
   abierta: boolean;
   titulo: string;
@@ -28,6 +30,21 @@ export function Hoja({
   children: ReactNode;
   /** Los botones de acción. Van fijos abajo, al alcance del pulgar. */
   pie?: ReactNode;
+  /**
+   * En qué punto está el guardado, si esta hoja guarda algo.
+   *
+   * Vive AQUÍ y no en cada pantalla porque el sitio donde se enseña es lo que
+   * estaba fallando, y trece pantallas decidiéndolo por su cuenta son trece
+   * sitios donde puede volver a fallar. El dueño del panel lo dijo así: «no
+   * hay una animación que me diga a mí que algo se está guardando, por ende yo
+   * cliqueo y cliqueo y cliqueo guardar».
+   *
+   * El estado SÍ existía en las pantallas; el único aviso estaba dentro del
+   * botón, y en un teléfono el dedo tapa el botón justo al pulsarlo. Aquí sale
+   * pegado a la cabecera, que es lo que no se va al bajar por la hoja ni queda
+   * debajo del pulgar.
+   */
+  guardado?: Guardado;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   /**
@@ -118,6 +135,16 @@ export function Hoja({
             <span className="sr-only">Cerrar</span>
           </button>
         </header>
+
+        {/* Entre la cabecera y el cuerpo: fuera de `hoja-cuerpo`, que es lo
+            que desplaza. Dentro, el aviso se iría hacia arriba en cuanto la
+            hoja se baja un poco — y las hojas largas son justo las que más
+            tardan en guardar. Solo ocupa sitio cuando hay algo que decir. */}
+        {guardado === undefined || guardado === "quieto" ? null : (
+          <div className="border-b border-line px-5 pt-3 pb-1">
+            <EstadoDeGuardado estado={guardado} />
+          </div>
+        )}
 
         <div className="hoja-cuerpo px-5 py-4">{children}</div>
 

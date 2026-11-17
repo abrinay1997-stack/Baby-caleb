@@ -645,7 +645,7 @@ function comoSeLee(e: unknown, movimientos: readonly Movimiento[]): string {
 }
 
 /** Lo máximo que acepta una sola operación. Un conteo de tres bodegas cabe. */
-const TOPE_DE_LINEAS = 200;
+export const TOPE_DE_LINEAS = 200;
 
 /** Un renglón tal como lo manda el panel. */
 export interface LineaDelPanel {

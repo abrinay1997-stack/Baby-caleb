@@ -556,6 +556,53 @@ for (const [nombreVista, tamano] of VISTAS) {
       revisadas += 1;
       for (const f of deLaHoja) todas.push({ vista: nombreVista, pantalla: "hoja-editar", ...f });
 
+      // Y la MISMA hoja mientras guarda, que es un estado distinto y hasta hoy
+      // no se medía ninguno.
+      //
+      // Es el estado que el dueño echó en falta: «no hay una animación que me
+      // diga a mí que algo se está guardando, por ende yo cliqueo y cliqueo y
+      // cliqueo guardar». Ahora hay un aviso arriba de la hoja y algo que gira
+      // dentro del botón — y si no se mide, el día que alguien le ponga 11 px
+      // al aviso nadie se enterará. El servidor de muestra tarda medio segundo
+      // a propósito para que este estado exista el tiempo suficiente.
+      const guardar = pagina
+        .locator("dialog.hoja[open]")
+        .getByRole("button", { name: /^Guardar/ })
+        .first();
+      if ((await guardar.count()) > 0) {
+        await guardar.click();
+        // Se espera a que el aviso esté EN PANTALLA, no un tiempo fijo: un
+        // `waitForTimeout` que se queda corto mide la hoja quieta y la da por
+        // buena, que es una medida en verde de algo que no se miró.
+        const avisando = pagina.locator("dialog.hoja[open] [role=status]").filter({
+          hasText: /Guardando/,
+        });
+        await avisando.first().waitFor({ state: "visible", timeout: 3000 });
+        const guardandose = await medirAhora(pagina);
+        revisadas += 1;
+        for (const f of guardandose) {
+          todas.push({ vista: nombreVista, pantalla: "hoja-editar-guardando", ...f });
+        }
+        if (!soloMedir) {
+          await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-editar-guardando.png` });
+        }
+        // Y con el «✓ Guardado» puesto, que es la otra mitad: la señal de
+        // DESPUÉS, la que faltaba del todo.
+        const hecho = pagina.locator("dialog.hoja[open] [role=status]").filter({
+          hasText: /Guardado/,
+        });
+        if (await hecho.first().isVisible().catch(() => false)) {
+          const yaEsta = await medirAhora(pagina);
+          revisadas += 1;
+          for (const f of yaEsta) {
+            todas.push({ vista: nombreVista, pantalla: "hoja-editar-guardado", ...f });
+          }
+          if (!soloMedir) {
+            await pagina.screenshot({ path: `${SALIDA}/${nombreVista}-hoja-editar-guardado.png` });
+          }
+        }
+      }
+
       // La hoja de mover existencias es la otra que tiene campos, y además
       // seis opciones que se tocan con el pulgar: el §7 pide 44 px en cada
       // una. Se mide abierta, igual que la de editar.

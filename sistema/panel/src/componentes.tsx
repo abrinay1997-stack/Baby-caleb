@@ -338,3 +338,101 @@ export function Pastilla({
     </span>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Decir que algo está pasando
+// ---------------------------------------------------------------------------
+
+/**
+ * ## EL FALLO QUE CIERRA
+ *
+ * El dueño del panel: «hay algo que me molesta bastante de la vista, y es que
+ * no hay una animación que me diga a mí que algo se está guardando. Por ende,
+ * yo cliqueo y cliqueo y cliqueo guardar.»
+ *
+ * Y el estado SÍ existía. Trece pantallas ya tenían su `guardando`, el botón
+ * ya se deshabilitaba y el texto ya cambiaba a «Guardando…». Lo que fallaba no
+ * era el estado: era DÓNDE se enseña.
+ *
+ * El único aviso estaba escrito DENTRO del botón, y en un teléfono el dedo
+ * tapa el botón justo cuando lo pulsa. Se toca, el pulgar cubre la palabra que
+ * acaba de cambiar, no se ve nada moverse — y se vuelve a tocar. Los toques de
+ * más no hacen daño porque el botón está deshabilitado, pero tampoco contestan
+ * nada, así que la sensación es que no pasó nada.
+ *
+ * Y cuando el guardado es rápido, «Guardando…» aparece ochenta milisegundos y
+ * se va: el parpadeo es invisible y después no queda ninguna señal de que
+ * funcionó. Nada dice «Guardado».
+ *
+ * Así que esto son dos piezas:
+ *
+ *  - `Girando`, que se mueve. Una palabra que cambia debajo del dedo no se ve;
+ *    algo que gira al lado se nota por el rabillo del ojo.
+ *  - `EstadoDeGuardado`, que va ARRIBA de la hoja, donde está mirando el ojo y
+ *    donde el dedo no llega, y que se queda un rato diciendo «Guardado».
+ */
+
+/**
+ * Lo que gira mientras se espera.
+ *
+ * `aria-hidden` porque no dice nada que no diga ya el texto de al lado: un
+ * lector de pantalla que anunciara «imagen girando» estorbaría en vez de
+ * ayudar. Quien no ve la pantalla se entera por `EstadoDeGuardado`, que es un
+ * `role="status"`.
+ *
+ * Y se para si el sistema operativo pide menos movimiento: hay gente a la que
+ * una animación que no se detiene le da náuseas o le dispara una migraña, y
+ * `estilos.css` apaga la animación en ese caso. Entonces el círculo se queda
+ * quieto — sigue estando, y el texto de al lado sigue diciendo lo que pasa.
+ */
+export function Girando({ className = "" }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`girando inline-block h-[1em] w-[1em] shrink-0 rounded-full border-2 border-current border-t-transparent align-[-0.125em] ${className}`}
+    />
+  );
+}
+
+/** En qué punto está un guardado. */
+export type Guardado = "quieto" | "guardando" | "guardado";
+
+/**
+ * El aviso de arriba de la hoja.
+ *
+ * `role="status"` con `aria-live="polite"`: se anuncia solo, sin interrumpir, y
+ * sin robarle el foco a quien está escribiendo. Y ocupa su sitio desde el
+ * principio —`min-h`— para que al aparecer no empuje la hoja hacia abajo: un
+ * salto de dos renglones mientras alguien va a tocar «Guardar» mueve el botón
+ * de debajo del dedo.
+ */
+export function EstadoDeGuardado({
+  estado,
+  guardando = "Guardando…",
+  guardado = "Guardado",
+}: {
+  estado: Guardado;
+  /** Qué se dice mientras se guarda. «Subiendo la foto…», por ejemplo. */
+  guardando?: string;
+  /** Qué se dice al terminar. */
+  guardado?: string;
+}) {
+  return (
+    <p
+      role="status"
+      aria-live="polite"
+      className="mt-0 mb-2 flex min-h-[1.5rem] items-center gap-2 text-[13px] font-semibold"
+    >
+      {estado === "guardando" ? (
+        <>
+          <Girando className="text-muted" />
+          <span className="text-muted">{guardando}</span>
+        </>
+      ) : estado === "guardado" ? (
+        // El visto NO es el único aviso: va con la palabra. Un color y un
+        // símbolo solos dejan fuera a quien no distingue el verde.
+        <span className="text-sage-strong">✓ {guardado}</span>
+      ) : null}
+    </p>
+  );
+}

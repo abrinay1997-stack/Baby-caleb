@@ -2,6 +2,7 @@ import { useState } from "react";
 import { pedir } from "../api";
 import { Hoja } from "../armazon/Hoja";
 import { Aviso, BOTON, Campo, ENTRADA, Grupo, Opcion } from "../formulario";
+import { Girando } from "../componentes";
 
 /**
  * Abrir una bodega o cambiarle algo.
@@ -113,6 +114,7 @@ export function EditarBodega({
       abierta
       titulo={bodega === null ? "Bodega nueva" : bodega.nombre}
       alCerrar={cerrar}
+      guardado={guardando ? "guardando" : "quieto"}
       pie={
         <>
           <button type="button" onClick={cerrar} className={`${BOTON} border border-line`}>
@@ -124,7 +126,14 @@ export function EditarBodega({
             disabled={guardando}
             className={`${BOTON} bg-accent text-accent-fg disabled:opacity-50`}
           >
-            {guardando ? "Guardando…" : bodega === null ? "Abrir la bodega" : "Guardar"}
+            {guardando ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Girando />
+                Guardando…
+              </span>
+            ) : (
+              bodega === null ? "Abrir la bodega" : "Guardar"
+            )}
           </button>
         </>
       }

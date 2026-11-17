@@ -2,6 +2,7 @@ import { useState } from "react";
 import { pedir } from "../api";
 import { Hoja } from "../armazon/Hoja";
 import { Aviso, BOTON, Campo, ENTRADA, Grupo, Opcion } from "../formulario";
+import { Girando } from "../componentes";
 
 /**
  * Dar de alta a quien reparte, o corregirle algo.
@@ -144,6 +145,7 @@ export function EditarMotorizado({
       abierta
       titulo={m === null ? "Quién reparte" : m.nombre}
       alCerrar={cerrar}
+      guardado={guardando ? "guardando" : "quieto"}
       pie={
         <>
           <button type="button" onClick={cerrar} className={`${BOTON} border border-line`}>
@@ -155,7 +157,14 @@ export function EditarMotorizado({
             disabled={guardando}
             className={`${BOTON} bg-accent text-accent-fg disabled:opacity-50`}
           >
-            {guardando ? "Guardando…" : m === null ? "Darlo de alta" : "Guardar"}
+            {guardando ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Girando />
+                Guardando…
+              </span>
+            ) : (
+              m === null ? "Darlo de alta" : "Guardar"
+            )}
           </button>
         </>
       }
