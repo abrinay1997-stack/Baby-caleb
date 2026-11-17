@@ -5,6 +5,7 @@ import { puedeAgendar } from "../dominio/abonos";
 import {
   abonoAntesDeEntregar,
   cobroDelSaldo,
+  pagoDePasarela,
   contracargo,
   fechaContable,
   reembolso,
@@ -71,6 +72,24 @@ const CUENTA_DEL_METODO: Record<MetodoManual, string> = {
   yappy: "1101",
   transferencia: "1102",
   efectivo: "1103",
+};
+
+/**
+ * A qué cuenta «por liquidar» entra el dinero de cada pasarela (05 §2).
+ *
+ * Va aparte de `CUENTA_DEL_METODO` porque la pregunta es distinta: en un cobro
+ * manual la cuenta la decide CÓMO pagó la clienta (Yappy, transferencia,
+ * efectivo); en uno de pasarela la decide QUIÉN tiene el dinero ahora mismo,
+ * que es la pasarela y no el banco. Entra el BRUTO contra «por liquidar»: el
+ * neto llega al banco días después, y la comisión real se conoce entonces
+ * (asiento 7).
+ *
+ * Los códigos salen del plan de cuentas de `docs/plan/05-contabilidad.md` §2 y
+ * están sembrados en la 0011 (`cta-1105`, `cta-1106`). No se inventan aquí.
+ */
+const CUENTA_POR_LIQUIDAR: Readonly<Record<string, string>> = {
+  tilopay: "1105",
+  paypal: "1106",
 };
 
 export interface ComprobanteNuevo {
@@ -266,7 +285,9 @@ export async function confirmarPago(
   pagoId: string,
 ): Promise<Resultado<{ pagadoCents: number; agendado: boolean }>> {
   const pago = await ctx.db
-    .prepare("SELECT id, pedido_id, monto_cents, estado, metodo FROM pagos WHERE id = ?")
+    .prepare(
+      "SELECT id, pedido_id, monto_cents, estado, metodo, proveedor FROM pagos WHERE id = ?",
+    )
     .bind(pagoId)
     .first<{
       id: string;
@@ -274,6 +295,7 @@ export async function confirmarPago(
       monto_cents: number;
       estado: string;
       metodo: string;
+      proveedor: string;
     }>();
 
   if (pago === null) return fallo("no_encontrado", "no existe ese pago");
@@ -345,8 +367,32 @@ export async function confirmarPago(
   // asiento, así que la referencia al pedido no permite preguntar por uno.
   const referencia = { tipo: "pago", id: pagoId };
 
+  /**
+   * UN COBRO DE PASARELA NO ESCRIBÍA NINGÚN ASIENTO.
+   *
+   * `cuenta` sale de `CUENTA_DEL_METODO`, que solo conoce los tres métodos
+   * manuales, así que para un pago de Tilopay o PayPal valía `null` y el
+   * `if (asiento !== null)` de abajo se saltaba entero: el pago se aprobaba,
+   * el pedido sumaba, y en los libros no entraba un centavo. Era la deuda
+   * marcada como «los de pasarela llegan en F4b», y llega aquí.
+   *
+   * Se mira el PROVEEDOR y no el método: `metodo` es texto libre («tarjeta»,
+   * «visa», lo que escriba quien llame), mientras `proveedor` tiene CHECK en
+   * el esquema. Una columna vigilada por la base es mejor sitio para apoyar
+   * una decisión contable que una que acepta cualquier cosa.
+   */
+  const porLiquidar = CUENTA_POR_LIQUIDAR[pago.proveedor] ?? null;
+
   const asiento =
-    !yaSalio && cuenta !== null
+    porLiquidar !== null && !yaSalio
+      ? pagoDePasarela({
+          fecha,
+          referencia,
+          cuenta: porLiquidar,
+          brutoCents: pago.monto_cents,
+          detalle: `Pedido ${p.numero}`,
+        })
+      : !yaSalio && cuenta !== null
       ? abonoAntesDeEntregar({
           fecha,
           referencia,
