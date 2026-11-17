@@ -28,10 +28,35 @@ describe("las bodegas", () => {
   });
 });
 
+/**
+ * Los doce que cargó la 0003.
+ *
+ * Están aquí porque desde la 0020 la tabla tiene más: el espejo del CRM añadió
+ * los tres Velvee y los wipes Nateen, que el CRM vendía y el sistema no
+ * conocía. Sin esta lista, cada prueba de abajo mediría «la tabla» y no «la
+ * carga inicial», y entonces dejaría de vigilar lo que dice que vigila: sus
+ * números subirían con cada producto nuevo y alguien los subiría sin mirar.
+ */
+const DOCE = [
+  "DANY-AW1200", "DANY-AW600", "MOON-FUL",
+  "NAT-L", "NAT-M", "NAT-P-L", "NAT-P-XL", "NAT-P-XXL",
+  "NAT-RN", "NAT-S", "NAT-XL", "NAT-XXL",
+] as const;
+const EN_DOCE = `codigo IN (${DOCE.map((c) => `'${c}'`).join(", ")})`;
+
 describe("el catálogo", () => {
   it("trae los doce artículos del documento", async () => {
-    const n = await env.DB.prepare("SELECT COUNT(*) n FROM variantes").first<{ n: number }>();
+    const n = await env.DB.prepare(
+      `SELECT COUNT(*) n FROM variantes WHERE ${EN_DOCE}`,
+    ).first<{ n: number }>();
     expect(n?.n).toBe(12);
+    // Y que estén los doce no basta: si la 0003 cargara trece, el conteo de
+    // arriba seguiría dando doce con uno de más fuera de la lista. Los nombres
+    // tienen que ser exactamente éstos.
+    const { results } = await env.DB.prepare(
+      "SELECT codigo FROM variantes WHERE codigo NOT LIKE 'VELVEE-%' AND codigo <> 'WIPESNAT' ORDER BY codigo",
+    ).all<{ codigo: string }>();
+    expect(results.map((v) => v.codigo)).toEqual([...DOCE].sort());
   });
 
   it("NO trae lo descatalogado", async () => {
@@ -46,8 +71,9 @@ describe("el catálogo", () => {
   it("todo entra SIN PUBLICAR", async () => {
     // Mientras `publicado` sea 0, la web y el bot no lo ofrecen. Es lo que
     // permite cargar el catálogo sin que a medias se vea desde fuera.
-    const n = await env.DB.prepare("SELECT COUNT(*) n FROM variantes WHERE publicado = 1")
-      .first<{ n: number }>();
+    const n = await env.DB.prepare(
+      `SELECT COUNT(*) n FROM variantes WHERE publicado = 1 AND ${EN_DOCE}`,
+    ).first<{ n: number }>();
     expect(n?.n).toBe(0);
   });
 
@@ -64,8 +90,18 @@ describe("el catálogo", () => {
     // Tiene que existir aunque esté en cero: `movimientos_inventario` lleva
     // llave foránea a (codigo, bodega_id) y sin ella no se puede registrar ni
     // la primera entrada.
-    const n = await env.DB.prepare("SELECT COUNT(*) n FROM existencias").first<{ n: number }>();
-    expect(n?.n).toBe(12 * 3);
+    //
+    // Se mide como «a nadie le falta ninguna», no como «hay 36 filas»: el
+    // número hay que subirlo con cada producto nuevo, y un número que se sube
+    // sin mirar deja de ser un control. Así la regla vale para los doce, para
+    // los dieciséis de hoy y para los que vengan.
+    const sinFila = await env.DB.prepare(
+      `SELECT COUNT(*) n FROM variantes v, bodegas b
+        WHERE NOT EXISTS (
+          SELECT 1 FROM existencias e WHERE e.codigo = v.codigo AND e.bodega_id = b.id
+        )`,
+    ).first<{ n: number }>();
+    expect(sinFila?.n).toBe(0);
   });
 
   it("el ITBMS queda PENDIENTE, no en cero", async () => {
@@ -73,7 +109,7 @@ describe("el catálogo", () => {
     // NULL, `precios.ts` se niega a calcular en vez de inventar un impuesto:
     // el precio sale mal y ruidoso, no mal y callado.
     const n = await env.DB.prepare(
-      "SELECT COUNT(*) n FROM variantes WHERE tasa_itbms_bp IS NOT NULL",
+      `SELECT COUNT(*) n FROM variantes WHERE tasa_itbms_bp IS NOT NULL AND ${EN_DOCE}`,
     ).first<{ n: number }>();
     expect(n?.n).toBe(0);
   });

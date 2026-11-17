@@ -148,6 +148,26 @@ export interface ProductoDelCatalogo {
    */
   readonly nombre: string;
   /**
+   * La marca, o `null` si el producto no la tiene puesta.
+   *
+   * Sale hacia fuera porque es lo que la tienda necesita para dejar de ser una
+   * tabla: con la marca y la talla, la clienta puede poner la M de una marca al
+   * lado de la M de otra y comparar precio. Agrupado por familia, como estaba,
+   * esa comparación no existe — y existiendo dos marcas de pañal con $15 de
+   * diferencia, no enseñarla es dejar la venta en la mesa.
+   *
+   * Ya está en la base desde `migrations/0001`: esto no la inventa, la saca.
+   */
+  readonly marca: string | null;
+  /**
+   * La familia: 'panal', 'pants', 'wipes', 'portabebe'…
+   *
+   * Es la categoría con la que se filtra. Sale como el texto de la base y no
+   * como una lista cerrada a propósito: el día que la dueña venda otra cosa, la
+   * tienda la enseña sin desplegar nada.
+   */
+  readonly familia: string;
+  /**
    * El texto de venta, o `null` si todavía no se ha escrito.
    *
    * `null` es «falta», no «no hay nada que decir» (trampa §7). La tarjeta no
@@ -192,6 +212,10 @@ interface Fila {
   /** El texto de venta, o `null` si todavía no se ha escrito. */
   descripcion?: string | null;
   orden_producto: number;
+  /** La marca, o `null` si el producto no la tiene puesta. */
+  marca?: string | null;
+  /** 'panal' | 'pants' | 'wipes' | 'portabebe' | … Ver `migrations/0001`. */
+  familia: string;
   nombre: string;
   talla: string | null;
   peso_min_lb: number | null;
@@ -359,6 +383,7 @@ export function fotoPublica(valor: unknown): string | null {
 const CONSULTA = `
   SELECT v.codigo, p.slug AS slug_producto, v.nombre, v.talla,
          p.nombre AS nombre_producto, p.nombre_tienda, p.descripcion, p.orden AS orden_producto,
+         p.marca, p.familia,
          v.peso_min_lb, v.peso_max_lb, v.unidades_por_caja, v.precio_cents, v.version,
          v.pedir_por_whatsapp, v.imagen,
          -- La regla del combo tiene UN dueño: libresSQL en src/db/inventario.ts,
@@ -459,6 +484,21 @@ export function textoDeVenta(descripcion: unknown): string | null {
  * se mantengan iguales para siempre. Agrupando las filas que ya se leyeron,
  * «producto con al menos una variante visible» es cierto por construcción.
  */
+/**
+ * La marca, o `null`.
+ *
+ * Misma forma que `textoDeVenta`: lo que no sirve para enseñar sale como
+ * `null`, decidido UNA vez aquí y no en cada pantalla que lo pinte. Un
+ * `"   "` en la columna es tan «sin marca» como un NULL, y si pasara tal cual
+ * aparecería en el filtro de marcas como una opción en blanco que no filtra
+ * nada.
+ */
+export function laMarca(marca: unknown): string | null {
+  if (typeof marca !== "string") return null;
+  const limpia = marca.trim();
+  return limpia === "" ? null : limpia;
+}
+
 export function productosDeLasFilas(filas: readonly Fila[]): ProductoDelCatalogo[] {
   const porSlug = new Map<string, ProductoDelCatalogo>();
   for (const f of filas) {
@@ -466,6 +506,11 @@ export function productosDeLasFilas(filas: readonly Fila[]): ProductoDelCatalogo
     porSlug.set(f.slug_producto, {
       slug: f.slug_producto,
       nombre: comoLoTitulaLaTienda(f.nombre_tienda, f.nombre_producto),
+      // Una marca en blanco es «sin marca», no una cadena vacía: la tienda
+      // tiene que poder decidir si la enseña, y `""` se cuela como una marca
+      // más en el filtro con el nombre invisible.
+      marca: laMarca(f.marca),
+      familia: f.familia,
       descripcion: textoDeVenta(f.descripcion),
       orden: f.orden_producto,
     });

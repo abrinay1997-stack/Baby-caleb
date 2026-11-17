@@ -343,6 +343,30 @@ describe("los avisos a las clientas", () => {
   });
 });
 
+/**
+ * Cuántas filas de existencias ve el resumen en esta base.
+ *
+ * Se CALCULA, no se escribe. Era 36 —doce variantes por tres bodegas— y la
+ * migración 0020 la dejó en 48 al añadir los cuatro artículos que el CRM
+ * vendía y el sistema no conocía. Un número escrito a mano aquí hay que
+ * subirlo con cada producto nuevo, y un número que se sube sin mirar deja de
+ * ser un control: lo que importa no es que sean 48, es que haya UNA fila por
+ * variante y bodega, ninguna de más y ninguna de menos.
+ *
+ * De paso lo comprueba, que es la parte que un 48 a secas no diría.
+ */
+async function filasDeExistencias(): Promise<number> {
+  const r = await env.DB.prepare(
+    `SELECT (SELECT COUNT(*) FROM variantes WHERE activo = 1)
+          * (SELECT COUNT(*) FROM bodegas  WHERE activa = 1) AS esperadas,
+            (SELECT COUNT(*) FROM existencias e
+               JOIN variantes v ON v.codigo = e.codigo AND v.activo = 1
+               JOIN bodegas   b ON b.id     = e.bodega_id AND b.activa = 1) AS hay`,
+  ).first<{ esperadas: number; hay: number }>();
+  expect(r?.hay).toBe(r?.esperadas);
+  return r?.hay ?? -1;
+}
+
 describe("el inventario", () => {
   it("una vez cargado, separa lo agotado de lo que se está acabando", async () => {
     const codigos = (
@@ -357,9 +381,10 @@ describe("el inventario", () => {
 
     const inv = (await resumen(ctx())).inventario!;
     if (!inv.cargado) throw new Error("con movimientos, el inventario está cargado");
-    // Las 36 filas siguen ahí y las otras 33 están en cero: ahora sí cuentan
-    // como agotadas, porque ya hay inventario del que hablar.
-    expect(inv.agotadas).toBe(34);
+    // Las demás filas siguen ahí y en cero: ahora sí cuentan como agotadas,
+    // porque ya hay inventario del que hablar. Dos de las tres cargadas tienen
+    // existencias, así que agotadas son todas menos esas dos.
+    expect(inv.agotadas).toBe((await filasDeExistencias()) - 2);
     // Una fila agotada NO se cuenta además como «por acabarse»: los conjuntos
     // no se solapan, así que sumarlos no cuenta nada dos veces.
     expect(inv.porAcabarse).toBe(1);
@@ -374,7 +399,7 @@ describe("el inventario", () => {
     // Cuatro cajas libres sin mínimo no son «por acabarse»: nadie pidió que
     // avisara. Lo que se dice es que falta configurarlo.
     expect(inv.porAcabarse).toBe(0);
-    expect(inv.sinMinimo).toBe(36);
+    expect(inv.sinMinimo).toBe(await filasDeExistencias());
   });
 
   it("descuenta lo reservado: lo comprometido no se puede vender otra vez", async () => {
@@ -396,7 +421,7 @@ describe("el inventario", () => {
 
   it("no cuenta una bodega apagada ni una talla retirada", async () => {
     await cargarInventario(1, { minimo: 5 });
-    expect((await resumen(ctx())).inventario?.filas).toBe(36);
+    expect((await resumen(ctx())).inventario?.filas).toBe(await filasDeExistencias());
 
     await env.DB.prepare("UPDATE bodegas SET activa = 0 WHERE id <> ?").bind(bodegaId).run();
     await env.DB.prepare("UPDATE variantes SET activo = 0 WHERE codigo <> ?").bind(codigo).run();
@@ -443,11 +468,13 @@ describe("el inventario", () => {
 
     const inv = (await resumen(ctx())).inventario!;
     if (!inv.cargado) throw new Error("tenía que estar cargado");
-    // Treinta y seis filas en cero no caben en una pantalla de teléfono, y una
-    // lista cortada que se presenta como completa es peor que una lista corta.
+    // Cuarenta y ocho filas en cero no caben en una pantalla de teléfono, y
+    // una lista cortada que se presenta como completa es peor que una lista
+    // corta. El 12 sí es un número a mano: es el tope de la pantalla, no una
+    // consecuencia del catálogo.
     expect(inv.lista.length).toBe(12);
     expect(inv.listaTruncada).toBe(true);
-    expect(inv.agotadas).toBe(36);
+    expect(inv.agotadas).toBe(await filasDeExistencias());
   });
 });
 

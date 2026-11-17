@@ -85,11 +85,43 @@ function codigosDeLaTienda(): Set<string> {
  */
 const FUERA_A_PROPOSITO: Record<string, string> = {
   'DANY-AW1200':
-    'PENDIENTE de decisión de la dueña. Está publicado y con precio en el sistema ' +
-    '($40) y con ficha viva, pero no lo enseña la tienda, no lo tiene el bot y el ' +
-    'chat de la web dice que ya no existe. O se enseña en los tres sitios o se ' +
-    'retira en el sistema; hoy es un producto que nadie puede comprar.',
+    'RESUELTO por la migración 0020, y ya no por `content.json`. Era un artículo ' +
+    'suelto a $40 con existencias propias en cero, así que la tienda lo daba por ' +
+    'agotado habiendo 28 cajas de las que lo forman. Ahora es un COMBO de 2 × ' +
+    'DANY-AW600 a $35 —el precio que el propio CRM anuncia— y su disponibilidad ' +
+    'sale de sus componentes. Sigue fuera de este archivo porque la lista de la ' +
+    'tienda ya no se lee de aquí: la decide el sistema (`laListaDeLaTienda`), y de ' +
+    '`content.json` solo queda la foto de respaldo.',
+
+  // Los cuatro que el CRM vendía y el sistema no conocía (migración 0020).
+  //
+  // Entran SIN PUBLICAR y por eso no se enseñan todavía: la 0020 no carga
+  // existencias —el libro de inventario no se escribe desde una migración— así
+  // que publicarlos ahora los pondría en la tienda diciendo «agotado». Se
+  // publican después del conteo contra el CRM.
+  //
+  // Tampoco se añaden a `content.json`: ese archivo dejó de ser la lista de la
+  // tienda y es solo la foto de respaldo. Meterlos aquí sería volver a crear la
+  // segunda fuente de verdad que este control existe para cazar.
+  'VELVEE-P': 'Migración 0020: sin publicar hasta el conteo. La lista la decide el sistema.',
+  'VELVEE-M': 'Migración 0020: sin publicar hasta el conteo. La lista la decide el sistema.',
+  'VELVEE-L': 'Migración 0020: sin publicar hasta el conteo. La lista la decide el sistema.',
+  WIPESNAT: 'Migración 0020: sin publicar hasta el conteo. La lista la decide el sistema.',
 };
+
+/**
+ * AVISO sobre esta prueba, para quien la lea dentro de un año.
+ *
+ * Su modelo es «la tienda enseña lo que lista `content.json`», y eso ya casi no
+ * es verdad: desde que `laListaDeLaTienda` lee los productos del sistema, este
+ * archivo es la foto de respaldo y poco más. La prueba sigue valiendo —cazó los
+ * cuatro artículos de la 0020 el mismo día en que se escribieron— pero el día
+ * que `content.json` deje de tener incluso las fotos, lo que hay que comparar
+ * contra el sistema es lo que pinta la tienda, no este JSON. Mientras eso no
+ * pase, la válvula de arriba se llena de excepciones que son todas la misma, y
+ * una lista de excepciones que crece es la señal de que el control mide lo de
+ * ayer.
+ */
 
 describe('la tienda y el sistema dicen los mismos productos', () => {
   it('el repositorio siembra un catálogo que se puede leer', () => {
