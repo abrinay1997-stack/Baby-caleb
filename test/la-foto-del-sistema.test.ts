@@ -185,24 +185,40 @@ describe('la copia del build no mete fotos de otro dominio', () => {
  * pinta tarjetas, las reparte. Quien pinta la foto ahora es
  * `TarjetaDeArticulo.tsx`, y es el que está vigilado. La regla no se aflojó —
  * se mudó con el código que vigila.
+ *
+ * Lo mismo con `FichaProducto.tsx` cuando la ficha pasó a tener galería: ya no
+ * pinta la foto, se la pide a `GaleriaDeProducto.tsx`. La ficha sigue vigilada
+ * —abajo, en la prueba donde `src={product.image}` se colaría— y es la galería
+ * la que tiene que preguntar quién gana.
  */
 describe('las pantallas que enseñan fotos preguntan quién gana', () => {
-  const PANTALLAS = [
-    'src/pages/FichaProducto.tsx',
+  /** Las que pintan un `<img>` con sus propias manos. */
+  const PINTAN = [
+    'src/components/GaleriaDeProducto.tsx',
     'src/blocks/TarjetaDeArticulo.tsx',
     'src/blocks/S10Gallery.tsx',
   ];
 
+  /** Y todas las que enseñan la foto de un producto, pinten o deleguen. */
+  const ENSENAN = [...PINTAN, 'src/pages/FichaProducto.tsx'];
+
   it('las tres pintan la foto con el decisor, no con un <img> suyo', () => {
-    for (const pantalla of PANTALLAS) {
+    for (const pantalla of PINTAN) {
       expect(soloCodigo(pantalla), pantalla).toMatch(/<FotoDeProducto/);
     }
+  });
+
+  it('y la ficha delega en la galería en vez de pintarla ella', () => {
+    // La galería es la foto grande MÁS las miniaturas: una sola pieza. Si la
+    // ficha volviera a pintar un `<img>` suyo, las segundas fotos dejarían de
+    // tener por dónde salir y nadie se enteraría.
+    expect(soloCodigo('src/pages/FichaProducto.tsx')).toMatch(/<GaleriaDeProducto/);
   });
 
   it('y ninguna pinta la de content.json directamente', () => {
     // `src={product.image}` era el código de ayer: la tienda enseñando la foto
     // del repositorio mientras la del panel no se veía en ninguna parte.
-    for (const pantalla of PANTALLAS) {
+    for (const pantalla of ENSENAN) {
       expect(soloCodigo(pantalla), pantalla).not.toMatch(/src=\{[^}]*\.image\}/);
     }
   });

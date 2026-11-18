@@ -74,13 +74,32 @@ export function metaDeProducto(v: VarianteParaFicha): MetaDeRuta {
  *  - **La cantidad exacta.** `availability` dice si hay o no hay. Cuántas
  *    quedan es del negocio y no sale del sistema ni siquiera aquí.
  */
-export function jsonLdProducto(v: VarianteParaFicha, url: string): Record<string, unknown> {
+export function jsonLdProducto(
+  v: VarianteParaFicha,
+  url: string,
+  fotos: readonly string[] = [],
+): Record<string, unknown> {
+  // `image` es lo que Google pide para que una ficha pueda salir CON FOTO en el
+  // resultado, y hasta hoy el documento no lo llevaba: la ficha tenía la foto
+  // en la pantalla, pero el dato estructurado no.
+  //
+  // Solo absolutas. Una ruta como `/img/caja.webp` la resuelve el navegador sin
+  // problema, pero el documento lo lee un rastreador que no siempre tiene la
+  // página delante; una foto que no se puede abrir es peor que ninguna, porque
+  // Google se la cree y la intenta. Quien llama absolutiza —la ficha lo hace
+  // con el origen de la propia página— y esto es la red por si un día alguien
+  // pasa una relativa.
+  const absolutas = fotos.filter((f) => /^https?:\/\//.test(f));
+
   return {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: v.nombre,
     sku: v.codigo,
     ...(v.talla === null ? {} : { size: v.talla }),
+    // Sin fotos no se escribe el campo: un `image: []` le dice a Google que
+    // este producto no tiene foto, que no es lo mismo que no decírselo.
+    ...(absolutas.length === 0 ? {} : { image: absolutas }),
     offers: {
       '@type': 'Offer',
       url,

@@ -46,8 +46,58 @@ export interface ProductoDeContenido {
 }
 
 /** `null`, `undefined` y la cadena vacía son lo mismo aquí: no hay foto. */
-const delSistema = (imagen: string | null | undefined): string | undefined =>
+const noVacia = (imagen: string | null | undefined): string | undefined =>
   typeof imagen === 'string' && imagen.trim() !== '' ? imagen : undefined;
+
+/** Lo que `content.json` guarda de UNA presentación, en materia de fotos. */
+export interface FotosDeContenido {
+  readonly image?: string;
+  /** Las demás de la misma caja. `image` es la primera y no se repite. */
+  readonly images?: readonly string[];
+}
+
+/**
+ * TODAS las fotos de una variante, en el orden en que se enseñan.
+ *
+ * ## La galería tiene UN dueño, igual que la foto
+ *
+ * Si el sistema tiene foto subida, la galería es la del sistema — y hoy el
+ * sistema guarda UNA por variante, así que es una sola foto y la ficha no
+ * pinta miniaturas. Las de `content.json` NO se le cuelgan detrás: son las
+ * demás fotos *de la foto del archivo*, y si la dueña subió otra caja desde el
+ * panel, la segunda del archivo puede ser de otro producto. Una galería
+ * mezclada enseñaría la caja nueva junto a la vieja sin que nadie lo hubiera
+ * decidido.
+ *
+ * La consecuencia hay que decirla en voz alta: **el día que la dueña suba una
+ * foto desde el panel, esa variante pasa de dos fotos a una.** Eso no es un
+ * fallo de aquí, es que al sistema le falta guardar varias; está apuntado como
+ * su propia pieza (con MCP, como todo). Hoy no hay ninguna subida, así que hoy
+ * no le quita nada a nadie.
+ *
+ * Sin foto del sistema, la galería es la del archivo: `image` primero y
+ * después `images`, sin vacíos y sin repetidas — una misma ruta dos veces
+ * serían dos miniaturas que enseñan lo mismo.
+ */
+export function fotosDeVariante(
+  variante: Pick<VariantePublica, 'imagen'> | undefined,
+  deContenido: FotosDeContenido | undefined,
+): readonly Foto[] {
+  const delArchivo = noVacia(deContenido?.image);
+
+  const sistema = noVacia(variante?.imagen);
+  if (sistema !== undefined) return [{ src: sistema, respaldo: delArchivo }];
+
+  const puestas = new Set<string>();
+  const galeria: Foto[] = [];
+  for (const candidata of [delArchivo, ...(deContenido?.images ?? [])]) {
+    const src = noVacia(candidata);
+    if (src === undefined || puestas.has(src)) continue;
+    puestas.add(src);
+    galeria.push({ src });
+  }
+  return galeria;
+}
 
 /**
  * La foto de UNA variante: la del sistema si la hay, la de `content.json` si no.
@@ -60,9 +110,9 @@ export function fotoDeVariante(
   variante: Pick<VariantePublica, 'imagen'> | undefined,
   deContenido: string | undefined,
 ): Foto | undefined {
-  const sistema = delSistema(variante?.imagen);
-  if (sistema !== undefined) return { src: sistema, respaldo: deContenido };
-  return deContenido === undefined ? undefined : { src: deContenido };
+  // La PRIMERA de la galería, no una segunda regla escrita aparte: si un día
+  // cambia quién gana, cambia en un sitio y cambia para las dos.
+  return fotosDeVariante(variante, { image: deContenido })[0];
 }
 
 /**
@@ -107,7 +157,7 @@ export function fotoPorCodigos(
 ): Foto | undefined {
   for (const codigo of codigos) {
     if (codigo === undefined) continue;
-    const sistema = delSistema(catalogo.get(codigo)?.imagen);
+    const sistema = noVacia(catalogo.get(codigo)?.imagen);
     if (sistema !== undefined) return { src: sistema, respaldo };
   }
   return respaldo === undefined ? undefined : { src: respaldo };
