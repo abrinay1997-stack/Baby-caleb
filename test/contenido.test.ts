@@ -115,3 +115,109 @@ describe('el Worker no escribe montos a mano', () => {
     expect(culpables, culpables.join('\n')).toEqual([]);
   });
 });
+
+/**
+ * Ningún BOTÓN del contenido manda a WhatsApp.
+ *
+ * ## Por qué existe, y por qué llega tarde
+ *
+ * El 18-nov-2026 se quitaron los botones de WhatsApp de la tienda. Se buscaron
+ * en el código —`whatsappCon`, `WHATSAPP_URL`, `wa.me`— y se quitaron seis. El
+ * más grande del sitio **no salió en esa búsqueda**: el botón naranja del hero,
+ * el primero que ve cualquiera que entra, porque su texto y su dirección no
+ * viven en el código sino aquí, en `content.json`.
+ *
+ * Estuvo desplegado en producción diciendo «Pedir por WhatsApp» mientras el
+ * resto del sitio ya había dejado de ofrecerlo. Se vio en una captura, no en
+ * una prueba (`docs/TRAMPAS.md` §5).
+ *
+ * La lección no es «buscar mejor»: es que **el contenido también es código**
+ * cuando decide a dónde va un botón. Esta prueba lo mira donde está.
+ *
+ * ## Qué SÍ se permite
+ *
+ * `social.whatsapp` es el enlace del pie, que se queda a propósito: es donde
+ * busca WhatsApp quien lo quiere, en vez de encontrárselo quien pasaba por ahí.
+ * Y los testimonios se citan, no se editan: son las palabras de una clienta
+ * sobre lo que le pasó, no una promesa nuestra.
+ */
+describe('ningún botón del contenido manda a WhatsApp', () => {
+  /** Las claves que son una DIRECCIÓN a la que va un botón o un enlace. */
+  const ES_DESTINO = /^(href|url|link|cta)$/i;
+  /** El único que se queda: el del pie. */
+  const PERMITIDO = new Set(['social.whatsapp']);
+
+  const destinosAWhatsApp = (): string[] => {
+    const malos: string[] = [];
+    const recorre = (nodo: unknown, ruta: string): void => {
+      if (typeof nodo === 'string') {
+        if (/wa\.me|api\.whatsapp|web\.whatsapp/i.test(nodo) && !PERMITIDO.has(ruta)) {
+          const hoja = ruta.split('.').pop() ?? '';
+          if (ES_DESTINO.test(hoja)) malos.push(`${ruta} → ${nodo}`);
+        }
+        return;
+      }
+      if (Array.isArray(nodo)) {
+        nodo.forEach((v, i) => recorre(v, `${ruta}[${i}]`));
+        return;
+      }
+      if (nodo !== null && typeof nodo === 'object') {
+        for (const [k, v] of Object.entries(nodo as Record<string, unknown>)) {
+          recorre(v, ruta === '' ? k : `${ruta}.${k}`);
+        }
+      }
+    };
+    recorre(JSON.parse(leer('content.json')), '');
+    return malos;
+  };
+
+  it('el CTA del hero lleva a la tienda, no fuera de ella', () => {
+    // Es el botón más visible del sitio: el que decide si alguien entra al
+    // catálogo o se va a otra aplicación.
+    const d = JSON.parse(leer('content.json')) as { hero: { cta: { href: string } } };
+    expect(d.hero.cta.href).toBe('/productos');
+  });
+
+  it('y ninguna otra dirección del contenido sale a WhatsApp', () => {
+    const malos = destinosAWhatsApp();
+    expect(
+      malos,
+      'Un botón del contenido vuelve a mandar a WhatsApp. El pie es su sitio ' +
+        `(social.whatsapp), no un CTA:\n${malos.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  it('la prueba mira de verdad el archivo — si no, no vigila nada', () => {
+    // La trampa §1: un control que comprueba lo que ya era cierto. Si el
+    // recorrido no llegara a ninguna cadena, lo de arriba pasaría siempre.
+    const d = JSON.parse(leer('content.json')) as { social: { whatsapp?: string } };
+    expect(d.social.whatsapp, 'el enlace del pie desapareció').toMatch(/wa\.me/);
+  });
+});
+
+/**
+ * Y los tres pasos de «Cómo comprar» cuentan el camino que existe.
+ *
+ * Decían «Escríbenos por WhatsApp al 6757-5065», que desde el 18-nov-2026 es
+ * falso: se compra en la página. Un texto que promete un canal que ya no existe
+ * es peor que un botón de más — el botón se ve, el texto se cree.
+ */
+describe('«Cómo comprar» cuenta el camino que existe', () => {
+  const pasos = (JSON.parse(leer('content.json')) as { howToBuy: { text: string }[] }).howToBuy;
+
+  it('hay tres pasos de verdad', () => {
+    expect(pasos.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('ninguno dice que el pedido se hace por WhatsApp o por Instagram', () => {
+    const malos = pasos
+      .map((p, i) => ({ i, t: p.text }))
+      .filter(({ t }) => /(pedido|pedir|cont[áa]ctanos|escr[íi]benos).{0,60}(whatsapp|instagram|dm)/i.test(t))
+      .map(({ i, t }) => `paso ${i + 1}: ${t.slice(0, 90)}`);
+    expect(malos, `pasos que mandan a pedir fuera de la web:\n${malos.join('\n')}`).toEqual([]);
+  });
+
+  it('y alguno nombra el pago en la página, que es lo que pasa ahora', () => {
+    expect(pasos.some((p) => /carrito|pagar|paga/i.test(p.text))).toBe(true);
+  });
+});
