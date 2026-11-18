@@ -227,3 +227,192 @@ ya creada. El adaptador tiene que tratarlo como «ya estaba», no como un fallo.
   `aliasYappy`.
 - **Si hay devolución por API.** La interfaz del sistema tiene `refundPayment` y
   esta página no la menciona.
+
+---
+
+# Segunda lectura — 2026-11-18
+
+Un agente leyó la documentación entera desde el navegador, incluidos los bloques
+de código que no salen en el HTML servido, y la comparó contra lo que hay
+construido. De 33 puntos: **21 correctos, 1 señalado, 2 parciales y 9 sin
+documentar**.
+
+Lo que sigue corrige y completa lo de arriba.
+
+## 9 · El fragmento del componente — RESUELTO
+
+Era el hueco que dejaba el pago parado. El resaltador de la página (CodeMirror)
+guarda el código original en un `<textarea>` oculto, y de ahí salió literal.
+
+```html
+<script type="module" src="https://bt-cdn.yappy.cloud/v1/cdn/web-component-btn-yappy.js"></script>
+
+<btn-yappy theme="blue"></btn-yappy>
+```
+
+**LOS TRES VALORES NO VAN COMO ATRIBUTOS.** Esto es lo que no se habría
+adivinado: se pasan llamando al método `eventPayment` del elemento, dentro del
+manejador de `eventClick`, después de que NUESTRO backend creó la orden.
+
+```js
+const btnyappy = document.querySelector("btn-yappy");
+
+btnyappy.addEventListener("eventClick", async () => {
+  // Aquí se llama a NUESTRO endpoint, que hace los dos POST con la clave
+  // secreta. La clave nunca baja al navegador.
+  const r = await fetch("/api/pago/yappy/iniciar", { method: "POST" });
+  const result = await r.json();
+  btnyappy.eventPayment({
+    transactionId: result.body.transactionId,
+    documentName: result.body.documentName,
+    token: result.body.token,
+  });
+});
+
+btnyappy.addEventListener("eventSuccess", (e) => { /* e.detail = transactionId */ });
+btnyappy.addEventListener("eventError",   (e) => { /* e.detail = EXPIRED | FAILED | DENIED | DUPLICATED_TRANSACTION | CANCELLED */ });
+```
+
+| Nombre | Cómo se usa | Qué acepta |
+|---|---|---|
+| `theme` | atributo HTML | `blue`, `darkBlue`, `orange`, `dark`, `sky`, `light` (por defecto `sky`) |
+| `rounded` | atributo HTML | `"true"` para bordes redondeados |
+| `isButtonLoading` | propiedad JS | `true`/`false`. **Se pone solo en «cargando» al hacer clic: hay que sacarlo a mano si nuestro backend falla**, o el botón se queda girando para siempre |
+| `eventPayment` | método JS | `{ transactionId, token, documentName }` |
+| `isYappyOnline` | evento | `false` = el canal de Yappy no está. **Hay que decirle a la clienta POR QUÉ el botón está deshabilitado**, no dejarlo muerto |
+
+### La trampa del CDN
+
+La tabla de entornos dice `bt-cdn.yappy.cloud`. **El ejemplo de Frontend usa
+otro host**, `bt-cdn.yappycloud.com`, que **no respondió** desde el navegador.
+
+Vale el de la tabla, que es el que ya está en `src/pagos/yappy.ts`. Quien copie
+el ejemplo de la página se queda sin botón y sin un solo pago, y el síntoma no
+dice que el problema sea el host.
+
+### El frontend NO es la fuente de verdad
+
+En el código del componente, `eventSuccess` se emite para los estados internos
+`COMPLETED`, `C` y `EXECUTED`; `eventError` para los cinco de la tabla; y otros,
+como `REJECTED`, **no disparan ninguno de los dos**. Ese `C` interno no es la
+«C» de Cancelado del aviso.
+
+O sea: el navegador puede decir «salió bien» y puede no decir nada. **Un pedido
+se marca pagado solo por el aviso firmado**, que es lo que ya hace
+`recibirAvisoDeYappy`.
+
+## 10 · La comisión — YA NO ESTÁ PENDIENTE
+
+Documentada en el Centro de Ayuda de Yappy Comercial, pregunta «¿Cuánto cuesta
+cobrar por Yappy Comercial?»:
+
+- **1 % + ITBMS** del monto de cada transacción.
+- **Comisión mínima de $0.02** por transacción.
+- Se cobra en un solo débito diario a la cuenta asociada. **La clienta no la
+  paga.** El reporte sale de Banca en Línea → Reportes → filtrar por comisiones.
+
+### Ojo al traducirlo a nuestro ajuste
+
+`Comision` en `src/dominio/ajustes.ts` guarda `{ porcentaje_bp, fijo_cents,
+lleva_itbms }`, y **`fijo_cents` es un cargo FIJO que se suma, no un MÍNIMO**.
+Son dos cosas distintas y confundirlas descuadra cada venta.
+
+Para Yappy lo correcto es:
+
+```
+porcentaje_bp: 100    // 1 %
+fijo_cents:      0    // NO 2: los $0.02 son un piso, no un cargo
+lleva_itbms:  true
+```
+
+El mínimo no se modela, y aquí no hace falta: el 1 % de cualquier caja de Baby
+Caleb —de $20 a $55— va de $0.20 a $0.55, siempre por encima de los $0.02. El
+piso solo mordería en una venta **por debajo de $2.00**, que hoy no existe. Si
+algún día se vende algo así, hay que modelar el mínimo, no poner un fijo.
+
+Lo que la página NO dice: la tasa del ITBMS, ni si el mínimo de $0.02 la
+incluye.
+
+## 11 · Lo que corrige de lo construido
+
+**`confirmationNumber` no es un parámetro documentado del aviso.** Solo aparece
+leído en el ejemplo de .NET, sin explicar qué es ni qué formato tiene.
+
+Nuestro código ya lo trata bien —es opcional, se guarda como referencia
+informativa y **no hace falta para aceptar un aviso**: se decide con `orderId`,
+`status`, `domain` y `hash`— pero queda escrito aquí porque el riesgo es real:
+si algún día alguien lo exigiera, un aviso sin él rechazaría un pago bueno; y si
+se usara como prueba del pago, **no está firmado**, así que lo puede cambiar
+cualquiera que tenga una URL de aviso válida.
+
+## 12 · La firma, confirmada
+
+Los **cuatro** ejemplos oficiales (Node, .NET, PHP y Python — no hay Java) hacen
+los mismos cuatro pasos, y coinciden con lo implementado. Dos notas:
+
+- **Solo el ejemplo de Python compara en tiempo constante** (`hmac.compare_digest`).
+  Node usa `===`, .NET `==` y PHP `strcmp`. Nuestra implementación usa
+  `igualesSinAtajo`, o sea el camino de Python.
+- Los cuatro usan el `domain` **que llega en la URL del aviso**. Nosotros
+  comprobamos ADEMÁS que sea el nuestro antes de firmar, que es lo que impide
+  que una firma hecha para otro dominio cuadre consigo misma.
+
+## 13 · Los códigos de error (para los mensajes a la clienta)
+
+| Código | Lo que dice Yappy | Qué es de verdad |
+|---|---|---|
+| E002, E006, E008, E012 | «Algo salió mal. Intenta nuevamente.» | Genéricos, **no se pueden distinguir entre sí** |
+| E005 | «Este número no está registrado en Yappy.» | Dato de la clienta |
+| E007 | «El pedido ya ha sido registrado.» | `orderId` repetido |
+| E009 | «ID de la orden mayor a 15 dígitos.» | Petición mal escrita |
+| E010 | «El valor de los montos no es el correcto.» | Petición mal escrita |
+| E011 | «Error en los campos de URL.» | Petición o configuración |
+| E100 | «Bad Request.» | Petición mal escrita |
+
+**Ningún código significa «el banco dijo que no».** Eso llega por el aviso (R, C
+o X) o por `eventError` en pantalla. Faltan E001, E003 y E004 sin explicación, y
+la página no dice en qué campo ni con qué código HTTP llegan.
+
+## 14 · El entorno de pruebas: cómo se entra
+
+1. Registrarse en el programa de pruebas de **Yappy App con una cuenta de
+   Gmail** — preferiblemente la que ya está en el teléfono Android.
+2. Escribir a **botondepagoyappy@bgeneral.com** con: nombre del comercio, correo
+   usado en la app, número de celular panameño y **versión de Android**.
+3. Yappy confirma por correo cuando manda las invitaciones.
+
+Ese número, sin prefijo, es el `aliasYappy`.
+
+**No está documentado el soporte para iPhone.** Si la dueña solo tiene iPhone,
+hay que preguntarlo antes de contar con el ensayo.
+
+## 15 · Lo que sigue sin documentar, y a quién se le pregunta
+
+Vigencia del token del paso 1 · si `Authorization` lleva «Bearer» · si
+`paymentDate` va en segundos o milisegundos · si `aliasYappy` es obligatorio en
+producción · la regla de cuadre de los importes · reintentos del aviso, código
+de respuesta esperado, duplicados, orden de los estados e IPs de origen ·
+consulta del estado de una orden · devoluciones · límites de peticiones y
+montos.
+
+Dos correos: **botondepagoyappy@bgeneral.com** para dudas de la guía y
+**yappy@bgeneral.com** para problemas de integración.
+
+### La consulta de estado, que es el hueco que más duele
+
+Hoy, si el aviso se pierde, no hay forma de preguntarle a Yappy qué pasó. La vía
+más prometedora es **Integraciones Yappy** —la otra API, la que el dueño generó
+primero— cuya página de producto dice que consulta el historial de
+transacciones, da el detalle de un pago y verifica por qué método entró cada
+uno. **Su documentación técnica está DENTRO de Yappy Comercial, tras iniciar
+sesión**, así que no se pudo leer.
+
+No está confirmado que permita buscar un pago del Botón de Pago por nuestro
+`orderId`. Es hipótesis, y hay que leerla.
+
+## 16 · La versión vieja ya no existe
+
+El Botón de Pago legacy se descontinuó el 31-dic-2025 y dejó de procesar pagos
+el 30-abr-2026. No se puede reactivar y no hay excepciones. Se reconoce porque
+manda a la clienta a pagar fuera de la tienda, en `pagosbg.bgeneral.com`, sin
+APIs. **Lo que hay construido aquí es la V2.**
