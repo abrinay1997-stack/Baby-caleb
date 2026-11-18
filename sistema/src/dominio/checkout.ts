@@ -50,9 +50,10 @@
  * Si el carrito de la web sabe, HOY, mandar a una clienta a pagar.
  *
  * No es una preferencia ni un interruptor: es un hecho sobre el código que hay
- * desplegado. Hoy `src/pages/Carrito.tsx` termina en un mensaje de WhatsApp y
- * no llama a ninguna ruta que cree un pedido, así que aunque mañana una
- * pasarela estuviera lista, la web seguiría sin cobrar.
+ * desplegado. Desde el paso de pago (2026-11-18) el carrito lleva a `/pago`, la
+ * pantalla pide `POST /api/pago/yappy/iniciar` y el botón de Yappy cobra: la
+ * web sabe mandar a pagar. WhatsApp sigue ahí como salida de emergencia —es la
+ * única que no depende de un tercero—, pero ya no es el único camino.
  *
  * Está declarado aquí —y no dado por supuesto en un texto de la pantalla—
  * porque el veredicto de abajo tiene que poder decirlo. Y está **vigilado por
@@ -61,7 +62,7 @@
  * cualquiera de las dos direcciones. Sin esa prueba sería justo la clase de
  * lista que alguien tiene que acordarse de tocar (docs/TRAMPAS.md §8).
  */
-export const LA_WEB_TIENE_CHECKOUT = false;
+export const LA_WEB_TIENE_CHECKOUT = true;
 
 /** Los dos modos de una pasarela. Copiados de `dominio/pasarelas.ts`. */
 export type ModoDePasarela = "prueba" | "real";

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { codigoPorLineas } from './sin-comentarios';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -83,13 +84,14 @@ describe('ningún precio escrito a mano', () => {
 
     for (const archivo of DONDE) {
       if (PERMITIDO.some((p) => p.archivo === archivo)) continue;
-      const lineas = readFileSync(join(RAIZ, archivo), 'utf8').split('\n');
-      lineas.forEach((linea, i) => {
-        // Las líneas de comentario sí pueden nombrar una cifra: el comentario
-        // que explica POR QUÉ no se escribe un precio lleva un precio dentro.
-        const limpia = linea.trim();
-        if (limpia.startsWith('*') || limpia.startsWith('//')) return;
-        if (PRECIO.test(linea)) sospechosos.push(`${archivo}:${i + 1}  ${limpia.slice(0, 80)}`);
+      // Los comentarios sí pueden nombrar una cifra: el que explica POR QUÉ no
+      // se escribe un precio lleva un precio dentro. Quién es un comentario lo
+      // decide `test/sin-comentarios.ts`, que es su único dueño — esta prueba
+      // llevaba su propia versión y no conocía los de JSX (`{/* … */}`), que
+      // son los que más se usan dentro del marcado.
+      codigoPorLineas(archivo).forEach((linea, i) => {
+        if (PRECIO.test(linea))
+          sospechosos.push(`${archivo}:${i + 1}  ${linea.trim().slice(0, 80)}`);
       });
     }
 

@@ -8,6 +8,7 @@ import { urlDelSitio } from "./sitio";
 import { quiereIndexarse, redireccionCanonica, seIndexa } from "./visibilidad";
 import { avisoDeYappy } from "./pago";
 import { iniciarPagoYappy } from "./iniciar-pago";
+import { zonas } from "./zonas";
 
 /**
  * `babycaleb-web`: la misma web, servida desde Cloudflare.
@@ -97,6 +98,13 @@ export default {
      * Arrancar el pago desde el carrito. Crea un pedido, así que lleva límite
      * por IP: sin él, un guion aparta la bodega entera sin pagar nada.
      */
+    // Las zonas de envío, para el desplegable del paso de pago. Solo enruta:
+    // el tarifario vive en la D1 del sistema y no hay copia aquí (ver
+    // `worker/zonas.ts`).
+    if (url.pathname === "/api/zonas") {
+      return await zonas(peticion, env.SISTEMA);
+    }
+
     if (url.pathname === "/api/pago/yappy/iniciar") {
       return await iniciarPagoYappy(peticion, env.SISTEMA, env.LIMITE_PAGO);
     }
