@@ -5,7 +5,7 @@ import { type CatalogoPublico, catalogoPublico } from "./catalogo";
 import { zonasPublicas } from "./zonas";
 import type { ZonaPublica } from "./zonas";
 import { leerPublico } from "../db/archivos";
-import { DOMINIO_DEL_BOTON, recibirAvisoDeYappy, type Resuelto } from "../pagos/recibir-aviso";
+import { DOMINIO_DEL_AVISO, recibirAvisoDeYappy, type Resuelto } from "../pagos/recibir-aviso";
 import { cobrarCarrito, type CarritoACobrar, type ListoParaPagar } from "../pagos/cobrar-carrito";
 
 /**
@@ -135,7 +135,7 @@ export class SistemaWeb extends WorkerEntrypoint<Env> {
           pago a una dirección suya — y entonces el pago nunca se aplicaría
           aquí, o peor, se aplicaría donde esa persona quisiera.
         */
-        urlDelAviso: `https://${DOMINIO_DEL_BOTON}/api/pago/yappy`,
+        urlDelAviso: `https://${DOMINIO_DEL_AVISO}/api/pago/yappy`,
       },
       carrito,
     );

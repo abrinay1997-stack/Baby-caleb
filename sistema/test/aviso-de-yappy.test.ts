@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { iniciarCobro } from "../src/db/cobros-en-linea";
 import { configurarCredencial } from "../src/db/pasarelas";
 import { crearPedido, type ContextoPedido } from "../src/db/pedidos";
-import { DOMINIO_DEL_BOTON, recibirAvisoDeYappy, respuestaAlAviso } from "../src/pagos/recibir-aviso";
+import { DOMINIO_DECLARADO, recibirAvisoDeYappy, respuestaAlAviso } from "../src/pagos/recibir-aviso";
 import { firmaDelIpn, yappy } from "../src/pagos/yappy";
 
 /**
@@ -115,14 +115,15 @@ async function conCobro() {
       metodo: "yappy",
       tipo: "total",
       montoCents: total!.total_cents,
-      urlAviso: `https://${DOMINIO_DEL_BOTON}/api/pago/yappy`,
+      urlAviso: `https://${DOMINIO_DECLARADO}/api/pago/yappy`,
     },
     yappyQueContesta(),
     {
       modo: "prueba",
       merchantId: ID_FALSO,
       secretKey: CLAVE_FALSA,
-      domain: DOMINIO_DEL_BOTON,
+      domain: DOMINIO_DECLARADO,
+      dominiosAceptados: [DOMINIO_DECLARADO],
     },
   );
   if (!r.ok) throw new Error(r.mensaje);
@@ -130,7 +131,7 @@ async function conCobro() {
 }
 
 /** La URL que mandaría Yappy, bien firmada. */
-async function urlDelAviso(orderId: string, letra: string, dominio = DOMINIO_DEL_BOTON) {
+async function urlDelAviso(orderId: string, letra: string, dominio = DOMINIO_DECLARADO) {
   const hash = await firmaDelIpn(CLAVE_FALSA, orderId, letra, dominio);
   return `?orderId=${orderId}&status=${letra}&domain=${dominio}&hash=${hash}&confirmationNumber=CONF-7`;
 }
@@ -241,7 +242,7 @@ describe("un aviso que no es de verdad", () => {
 
     const r = await recibirAvisoDeYappy(
       ctx(),
-      `?orderId=${c.intentoRef}&status=E&domain=${DOMINIO_DEL_BOTON}&hash=${"a".repeat(64)}`,
+      `?orderId=${c.intentoRef}&status=E&domain=${DOMINIO_DECLARADO}&hash=${"a".repeat(64)}`,
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.codigo).toBe("no_autorizado");
@@ -253,7 +254,7 @@ describe("un aviso que no es de verdad", () => {
     const c = await conCobro();
     const r = await recibirAvisoDeYappy(
       ctx(),
-      `?orderId=${c.intentoRef}&status=E&domain=${DOMINIO_DEL_BOTON}`,
+      `?orderId=${c.intentoRef}&status=E&domain=${DOMINIO_DECLARADO}`,
     );
     expect(r.ok).toBe(false);
     expect((await pagadoDe(c.pedido.id)).pagado_cents).toBe(0);
@@ -277,10 +278,10 @@ describe("un aviso que no es de verdad", () => {
    */
   it("la firma de un rechazo reenviada como «ejecutado» NO paga nada", async () => {
     const c = await conCobro();
-    const firmaDelRechazo = await firmaDelIpn(CLAVE_FALSA, c.intentoRef, "R", DOMINIO_DEL_BOTON);
+    const firmaDelRechazo = await firmaDelIpn(CLAVE_FALSA, c.intentoRef, "R", DOMINIO_DECLARADO);
     const r = await recibirAvisoDeYappy(
       ctx(),
-      `?orderId=${c.intentoRef}&status=E&domain=${DOMINIO_DEL_BOTON}&hash=${firmaDelRechazo}`,
+      `?orderId=${c.intentoRef}&status=E&domain=${DOMINIO_DECLARADO}&hash=${firmaDelRechazo}`,
     );
     expect(r.ok).toBe(false);
     expect((await pagadoDe(c.pedido.id)).pagado_cents).toBe(0);
@@ -328,7 +329,7 @@ describe("qué se le contesta a Yappy", () => {
     const c = await conCobro();
     const r = await recibirAvisoDeYappy(
       ctx(),
-      `?orderId=${c.intentoRef}&status=E&domain=${DOMINIO_DEL_BOTON}&hash=${"b".repeat(64)}`,
+      `?orderId=${c.intentoRef}&status=E&domain=${DOMINIO_DECLARADO}&hash=${"b".repeat(64)}`,
     );
     expect(r.ok).toBe(false);
     expect(respuestaAlAviso(r).status).toBe(200);
