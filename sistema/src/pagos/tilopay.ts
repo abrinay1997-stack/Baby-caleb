@@ -175,6 +175,22 @@ export interface ConsultaDeTilopay {
   readonly referencia: string | null;
   /** La comisión que Tilopay reporta, para el asiento de liquidación. */
   readonly comisionCents: number | null;
+  /**
+   * EN QUÉ ENTORNO SE COBRÓ, según el propio Tilopay: «Test» o «PROD».
+   *
+   * No es un dato de adorno y no se puede deducir de nuestro lado. En Tilopay
+   * el modo de prueba **se cambia desde su portal, no desde la integración**:
+   * las credenciales son las mismas y no hay parámetro, cabecera ni dirección
+   * distinta que lo cambie. O sea que nuestro interruptor de «modo» en el
+   * panel NO decide si Tilopay cobra de verdad.
+   *
+   * La consecuencia cara, y la avisa su propia documentación: con la cuenta en
+   * Test, una tarjeta de prueba devuelve `code: "1"` —aprobada— y marcaríamos
+   * el pedido pagado sin que entre un dólar. Este campo es la única forma de
+   * darse cuenta, así que viaja hasta arriba y quien confirme un cobro tiene
+   * que mirarlo.
+   */
+  readonly entorno: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -419,31 +435,80 @@ export async function consultarDetalle(
     return fallo("pasarela_no_disponible", "Tilopay no contestó bien a la consulta del cobro.");
   }
 
-  // La respuesta puede venir envuelta. Se mira dentro antes de rendirse.
-  const cuerpo = ((): Record<string, unknown> => {
-    for (const k of ["data", "result", "transaction"]) {
-      const dentro = j[k];
-      if (dentro !== null && typeof dentro === "object" && !Array.isArray(dentro)) {
-        return dentro as Record<string, unknown>;
-      }
-    }
-    return j;
-  })();
+  /**
+   * `consult` contesta `{ type, message, response: [...] }`, y **`response` es
+   * un ARRAY**. Está en su OpenAPI (`tilopay.com/developers/openapi.json`,
+   * `/api/v1/consult`), comprobado leyéndolo, no de memoria.
+   *
+   * Aquí decía otra cosa: buscaba la envoltura en `data`, `result` o
+   * `transaction` —tres nombres que Tilopay no usa— y encima **descartaba los
+   * arrays a propósito** (`!Array.isArray`), que es justo la forma que tiene
+   * la buena. Con la respuesta real delante, `code` y `amount` salían
+   * `undefined`: todo cobro habría quedado «pendiente» con monto `null`, para
+   * siempre, y el pedido en «confirmando» sin que nada fallara.
+   *
+   * No mordió porque este adaptador todavía no lo llama nadie. Habría mordido
+   * el día de enchufarlo, que es la peor fecha posible.
+   */
+  const filas = Array.isArray(j.response) ? (j.response as unknown[]) : [];
+  if (filas.length === 0) {
+    // Ni una fila no es «rechazado»: es «Tilopay no sabe de esa orden todavía».
+    // Darlo por perdido aquí cerraría un pago que puede estar en camino.
+    return ok({
+      estado: "pendiente" as EstadoTilopay,
+      montoCents: null,
+      referencia: null,
+      comisionCents: null,
+      entorno: null,
+    });
+  }
 
-  const comision = deTextoTilopay(primero(cuerpo, "commission", "comision"));
-  const ivaComision = deTextoTilopay(primero(cuerpo, "iva_commission", "iva_comision"));
+  /**
+   * Una orden puede traer VARIAS filas: un intento rechazado y luego el bueno.
+   * Manda la aprobada; si no hay ninguna, la última que contestaron.
+   *
+   * Quedarse con la primera sería leer el rechazo de hace diez minutos y dejar
+   * sin cobrar un pedido que sí se pagó.
+   */
+  const comoFila = (x: unknown): Record<string, unknown> =>
+    x !== null && typeof x === "object" ? (x as Record<string, unknown>) : {};
+  const cuerpo = comoFila(
+    filas.find((f) => estadoDeCodigo(comoFila(f).code) === "aprobado") ?? filas[filas.length - 1],
+  );
+
+  const monto = deTextoTilopay(cuerpo.amount);
+  const neto = deTextoTilopay(cuerpo.net_to_liquidate);
+  const comision = deTextoTilopay(cuerpo.commission);
+  const ivaComision = deTextoTilopay(cuerpo.iva_commission);
 
   return ok({
-    estado: estadoDeCodigo(primero(cuerpo, "code", "status", "codigo")),
-    montoCents: deTextoTilopay(primero(cuerpo, "amount", "monto", "total")),
-    referencia: comoTexto(primero(cuerpo, "tpt", "transaction", "id", "auth")),
+    estado: estadoDeCodigo(cuerpo.code),
+    montoCents: monto,
+    referencia: comoTexto(primero(cuerpo, "id_tilopay", "auth")),
     /**
-     * La comisión la REPORTA Tilopay, no la calculamos (04-pagos §4.2). La
-     * tarifa configurada sirve para estimar antes de cobrar; para cuadrar
-     * después manda esto. El ITBMS de la comisión se suma porque también sale
-     * del bolsillo del negocio.
+     * LO QUE TILOPAY SE QUEDA DE VERDAD, que no es `commission + iva`.
+     *
+     * Su fila trae SEIS deducciones —`commission`, `iva_commission`,
+     * `retention_iva`, `retention_rent`, `cost`, `cost_iva`— y antes solo se
+     * sumaban las dos primeras. Con los números de su propio ejemplo eso
+     * recoge una fracción del costo real, y cada asiento de liquidación
+     * quedaría descuadrado por la diferencia.
+     *
+     * Así que se usa la resta: lo que se cobró menos lo que nos liquidan. No
+     * depende de que mañana añadan una séptima retención, y no depende de que
+     * `retention_iva` y `retention_rent` —que son costarricenses— apliquen en
+     * Panamá, que es cosa que nadie nos ha confirmado.
+     *
+     * Si falta alguno de los dos números, se cae a la suma de las dos
+     * comisiones; y si tampoco están, `null`. Nunca cero: cero es afirmar que
+     * Tilopay no cobró nada, y eso es una cifra inventada.
      */
     comisionCents:
-      comision === null ? null : comision + (ivaComision ?? 0),
+      monto !== null && neto !== null
+        ? monto - neto
+        : comision === null
+          ? null
+          : comision + (ivaComision ?? 0),
+    entorno: comoTexto(cuerpo.environment),
   });
 }

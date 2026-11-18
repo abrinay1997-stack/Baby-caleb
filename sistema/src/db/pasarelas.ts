@@ -949,6 +949,38 @@ export async function abrirCredenciales(
     return fallo("pasarela_no_disponible", conector.porConfirmar);
   }
 
+  /**
+   * EL INTERRUPTOR SE COMPRUEBA AQUÍ, QUE ES DONDE PASA EL SECRETO.
+   *
+   * `pasarelas_activas` existía, se guardaba con su historial, salía en la
+   * pantalla de Ajustes y en `ver_pasarelas`… y **no lo leía nadie en el camino
+   * del cobro**. Con el checkout apagado y Yappy apagada, `cobrarCarrito`
+   * seguía creando el pedido, apartando la mercancía y abriendo la orden en
+   * Yappy: lo único que escondía el botón era la pantalla de la web, y la ruta
+   * `POST /api/pago/yappy/iniciar` es pública.
+   *
+   * O sea que el día que hubiera que parar la tienda —y ese día llega cuando
+   * algo sale mal— la dueña iba a apagarlo, el panel le iba a decir que estaba
+   * apagado, y la tienda iba a seguir cobrando. Es la trampa §13 en el
+   * interruptor que existe justo para eso.
+   *
+   * Va en `abrirCredenciales` y no en cada sitio que cobra porque esta es la
+   * ÚNICA puerta por la que una credencial sale hacia una pasarela: puesta
+   * aquí, vale también para la de mañana. Repetida en cada llamador, un día
+   * alguien escribiría el llamador y no la comprobación.
+   *
+   * Falla hacia el lado que no mueve dinero: si no se puede leer el ajuste, no
+   * se abre nada.
+   */
+  const encendidas = await leerEncendidas(ctx);
+  if (!encendidas.ok) return encendidas;
+  if (!encendidas.datos.includes(pasarela)) {
+    return fallo(
+      "pasarela_no_disponible",
+      `${conector.titulo} está apagada en Ajustes. Enciéndala ahí si quiere volver a cobrar con ella.`,
+    );
+  }
+
   const llave = await abrirLlaveMaestra(ctx.llaveMaestra);
   if (!llave.ok) return llave;
 

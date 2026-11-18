@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { guardar as guardarAjuste } from "../src/db/ajustes";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { cobrarCarrito } from "../src/pagos/cobrar-carrito";
@@ -53,6 +54,51 @@ const carrito = (sobre: Record<string, unknown> = {}) => ({
   ...sobre,
 });
 
+/**
+ * Encender la pasarela, que ahora hace falta de verdad.
+ *
+ * Antes estas pruebas montaban las credenciales y cobraban sin más, porque
+ * `abrirCredenciales` no miraba `pasarelas_activas`. Ese era exactamente el
+ * fallo: en producción, con el checkout apagado y Yappy apagada, la web seguía
+ * creando pedidos y apartando mercancía — lo único que escondía el botón era
+ * la pantalla, y la ruta pública seguía cobrando.
+ *
+ * Desde que el interruptor se comprueba, una prueba que cobre tiene que
+ * encender la pasarela igual que la enciende la dueña. Si esto se borra, las
+ * pruebas se ponen rojas: así es como tiene que ser.
+ */
+async function encenderYappy(): Promise<void> {
+  for (const cambio of [
+    {
+      clave: "pasarelas_activas" as const,
+      valor: ["yappy"],
+      motivo: "montar el escenario: la dueña la tiene encendida",
+    },
+    {
+      /**
+       * EL PLAZO DE LA RESERVA, que ahora hace falta de verdad.
+       *
+       * Un pedido de la web no puede nacer sin reloj: si no vence, el cron no
+       * lo suelta nunca —busca `vence_en IS NOT NULL`— y cada carrito
+       * abandonado se queda con la caja para siempre. Estaba PENDIENTE en
+       * producción y por eso pasaba.
+       *
+       * Si esto se borra, `cobrarCarrito` se niega y estas pruebas se ponen
+       * rojas. Así es como tiene que ser.
+       */
+      clave: "reserva_minutos_pago_en_linea" as const,
+      valor: 20,
+      motivo: "montar el escenario: la dueña puso el plazo",
+    },
+  ]) {
+    const r = await guardarAjuste(
+      { db: env.DB, ahora: ahora(), actor: "yarielis@babycaleb.com" },
+      cambio,
+    );
+    if (!r.ok) throw new Error(`${cambio.clave}: ${r.mensaje}`);
+  }
+}
+
 beforeEach(async () => {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM pasarela_credenciales"),
@@ -72,6 +118,7 @@ beforeEach(async () => {
     );
     if (!r.ok) throw new Error(`${credencial}: ${r.mensaje}`);
   }
+  await encenderYappy();
 });
 
 const precioDe = async (codigo: string) =>

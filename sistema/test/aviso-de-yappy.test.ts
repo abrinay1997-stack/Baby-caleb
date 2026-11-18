@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { guardar as guardarAjuste } from "../src/db/ajustes";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { iniciarCobro } from "../src/db/cobros-en-linea";
@@ -60,6 +61,31 @@ function yappyQueContesta() {
   );
 }
 
+/**
+ * Encender la pasarela, que ahora hace falta de verdad.
+ *
+ * Antes estas pruebas montaban las credenciales y cobraban sin más, porque
+ * `abrirCredenciales` no miraba `pasarelas_activas`. Ese era exactamente el
+ * fallo: en producción, con el checkout apagado y Yappy apagada, la web seguía
+ * creando pedidos y apartando mercancía — lo único que escondía el botón era
+ * la pantalla, y la ruta pública seguía cobrando.
+ *
+ * Desde que el interruptor se comprueba, una prueba que cobre tiene que
+ * encender la pasarela igual que la enciende la dueña. Si esto se borra, las
+ * pruebas se ponen rojas: así es como tiene que ser.
+ */
+async function encenderYappy(): Promise<void> {
+  const r = await guardarAjuste(
+    { db: env.DB, ahora: ahora(), actor: "yarielis@babycaleb.com" },
+    {
+      clave: "pasarelas_activas",
+      valor: ["yappy"],
+      motivo: "montar el escenario: la dueña la tiene encendida",
+    },
+  );
+  if (!r.ok) throw new Error(`no se pudo encender yappy: ${r.mensaje}`);
+}
+
 beforeEach(async () => {
   clienteId = `cli-ipn-${Date.now()}-${n++}`;
   await env.DB.prepare("INSERT INTO clientes (id,nombre,creado_en,actualizado_en) VALUES (?,?,?,?)")
@@ -73,6 +99,8 @@ beforeEach(async () => {
       "UPDATE existencias SET fisico = 50 WHERE codigo = 'NAT-M' AND bodega_id = (SELECT id FROM bodegas WHERE activa = 1 LIMIT 1)",
     ),
   ]);
+
+  await encenderYappy();
 
   // El baúl, con las dos credenciales del modo de prueba.
   for (const [credencial, valor] of [
