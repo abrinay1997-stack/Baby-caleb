@@ -122,6 +122,25 @@ export const verAvisosDePago = definir({
         .bind(buscado)
         .first<{ numero: string; pagado_cents: number }>();
 
+      /**
+       * Antes de decir «no llegó nada», mirar los que llegaron SIN poder
+       * verificarse.
+       *
+       * Esos no se cruzan con un pago —no se aplicó ninguno—, así que la
+       * consulta de arriba, que une por la referencia del cobro, no los ve. Y
+       * son justo los que convierten «que lo intente otra vez» en el peor
+       * consejo posible.
+       */
+      const sueltos = await ctx.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM eventos_pasarela
+            WHERE firma_valida = 0 AND evento_id LIKE 'rechazado:%'
+              AND recibido_en >= ?`,
+        )
+        .bind(ctx.ahora - 7 * 24 * 60 * 60 * 1000)
+        .first<{ n: number }>();
+      const noVerificados = sueltos?.n ?? 0;
+
       return {
         pedido: buscado,
         avisos: 0,
@@ -135,10 +154,14 @@ export const verAvisosDePago = definir({
          * cumple: el valor estaba, pero quien lo lee —la prueba, y el modelo—
          * busca `aviso`.
          */
+        avisos_sin_verificar_en_la_semana: noVerificados,
+        hay_que_mirarlo: noVerificados > 0,
         aviso:
           hayPedido === null
             ? "No existe ningún pedido ni cobro con esa referencia. Revise el número."
-            : "No ha llegado ningún aviso de la pasarela para ese pedido. O el pago no se terminó en el teléfono de la clienta, o la solicitud venció. Lo que corresponde es que lo intente otra vez.",
+            : noVerificados > 0
+              ? `Para ESTE pedido no llegó ningún aviso aplicable, pero en los últimos siete días llegaron ${noVerificados} aviso(s) que el sistema no pudo verificar y descartó. Antes de pedirle a nadie que pague otra vez, revise el panel de Yappy: lo más probable es que el dominio declarado no coincida letra por letra con el que espera el sistema, y entonces NINGÚN pago se está aplicando.`
+              : "No ha llegado ningún aviso de la pasarela para ese pedido. O el pago no se terminó en el teléfono de la clienta, o la solicitud venció. Lo que corresponde es que lo intente otra vez.",
       };
     }
 
@@ -154,6 +177,19 @@ export const verAvisosDePago = definir({
     }));
 
     const ultimo = results[0]!;
+    /**
+     * UN AVISO QUE LLEGÓ Y NO SE PUDO VERIFICAR NO ES «NO LLEGÓ».
+     *
+     * Son dos consejos opuestos para la clienta. «No llegó» quiere decir que
+     * el pago no se terminó y que lo intente otra vez. «Llegó y no cuadró la
+     * firma» quiere decir que el dinero puede estar en la cuenta de Yappy y
+     * que **nadie debe pedirle que pague de nuevo** hasta mirarlo.
+     *
+     * La causa más probable no es un ataque, es nuestra: el dominio declarado
+     * en Yappy Comercial tiene que coincidir letra por letra con el que
+     * esperamos, y eso ya estuvo mal dos veces.
+     */
+    const sinVerificar = results.filter((f) => f.firma_valida === 0);
     const dijoQueSi = (ultimo.resultado ?? "") === "ejecutado" || (ultimo.resultado ?? "") === "aprobado";
     const elPedidoEstaPagado = (ultimo.pagado_cents ?? 0) >= (ultimo.total_cents ?? 1);
 
@@ -173,7 +209,9 @@ export const verAvisosDePago = definir({
        * escribir. Las dos cosas acaban con una clienta que pagó y no tiene
        * pedido.
        */
-      hay_que_mirarlo: dijoQueSi && !elPedidoEstaPagado,
+      hay_que_mirarlo: (dijoQueSi && !elPedidoEstaPagado) || sinVerificar.length > 0,
+      /** Cuántos llegaron y no se pudieron verificar. Cero es cero, no «no se sabe». */
+      avisos_sin_verificar: sinVerificar.length,
       /**
        * El veredicto se llama `aviso` en los DOS caminos.
        *
@@ -184,7 +222,9 @@ export const verAvisosDePago = definir({
        * `que_significa`, que es otra cosa: explica UN aviso, no la situación.
        */
       aviso:
-        dijoQueSi && !elPedidoEstaPagado
+        sinVerificar.length > 0
+          ? `LLEGARON ${sinVerificar.length} AVISO(S) QUE NO SE PUDIERON VERIFICAR, y por eso no se aplicaron. NO le pida a la clienta que pague otra vez: su dinero puede estar ya en la cuenta de Yappy. Lo más probable es que el dominio declarado en Yappy Comercial no coincida letra por letra con el que espera el sistema. Revise el pago en el panel de Yappy y avise a quien lleva el sistema.`
+          : dijoQueSi && !elPedidoEstaPagado
           ? "LA PASARELA DIJO QUE COBRÓ Y EL PEDIDO SIGUE SIN PAGARSE. Eso no se arregla solo: puede que el monto no cuadrara con el del pedido —y entonces el cobro se dejó sin aplicar a propósito, esperando que una persona lo mire— o que fallara al escribirse. Revíselo en el panel de la pasarela antes de entregar nada."
           : dijoQueSi
             ? "El aviso llegó, la pasarela dijo que cobró, y el pedido quedó pagado."

@@ -1,5 +1,5 @@
 import { fallo, ok, type Resultado } from "../contrato/resultado";
-import { resolverCobro, type ComoQuedo, type LoQueDiceLaPasarela } from "../db/cobros-en-linea";
+import { anotarAvisoRechazado, resolverCobro, type ComoQuedo, type LoQueDiceLaPasarela } from "../db/cobros-en-linea";
 import { abrirCredenciales, type ContextoDeLectura } from "../db/pasarelas";
 import { COMO_SE_LE_DICE, credencialesYappy, leerAviso, yappy, type EstadoYappy } from "./yappy";
 import type { Buscador } from "./proveedor";
@@ -139,7 +139,32 @@ export async function recibirAvisoDeYappy(
   if (!suyas.ok) return suyas;
 
   const verificado = await yappy({}, buscar).verifyWebhook(suyas.datos, aviso);
-  if (!verificado.ok) return verificado;
+  if (!verificado.ok) {
+    /**
+     * Antes de rendirse, DEJAR CONSTANCIA.
+     *
+     * Aquí se retornaba sin escribir nada, y como la ruta contesta 200 para
+     * que Yappy no reintente lo que nunca vamos a aceptar, el aviso
+     * desaparecía entero: sin fila, sin registro y sin segunda oportunidad. La
+     * dueña abría `ver_avisos_de_pago` y, al no haber filas, la herramienta le
+     * decía «no llegó ningún aviso, que lo intente otra vez» — a una clienta
+     * que ya había pagado.
+     *
+     * La fila no cambia la decisión: el aviso sigue sin aplicarse, que es lo
+     * correcto. Lo que cambia es que se puede saber que llegó.
+     */
+    await anotarAvisoRechazado(
+      { db: ctx.db, ahora: ctx.ahora },
+      {
+        proveedor: "yappy",
+        consulta,
+        orderId: aviso.orderId,
+        status: aviso.status,
+        motivo: verificado.codigo,
+      },
+    );
+    return verificado;
+  }
 
   /**
    * Lo que se le pasa a la base. `montoCents` va en `null` A PROPÓSITO.

@@ -397,3 +397,90 @@ describe("el aviso repetido", () => {
     expect((await pagadoDe(c.pedido.id)).pagado_cents).toBe(c.total);
   });
 });
+
+/**
+ * UN AVISO QUE NO SE PUEDE VERIFICAR TIENE QUE DEJAR RASTRO.
+ *
+ * Antes no dejaba ninguno. `recibirAvisoDeYappy` retornaba antes de escribir
+ * nada, y como la ruta contesta 200 —para que Yappy no reintente lo que nunca
+ * vamos a aceptar— el aviso desaparecía entero: sin fila, sin registro, sin
+ * segunda oportunidad.
+ *
+ * Lo caro no es perder la fila: es lo que pasa después. La dueña, con la
+ * clienta diciéndole que pagó, abre `ver_avisos_de_pago` —la herramienta
+ * escrita para esa conversación exacta—, no encuentra nada, y la herramienta
+ * le contesta «no llegó ningún aviso: que lo intente otra vez». **Le dice que
+ * pague de nuevo a alguien que ya pagó.**
+ *
+ * Y no es un caso raro. El dominio declarado estuvo mal DOS VECES el mismo
+ * día. Si no cuadra, el 100 % de los pagos entra en la cuenta de Yappy y
+ * ningún pedido se marca pagado, en silencio total.
+ *
+ * La fila no cambia la decisión —el aviso sigue sin aplicarse, que es lo
+ * correcto—. Lo que cambia es que se puede saber que llegó.
+ */
+describe("un aviso que no se puede verificar deja constancia", () => {
+  const contar = async (): Promise<number> => {
+    const r = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM eventos_pasarela WHERE firma_valida = 0",
+    ).first<{ n: number }>();
+    return r?.n ?? 0;
+  };
+
+  it("con el hash inventado: no paga, pero queda la fila", async () => {
+    const c = await conCobro();
+    const antes = await contar();
+
+    const r = await recibirAvisoDeYappy(ctx(), (await urlDelAviso(c.intentoRef, "E")).replace(/hash=[0-9a-f]+/, `hash=${"a".repeat(64)}`));
+    expect(r.ok).toBe(false);
+
+    expect(await contar(), "el aviso rechazado no dejó rastro").toBe(antes + 1);
+
+    // Y lo importante: NO pagó nada.
+    const p = await env.DB.prepare("SELECT pagado_cents FROM pedidos WHERE id = ?")
+      .bind(c.pedido.id)
+      .first<{ pagado_cents: number }>();
+    expect(p?.pagado_cents).toBe(0);
+  });
+
+  it("y con un dominio que no es nuestro, también", async () => {
+    // Este es el caso de verdad: un aviso BIEN firmado por Yappy cuyo dominio
+    // no está en nuestra lista. El dinero entró; nosotros lo descartamos.
+    const c = await conCobro();
+    const antes = await contar();
+
+    const r = await recibirAvisoDeYappy(
+      ctx(),
+      await urlDelAviso(c.intentoRef, "E", "sitio-que-no-es-nuestro.net"),
+    );
+    expect(r.ok).toBe(false);
+    expect(await contar()).toBe(antes + 1);
+  });
+
+  it("el MISMO aviso repetido no multiplica filas", async () => {
+    // `INSERT OR IGNORE` con el hash de la consulta dentro del `evento_id`:
+    // dos intentos distintos se distinguen, el mismo reenviado no.
+    const c = await conCobro();
+    const malo = (await urlDelAviso(c.intentoRef, "E")).replace(/hash=[0-9a-f]+/, `hash=${"b".repeat(64)}`);
+    const antes = await contar();
+
+    await recibirAvisoDeYappy(ctx(), malo);
+    await recibirAvisoDeYappy(ctx(), malo);
+
+    expect(await contar()).toBe(antes + 1);
+  });
+
+  it("la fila dice POR QUÉ se descartó, no solo que se descartó", async () => {
+    const c = await conCobro();
+    await recibirAvisoDeYappy(ctx(), (await urlDelAviso(c.intentoRef, "E")).replace(/hash=[0-9a-f]+/, `hash=${"c".repeat(64)}`));
+
+    const f = await env.DB.prepare(
+      "SELECT resultado, evento_id FROM eventos_pasarela WHERE firma_valida = 0 ORDER BY recibido_en DESC LIMIT 1",
+    ).first<{ resultado: string; evento_id: string }>();
+    // Sin el motivo, la fila dice «llegó algo raro» y no se puede distinguir
+    // una firma mala —que puede ser nuestra configuración— de un intento de
+    // colarse, que son dos problemas muy distintos.
+    expect(f?.resultado).toBe("no_autorizado");
+    expect(f?.evento_id).toMatch(/^rechazado:/);
+  });
+});

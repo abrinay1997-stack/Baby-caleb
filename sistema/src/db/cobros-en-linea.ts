@@ -406,6 +406,67 @@ async function aEstadoConfirmando(ctx: ContextoPago, pagoId: string): Promise<bo
 }
 
 /**
+ * UN AVISO QUE NO SE PUDO VERIFICAR TAMBIÉN DEJA RASTRO.
+ *
+ * Antes no. Si la firma no cuadraba —o el dominio no era de los nuestros— la
+ * función de arriba retornaba antes de escribir nada, y entonces:
+ *
+ *  - no quedaba ni una fila en `eventos_pasarela`;
+ *  - la ruta contesta **200** a propósito, para que Yappy no reintente un
+ *    aviso que nunca vamos a aceptar — así que tampoco hay segunda
+ *    oportunidad;
+ *  - no hay un solo registro en el Worker.
+ *
+ * Y la dueña, con la clienta diciéndole que pagó, abre `ver_avisos_de_pago`,
+ * que es la herramienta escrita para esa conversación exacta. Al no encontrar
+ * filas contesta «No llegó ningún aviso: que lo intente otra vez» — **le dice
+ * que pague de nuevo a alguien que ya pagó**.
+ *
+ * No es hipotético: el dominio declarado estuvo mal dos veces el mismo día. Si
+ * una variante no cuadra, el 100 % de los pagos entra en la cuenta de Yappy y
+ * ningún pedido se marca pagado, en silencio total.
+ *
+ * `firma_valida = 0` es el valor que la columna existe para guardar y que
+ * hasta ahora nadie escribía nunca. El `evento_id` lleva el hash recortado
+ * para que dos intentos distintos del mismo pedido no se pisen, y el
+ * `INSERT OR IGNORE` hace que el MISMO aviso repetido no multiplique filas.
+ *
+ * No se escribe nada que venga del aviso sin recortar: el `orderId` y el
+ * `status` llegan de fuera y se usan para formar una clave, no para decidir.
+ */
+export async function anotarAvisoRechazado(
+  ctx: { readonly db: D1Database; readonly ahora: number },
+  entrada: {
+    readonly proveedor: string;
+    /** La cadena de la URL tal cual llegó. Solo se guarda su huella. */
+    readonly consulta: string;
+    /** Lo que decía el aviso, sin confiar en ello. */
+    readonly orderId: string;
+    readonly status: string;
+    /** Por qué no se pudo aceptar: `no_autorizado`, `entrada_invalida`… */
+    readonly motivo: string;
+  },
+): Promise<void> {
+  const corto = (t: string, n: number) => t.slice(0, n);
+  const huella = await sha256(entrada.consulta);
+  await ctx.db
+    .prepare(
+      `INSERT OR IGNORE INTO eventos_pasarela
+         (id, proveedor, evento_id, firma_valida, cuerpo_sha256, resultado, recibido_en)
+       VALUES (?, ?, ?, 0, ?, ?, ?)`,
+    )
+    .bind(
+      ulid(ctx.ahora),
+      entrada.proveedor,
+      `rechazado:${corto(entrada.orderId, 24)}:${corto(entrada.status, 4)}:${corto(huella, 12)}`,
+      huella,
+      corto(entrada.motivo, 40),
+      ctx.ahora,
+    )
+    .run();
+}
+
+/**
  * Deja constancia de lo que contestó la pasarela.
  *
  * `eventos_pasarela` tiene `UNIQUE (proveedor, evento_id)`, así que el segundo
