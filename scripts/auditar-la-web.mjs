@@ -368,10 +368,51 @@ const paginas = [
   '/faq',
   // El carrito, las legales y la de «no existe»: tampoco se medían.
   '/carrito',
+  // El paso de pago y su resultado. `/pago` se mide CON ALGO EN EL CARRITO
+  // —ver `SEMILLAS`—, porque con el carrito vacío enseña su pantalla de «no
+  // hay nada que pagar» y los campos del formulario no existen: se mediría una
+  // pantalla y se leería como si se hubiera medido la otra, que es la trampa
+  // §4 del repositorio.
+  '/pago',
+  // El resultado va con un número de ejemplo: la ruta lleva parámetro y sin un
+  // valor concreto no se puede visitar.
+  '/pago/resultado',
+  '/pago/resultado/BC-EJEMPLO',
   '/privacidad',
   '/terminos',
   '/esta-direccion-no-existe',
 ];
+
+/**
+ * Lo que hay que dejar en el navegador para que una página enseñe lo que de
+ * verdad se quiere medir.
+ *
+ * Es el equivalente, en pequeño, del `panel-de-muestra.mjs` del panel, y existe
+ * por el mismo motivo (`docs/TRAMPAS.md` §4): el paso de pago con el carrito
+ * vacío es OTRA pantalla —«no hay nada que pagar»— sin un solo campo. Medirla
+ * y escribir «sin fallas» diría que el formulario está bien sin haberlo mirado.
+ *
+ * El carrito se guarda exactamente como lo guarda la tienda (`bc.carrito.v1`,
+ * `src/carrito/almacen.ts`): códigos y cantidades, nunca precios. El código es
+ * de un artículo real de la copia del catálogo del build, que es lo que sirve
+ * este servidor estático — no hay `/api/catalogo` aquí.
+ *
+ * Va FUERA de `paginas` a propósito: esa lista la lee
+ * `test/la-web-se-mide-entera.test.ts` sacando cada texto entre comillas, y una
+ * clave de `localStorage` ahí dentro la tomaría por una dirección más.
+ */
+const SEMILLAS = {
+  '/pago': () => {
+    try {
+      window.localStorage.setItem(
+        'bc.carrito.v1',
+        JSON.stringify({ lineas: [{ codigo: 'NAT-M', cantidad: 2 }] }),
+      );
+    } catch {
+      /* ventana privada: la página saldrá con el carrito vacío y se verá */
+    }
+  },
+};
 
 const VISTAS = [
   ['escritorio', { width: 1440, height: 900 }],
@@ -560,12 +601,53 @@ const navegador = await abrirNavegador();
 let totalFallos = 0;
 const delSeptimo = [];
 
+/**
+ * Lo que incumple el §7 y NO es nuestro, una entrada por caso y con su motivo.
+ *
+ * El paso de pago carga el Botón de Pago de Yappy, que trae su propia hoja de
+ * estilos de un CDN ajeno. Esa hoja la mide esta auditoría igual que la
+ * nuestra —y está bien que la mida: lo que se ve en la pantalla de la clienta
+ * no distingue de quién es el CSS—, pero aquí no se puede arreglar, y un rojo
+ * que nadie puede cerrar es un rojo que termina apagando el informe entero
+ * (`docs/TRAMPAS.md` §14).
+ *
+ * Así que se separan: salen en el informe, con nombre y con el motivo, y no
+ * tumban la corrida. Lo que NO se hace es esconderlos ni ampliar la excepción
+ * a «todo lo de terceros»: la lista es de casos concretos, como la de
+ * `test/sin-precios-a-mano.test.ts`. Si Yappy cambia su CSS y aparece otra
+ * falla, esta auditoría se pone roja y alguien tiene que mirarla.
+ */
+const NO_ES_NUESTRO = [
+  {
+    regla: 'sin 100vh',
+    enElDetalle: '.yappy-backdrop',
+    porque:
+      'el fondo oscuro del modal de Yappy, en su hoja del CDN. Con la barra del ' +
+      'navegador en el teléfono puede quedar una franja sin cubrir al final: es ' +
+      'cosmético y solo existe mientras su modal está abierto — no esconde ningún ' +
+      'control nuestro. No se puede cambiar desde aquí.',
+  },
+];
+
+const esDeUnTercero = (f) =>
+  NO_ES_NUESTRO.find((e) => f.regla === e.regla && String(f.detalle).includes(e.enElDetalle));
+
 for (const [nombreVista, tamano] of VISTAS) {
   const ctx = await navegador.newContext({ viewport: tamano, reducedMotion: 'reduce' });
   const p = await ctx.newPage();
 
   for (const pagina of paginas) {
     await p.goto(`http://127.0.0.1:8098${pagina}`, { waitUntil: 'networkidle' });
+
+    // Si la página necesita algo guardado, se guarda y se vuelve a cargar: el
+    // carrito se lee en el primer render, así que sembrarlo sin recargar no
+    // cambiaría lo que ya está pintado.
+    const semilla = SEMILLAS[pagina];
+    if (semilla !== undefined) {
+      await p.evaluate(semilla);
+      await p.goto(`http://127.0.0.1:8098${pagina}`, { waitUntil: 'networkidle' });
+    }
+
     await p.waitForTimeout(1200);
 
     // Abajo del todo: lo que está fijo solo puede tapar algo cuando hay algo
@@ -609,6 +691,22 @@ for (const [nombreVista, tamano] of VISTAS) {
     for (const f of await p.evaluate(medirLaBarraDeCompra, 'pegada')) {
       delSeptimo.push({ vista: nombreVista, pagina, ...f });
     }
+
+    // La semilla se borra DESPUÉS de medir —la barra de arriba la necesita— y
+    // antes de pasar a la página siguiente. `localStorage` vive en el contexto,
+    // así que dejarla puesta cambiaría lo que enseñan las páginas de después y
+    // la auditoría pasaría a depender del ORDEN de la lista: el carrito se
+    // mediría vacío o lleno según quién vaya antes, y nadie lo vería al leer el
+    // informe.
+    if (semilla !== undefined) {
+      await p.evaluate(() => {
+        try {
+          window.localStorage.clear();
+        } catch {
+          /* nada que borrar */
+        }
+      });
+    }
   }
   await ctx.close();
 }
@@ -618,12 +716,17 @@ servidor.close();
 
 console.log(`\n=== contraste: ${totalFallos} fallo(s) en ${paginas.length} páginas × ${VISTAS.length} tamaños ===`);
 
-if (delSeptimo.length === 0) {
+// Las de terceros se cuentan aparte. Se enseñan igual: una falla que no se
+// puede arreglar sigue siendo algo que alguien tiene que SABER.
+const ajenas = delSeptimo.filter((f) => esDeUnTercero(f) !== undefined);
+const nuestras = delSeptimo.filter((f) => esDeUnTercero(f) === undefined);
+
+if (nuestras.length === 0) {
   console.log('=== §7 y accesibilidad: sin fallas ===');
 } else {
-  console.log(`\n=== §7 y accesibilidad: ${delSeptimo.length} falla(s) ===`);
+  console.log(`\n=== §7 y accesibilidad: ${nuestras.length} falla(s) ===`);
   const porRegla = new Map();
-  for (const f of delSeptimo) porRegla.set(f.regla, [...(porRegla.get(f.regla) ?? []), f]);
+  for (const f of nuestras) porRegla.set(f.regla, [...(porRegla.get(f.regla) ?? []), f]);
   for (const [regla, lista] of [...porRegla.entries()].sort((a, b) => b[1].length - a[1].length)) {
     console.log(`\n  ${regla} — ${lista.length}`);
     for (const f of lista.slice(0, 8)) console.log(`    [${f.vista}${f.pagina}] ${f.detalle}`);
@@ -631,4 +734,21 @@ if (delSeptimo.length === 0) {
   }
 }
 
-process.exit(totalFallos === 0 && delSeptimo.length === 0 ? 0 : 1);
+if (ajenas.length > 0) {
+  console.log(`\n--- ${ajenas.length} falla(s) del §7 que NO son nuestras (no tumban la corrida) ---`);
+  const vistas = new Set();
+  for (const f of ajenas) {
+    const e = esDeUnTercero(f);
+    const clave = `${f.regla}|${e.enElDetalle}`;
+    if (vistas.has(clave)) continue;
+    vistas.add(clave);
+    const donde = ajenas
+      .filter((o) => esDeUnTercero(o)?.enElDetalle === e.enElDetalle)
+      .map((o) => `${o.vista}${o.pagina}`)
+      .join(', ');
+    console.log(`\n  ${f.regla} · ${e.enElDetalle}  [${donde}]`);
+    console.log(`    ${e.porque}`);
+  }
+}
+
+process.exit(totalFallos === 0 && nuestras.length === 0 ? 0 : 1);

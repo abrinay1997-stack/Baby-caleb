@@ -60,12 +60,32 @@ export function seIndexa(
  * comparar antes de cada corte, y mandarla al dominio real la volvería inútil
  * justo cuando hace falta.
  */
+/**
+ * Las rutas que NO se canonicalizan, aunque entren por `www`.
+ *
+ * Las llama un TERCERO con una dirección que no elegimos nosotros. El aviso de
+ * pago de Yappy va al dominio que la dueña declaró al crear el botón —que lleva
+ * `www`— y un 301 solo sirve si quien llama lo sigue. Un servidor que avisa de
+ * un pago no tiene por qué seguirlo, y si no lo sigue el aviso no llega nunca:
+ * la clienta paga, el dinero entra en la cuenta de Yappy y el pedido se queda
+ * sin confirmar, sin que nada falle en ninguna pantalla.
+ *
+ * La lista es corta y exacta a propósito. Dejar fuera `/api/` entero sería más
+ * cómodo y diría algo que no hace falta decir: las demás rutas de `/api/` las
+ * llama nuestra propia página, que ya está en el dominio bueno.
+ */
+const SIN_CANONICA = new Set(["/api/pago/yappy"]);
+
 export function redireccionCanonica(sitioCanonico: string, url: URL): string | null {
   const oficial = hostDe(sitioCanonico);
   if (oficial === null) return null;
 
   const host = url.hostname.toLowerCase();
   if (host !== `www.${oficial}`) return null;
+
+  // Sin la barra final: `/api/pago/yappy/` y `/api/pago/yappy` son la misma.
+  const camino = url.pathname.replace(/\/+$/, "");
+  if (SIN_CANONICA.has(camino === "" ? "/" : camino)) return null;
 
   const destino = new URL(url.toString());
   destino.protocol = "https:";

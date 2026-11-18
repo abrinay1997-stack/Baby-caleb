@@ -8,3 +8,9 @@ coverage/
 !.env.example
 .claude/
 
+
+# Capturas de pantalla que alguien saque para comparar antes y después. Se
+# rehacen cuando hagan falta y pesan; versionarlas llenaría el historial de
+# imágenes que nadie va a leer dos veces. El asterisco cubre la familia entera
+# (.capturas-base/, .capturas-antes/…), igual que en `sistema/.gitignore`.
+.capturas*/

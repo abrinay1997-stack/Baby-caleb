@@ -9,7 +9,8 @@ import { getContentData } from '../data/content';
 import { useCarrito } from '../carrito/useCarrito';
 import { CompartirProducto } from '../components/CompartirProducto'
 import { PedirPorWhatsapp } from '../components/PedirPorWhatsapp'
-import { FotoDeProducto, fotoDeVariante } from '../components/FotoDeProducto'
+import { fotosDeVariante } from '../components/FotoDeProducto'
+import { GaleriaDeProducto } from '../components/GaleriaDeProducto'
 import { PrecioDeLaFicha } from '../components/PrecioDeLaFicha'
 import { BarraDeCompra } from '../components/BarraDeCompra'
 import { AcordeonesDeFicha, seccionesDeLaFicha } from '../components/AcordeonesDeFicha'
@@ -76,14 +77,16 @@ export default function FichaProducto() {
 
   const variante = slug === undefined ? undefined : [...catalogo.values()].find((v) => v.slug === slug);
 
-  // La del sistema si la hay; si no, la de `content.json`, que se sigue
-  // buscando por el código de la variante. Las dos salen de aquí y el relevo
+  // Las del sistema si las hay; si no, las de `content.json`, que se siguen
+  // buscando por el código de la variante. Todas salen de aquí y el relevo
   // —si la del sistema no carga— lo pone `FotoDeProducto`.
-  const foto = fotoDeVariante(
+  const fotos = fotosDeVariante(
     variante,
     getContentData()
-      .products.flatMap((p) => p.variants.map((v) => ({ codigo: v.codigo, image: v.image })))
-      .find((v) => v.codigo === variante?.codigo)?.image,
+      .products.flatMap((p) =>
+        p.variants.map((v) => ({ codigo: v.codigo, image: v.image, images: v.images })),
+      )
+      .find((v) => v.codigo === variante?.codigo),
   );
 
   if (variante === undefined) {
@@ -139,7 +142,14 @@ export default function FichaProducto() {
       <Seo
         ruta={`/productos/${variante.slug}`}
         meta={metaDeProducto(variante)}
-        jsonLd={jsonLdProducto(variante, url)}
+        jsonLd={jsonLdProducto(
+          variante,
+          url,
+          // Absolutas y contra el origen de ESTA página, no contra un dominio
+          // escrito a mano: en producción es babycaleb.com y en una vista
+          // previa es la del despliegue, y las dos tienen que servir la foto.
+          fotos.map((f) => new URL(f.src, window.location.origin).href),
+        )}
       />
 
       <Section variant="bg">
@@ -152,33 +162,11 @@ export default function FichaProducto() {
         </nav>
 
         <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-start">
-          {foto !== undefined && (
-            // `aspect-[4/3]`: la MISMA caja que usan las tarjetas del catálogo
-            // en `S09Products`, y por la misma razón — reserva el sitio antes
-            // de que la foto llegue.
-            //
-            // Sin ella, en un teléfono (una sola columna: foto arriba, datos
-            // debajo) la columna de la derecha saltaba 223 px hacia abajo en
-            // cuanto cargaba la imagen. Medido con la red a 400 kbps: CLS de
-            // 0.194 en la ficha, que es la pantalla donde se decide la compra
-            // — el precio y el botón se mueven justo cuando el pulgar va a
-            // tocarlos. El umbral de «bien» es 0.1.
-            //
-            // `object-contain` ya estaba y se queda: las cajas no tienen todas
-            // la misma proporción y recortarlas para cuadrarlas sería enseñar
-            // media caja.
-            <div className="bg-sage/15 border border-line rounded-lg overflow-hidden flex aspect-[4/3] items-center justify-center">
-              <FotoDeProducto
-                foto={foto}
-                alt={`Caja de ${variante.nombre}`}
-                className="w-full h-full object-contain p-6"
-                // Es la imagen más grande de la pantalla y la que decide cuándo
-                // se ve «cargada»: se pide antes que el resto.
-                loading="eager"
-                fetchPriority="high"
-              />
-            </div>
-          )}
+          {/* La caja, el `aspect-[4/3]` y el porqué del CLS se mudaron a
+              `GaleriaDeProducto`: ahí viven ahora la foto grande y las
+              miniaturas, que son una sola pieza. Con una sola foto se ve igual
+              que ayer — la galería no pinta miniaturas. */}
+          <GaleriaDeProducto fotos={fotos} nombre={variante.nombre} />
 
           <div className="flex flex-col gap-6">
             {/* PRIMERO el precio, y no por capricho de orden: en el teléfono

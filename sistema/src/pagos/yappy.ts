@@ -67,12 +67,28 @@ export interface CredencialesYappy {
    * quien la manda— o lo deje en una constante que nadie vuelve a mirar.
    */
   readonly domain: string;
+  /**
+   * Los dominios NUESTROS que se aceptan en un aviso de vuelta.
+   *
+   * Es una lista y no el de arriba porque las dos cosas no son la misma. Lo
+   * que MANDAMOS tiene que ser exactamente lo declarado, o Yappy no valida el
+   * comercio; lo que nos VUELVE lo escribe Yappy, y si el sitio responde con
+   * `www` y sin `www` —que es el caso aquí— no está en nuestra mano saber con
+   * cuál de las dos formas lo va a firmar.
+   *
+   * No afloja nada: siguen siendo dominios nuestros, escritos aquí, y la firma
+   * se comprueba igual con la clave secreta. Lo que evita es que un pago de
+   * verdad se rechace por una `www`, que es como se pierde dinero en silencio.
+   */
+  readonly dominiosAceptados: readonly string[];
 }
 
 export function credencialesYappy(
   modo: Modo,
   valores: ReadonlyMap<string, string>,
   domain: string,
+  /** Los nuestros, para el aviso de vuelta. Por omisión, solo el declarado. */
+  dominiosAceptados: readonly string[] = [],
 ): Resultado<CredencialesYappy> {
   const merchantId = valores.get("id_comercio");
   const secretKey = valores.get("clave_secreta");
@@ -88,7 +104,18 @@ export function credencialesYappy(
       "Falta el dominio con el que está dado de alta el Botón de Pago de Yappy.",
     );
   }
-  return { ok: true, datos: { modo, merchantId, secretKey, domain: domain.trim() } };
+  const limpio = domain.trim();
+  const aceptados = [limpio, ...dominiosAceptados.map((d) => d.trim())].filter((d) => d !== "");
+  return {
+    ok: true,
+    datos: {
+      modo,
+      merchantId,
+      secretKey,
+      domain: limpio,
+      dominiosAceptados: [...new Set(aceptados)],
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -409,13 +436,18 @@ export function yappy(
       }
 
       /**
-       * El dominio del aviso tiene que ser el NUESTRO.
+       * El dominio del aviso tiene que ser UNO DE LOS NUESTROS.
        *
        * Va antes del hash y no sobra: el hash se calcula sobre el dominio que
        * venga en la URL, así que sin esto bastaría con firmar un aviso para
        * otro dominio y la firma cuadraría consigo misma.
+       *
+       * Y lo que se firma después es NUESTRA copia de la cadena (`suyo`), no
+       * la que vino en la petición, aunque en este punto sean iguales: así el
+       * texto que entra en el hash no lo ha escrito nunca quien llama.
        */
-      if (!igualesSinAtajo(aviso.domain, cred.domain)) {
+      const suyo = cred.dominiosAceptados.find((d) => igualesSinAtajo(aviso.domain, d));
+      if (suyo === undefined) {
         return fallo("no_autorizado", "ese aviso de pago no es de este sitio");
       }
 
@@ -423,7 +455,7 @@ export function yappy(
         cred.secretKey,
         aviso.orderId,
         aviso.status.trim().toUpperCase(),
-        cred.domain,
+        suyo,
       );
       if (!igualesSinAtajo(aviso.hash.trim().toLowerCase(), esperada)) {
         return fallo("no_autorizado", "la firma de ese aviso de pago no cuadra");

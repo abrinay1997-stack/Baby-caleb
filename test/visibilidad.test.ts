@@ -69,6 +69,40 @@ describe("www manda a la raíz", () => {
     ).toBeNull();
   });
 
+  /**
+   * El aviso de pago de Yappy NO se redirige, aunque entre por `www`.
+   *
+   * La dueña declaró el botón con `www.babycaleb.com`, así que esa dirección
+   * tiene que CONTESTAR, no mandar a otra. Un 301 solo sirve si quien llama lo
+   * sigue, y un servidor que avisa de un pago no tiene por qué hacerlo: si no
+   * lo sigue, la clienta paga, el dinero entra en la cuenta de Yappy y el
+   * pedido se queda sin confirmar sin que falle nada en ninguna pantalla.
+   *
+   * Es la SEGUNDA red, no la primera: la dirección que se le da a Yappy en
+   * cada cobro (`ipnUrl`) es la del ápice, que ya contestaba. Esta exención
+   * cubre el caso de que Yappy use el dominio declarado por su cuenta.
+   */
+  it("el aviso de pago de Yappy contesta en www, no se redirige", () => {
+    expect(
+      redireccionCanonica(SITIO, url("https://www.babycaleb.com/api/pago/yappy?orderId=BC1&status=E")),
+    ).toBeNull();
+    // Con la barra final es la misma ruta, y tiene que portarse igual.
+    expect(
+      redireccionCanonica(SITIO, url("https://www.babycaleb.com/api/pago/yappy/")),
+    ).toBeNull();
+  });
+
+  it("pero la exención es de ESA ruta, no de /api/ entero", () => {
+    // Las demás las llama nuestra propia página, que ya está en el dominio
+    // bueno. Eximir `/api/` entero diría algo que no hace falta decir.
+    for (const otra of ["/api/catalogo", "/api/zonas", "/api/pago/yappy/iniciar", "/api/salud"]) {
+      expect(
+        redireccionCanonica(SITIO, url(`https://www.babycaleb.com${otra}`)),
+        otra,
+      ).toBe(`https://babycaleb.com${otra}`);
+    }
+  });
+
   it("sin dominio configurado no redirige a ningún lado", () => {
     expect(redireccionCanonica("", url("https://www.babycaleb.com/faq"))).toBeNull();
   });

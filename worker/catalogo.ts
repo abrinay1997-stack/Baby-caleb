@@ -50,6 +50,14 @@ export interface SistemaWebBinding {
     | { ok: true; datos: unknown }
     | { ok: false; codigo: string; mensaje: string }
   >;
+  /**
+   * El tarifario de envío. Opcional en el tipo como los demás: el binding
+   * puede estar desplegado con una versión del sistema anterior al método, y
+   * entonces `/api/zonas` contesta 503 en vez de reventar.
+   */
+  zonasEnvio?(): Promise<
+    { ok: true; datos: unknown[] } | { ok: false; codigo: string; mensaje: string }
+  >;
   avisoDeYappy?(consulta: string): Promise<
     | { ok: true; datos: { estado: string; mensaje: string } }
     | { ok: false; codigo: string; mensaje: string }

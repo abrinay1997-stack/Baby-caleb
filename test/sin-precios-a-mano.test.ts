@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { codigoPorLineas } from './sin-comentarios';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -51,19 +52,46 @@ const PERMITIDO: { archivo: string; porque: string }[] = [
   { archivo: 'src/carrito/carrito.ts', porque: 'formatea, no decide' },
 ];
 
+/**
+ * Dónde se busca.
+ *
+ * Eran dos carpetas —`src/blocks` y `src/pages`— y eso dejaba fuera justo las
+ * dos donde entró el paso de pago: `src/carrito/`, que arma el pedido y pinta
+ * el total que devuelve el servidor, y `src/components/`. Una pantalla que
+ * cobra y que esta prueba no mira es el peor sitio posible para no mirar: ahí
+ * un número escrito a mano no es una promesa incómoda, es el monto.
+ *
+ * Y mira los `.ts` además de los `.tsx`: la lógica del pago vive en `pago.ts`
+ * y en `zonas.ts`, que no son componentes.
+ */
+const DONDE = [
+  ...archivosDe('src/blocks', ['.tsx']),
+  ...archivosDe('src/pages', ['.tsx']),
+  ...archivosDe('src/carrito', ['.tsx', '.ts']),
+  ...archivosDe('src/components', ['.tsx', '.ts']),
+];
+
 describe('ningún precio escrito a mano', () => {
-  it('ni en los bloques de la página ni en las páginas', () => {
+  it('se leyeron de verdad los archivos', () => {
+    // Sin esto, un `archivosDe` que se quedara a cero recorrería una lista
+    // vacía y diría que todo está bien: la trampa §1.
+    expect(DONDE.length).toBeGreaterThan(20);
+    expect(DONDE).toContain('src/carrito/PantallaDePago.tsx');
+  });
+
+  it('ni en los bloques de la página ni en las páginas ni en el carrito', () => {
     const sospechosos: string[] = [];
 
-    for (const archivo of [...archivosDe('src/blocks', ['.tsx']), ...archivosDe('src/pages', ['.tsx'])]) {
+    for (const archivo of DONDE) {
       if (PERMITIDO.some((p) => p.archivo === archivo)) continue;
-      const lineas = readFileSync(join(RAIZ, archivo), 'utf8').split('\n');
-      lineas.forEach((linea, i) => {
-        // Las líneas de comentario sí pueden nombrar una cifra: el comentario
-        // que explica POR QUÉ no se escribe un precio lleva un precio dentro.
-        const limpia = linea.trim();
-        if (limpia.startsWith('*') || limpia.startsWith('//')) return;
-        if (PRECIO.test(linea)) sospechosos.push(`${archivo}:${i + 1}  ${limpia.slice(0, 80)}`);
+      // Los comentarios sí pueden nombrar una cifra: el que explica POR QUÉ no
+      // se escribe un precio lleva un precio dentro. Quién es un comentario lo
+      // decide `test/sin-comentarios.ts`, que es su único dueño — esta prueba
+      // llevaba su propia versión y no conocía los de JSX (`{/* … */}`), que
+      // son los que más se usan dentro del marcado.
+      codigoPorLineas(archivo).forEach((linea, i) => {
+        if (PRECIO.test(linea))
+          sospechosos.push(`${archivo}:${i + 1}  ${linea.trim().slice(0, 80)}`);
       });
     }
 

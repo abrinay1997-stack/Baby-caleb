@@ -45,5 +45,35 @@ export function soloCodigo(rel: string): string {
   );
 }
 
+/**
+ * Lo mismo, pero conservando el NÚMERO de cada línea.
+ *
+ * `soloCodigo` borra las líneas de comentario, así que lo que queda ya no se
+ * puede citar por número: la línea 40 de su resultado no es la 40 del archivo.
+ * Para una prueba que solo busca si algo está, da igual; para una que señala
+ * DÓNDE está lo que encontró —«src/x.tsx:78»— un número corrido manda a quien
+ * lo lee a la línea equivocada.
+ *
+ * Aquí el comentario se sustituye por sus propios saltos de línea: desaparece
+ * el texto y el archivo conserva su forma. Es la misma regla de arriba y vive
+ * en el mismo archivo a propósito — copiarla sería volver a tener dos.
+ *
+ * Nació porque el escáner de precios escritos a mano llevaba su propia versión
+ * —saltarse las líneas que empiezan por `*` o `//`— que no conocía los
+ * comentarios de JSX, los que más se usan dentro del marcado. Marcó como
+ * precio a mano el comentario que explica por qué una etiqueta lleva
+ * `translate="no"`, y ese comentario lleva un «$50» dentro por fuerza.
+ */
+export function codigoPorLineas(rel: string): string[] {
+  const soloSaltos = (trozo: string): string => trozo.replace(/[^\n]/g, '');
+  return (
+    readFileSync(join(RAIZ, rel), 'utf8')
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, soloSaltos)
+      .replace(/\/\*[\s\S]*?\*\//g, soloSaltos)
+      .split('\n')
+      .map((l) => (l.trim().startsWith('//') ? '' : l))
+  );
+}
+
 /** El archivo tal cual, cuando lo que se quiere mirar ES el texto entero. */
 export const leerCrudo = (rel: string): string => readFileSync(join(RAIZ, rel), 'utf8');

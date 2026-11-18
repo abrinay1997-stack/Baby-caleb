@@ -27,39 +27,37 @@ const META = {
 /**
  * El carrito: `/carrito`.
  *
- * QUÉ ES ESTA PANTALLA Y QUÉ NO ES, HOY
+ * QUÉ ES ESTA PANTALLA Y QUÉ NO ES
  *
- * Hoy Baby Caleb **no puede cobrar en línea**: los trámites de las pasarelas
- * están en curso y `pasarelas_activas` está vacío a propósito. Así que este
- * carrito no termina en un cobro: termina en un mensaje de WhatsApp con la
- * lista ya escrita.
+ * Es el primer paso de cuatro: **carrito** → datos (`/pago`) → botón de Yappy
+ * → resultado (`/pago/resultado/<numero>`). Aquí solo se revisa la lista y se
+ * elige por dónde seguir.
  *
- * Eso no es un carrito a medias, es lo que de verdad sirve hoy. Lo que hace la
- * clienta ahora mismo es escribir a mano «quiero dos de los de talla M» y
- * esperar a que alguien adivine cuál era; esto manda códigos exactos y
- * cantidades exactas.
+ * El camino de WhatsApp SE QUEDA, y no es un resto del pasado: es el que
+ * funciona cuando Yappy está fuera de línea, cuando su botón no carga y cuando
+ * la clienta prefiere que una persona le cotice. Quitarlo para que el carrito
+ * «termine en el pago» cerraría la única puerta que no depende de un tercero.
  *
- * ## `checkout_activo` NO hace nada aquí, y conviene decirlo
+ * ## LO QUE QUEDA PENDIENTE EN `sistema/`, Y HAY QUE HACERLO
  *
- * Este comentario decía antes que «el día que la dueña active `checkout_activo`
- * desde el panel, el final de esta misma pantalla pasa a crear el pedido en el
- * sistema». No es verdad, y durante meses nadie lo notó: esta pantalla no
- * consulta ese ajuste por ningún lado, así que encenderlo no cambia una línea
- * de lo que pasa aquí. En producción vale `true` desde hace tiempo y el
- * carrito sigue terminando en WhatsApp.
+ * `sistema/src/dominio/checkout.ts` declara a mano
+ * `LA_WEB_TIENE_CHECKOUT = false`, y de ahí sale el «Encendido, pero todavía
+ * sin efecto» que la dueña ve en Ajustes cuando enciende `checkout_activo`.
+ * Desde este cambio **eso es falso**: la web ya sabe mandar a pagar.
  *
- * Lo que sí hace falta, en este orden, está escrito en el panel: una pasarela
- * con sus credenciales y encendida (hoy hay **tres pasarelas y cero
- * credenciales**), y después programar aquí el paso de crear el pedido y
- * mandar a pagar. Mientras ese paso no exista, el ajuste no puede encenderlo
- * — y la pantalla de Ajustes del panel lo dice con esas palabras en vez de
- * enseñar un «Encendido» que no significa nada.
+ * Dos cosas hay que tocar allá, y este trabajo no toca `sistema/`:
  *
- * Quien programe ese paso: la constante `LA_WEB_TIENE_CHECKOUT` de
- * `sistema/src/dominio/checkout.ts` declara que este archivo todavía no cobra,
- * y `sistema/test/node/checkout-de-la-web.test.ts` lee ESTE archivo y se pone
- * rojo si las dos cosas dejan de coincidir. O sea: al añadir aquí la llamada,
- * la prueba avisa de que hay que cambiar la constante.
+ *  1. `LA_WEB_TIENE_CHECKOUT` pasa a `true`;
+ *  2. `SENALES_DE_COBRO`, en `sistema/test/node/checkout-de-la-web.test.ts`,
+ *     busca `/api/pedidos`, `/api/checkout`, `/api/pagos`, `iniciarPago` y
+ *     `crearPedido` DENTRO DE ESTE ARCHIVO. La ruta de verdad es
+ *     `/api/pago/yappy/iniciar` y la llamada vive en `src/carrito/pago.ts`, así
+ *     que esa prueba **sigue en verde** mientras la constante miente. Es la
+ *     trampa §8 con nombre y apellido: una lista que alguien tiene que
+ *     acordarse de tocar, y que no avisa cuando no la tocan.
+ *
+ * Mientras la constante diga `false`, Ajustes enseñará «sin efecto» sobre un
+ * cobro que funciona — que es el mismo fallo de `checkout_activo` al revés.
  *
  * LOS PRECIOS DE ESTA PANTALLA SON PARA ORIENTARSE
  *
@@ -70,6 +68,10 @@ const META = {
  * de WhatsApp NO lleva precios: un precio en ese mensaje es una promesa, y el
  * precio lo pone el catálogo en el momento de cerrar, no el navegador hace
  * media hora.
+ *
+ * El total de verdad aparece una sola vez en toda la web: en `/pago`, cuando
+ * el servidor ya creó el pedido y lo devolvió en `totalCents`. Ni un paso
+ * antes.
  *
  * LA VOZ: esta página TUTEA, como el resto del sitio («Haz tu pedido», «te
  * avisamos»). El «usted» es del bot de atención, no de la web. Mezclarlos hace
@@ -264,18 +266,31 @@ export default function Carrito() {
         ) : null}
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+          {/* El camino principal: datos y pago con Yappy. Es un `Link` y no un
+              botón porque es una página, y así se puede abrir en otra pestaña
+              y se comporta como un enlace para quien usa lector de pantalla. */}
+          <Link to="/pago" className={buttonVariants({ size: 'lg' })}>
+            Continuar al pago
+          </Link>
+          {/* El camino de siempre, en segundo plano pero entero: es el que
+              funciona si Yappy está caído o si la clienta quiere que una
+              persona le cotice. */}
           <a
             href={whatsappCon(mensaje)}
             target="_blank"
             rel="noopener noreferrer"
-            className={buttonVariants({ size: 'lg' })}
+            className={buttonVariants({ variant: 'outline', size: 'lg' })}
           >
-            Enviar mi pedido por WhatsApp
+            O pedir por WhatsApp
           </a>
           <Button variant="ghost" onClick={vaciar} className="sm:ml-auto">
             Vaciar el carrito
           </Button>
         </div>
+        <p className="m-0 mt-4 text-sm text-muted">
+          En el siguiente paso te pedimos tu nombre, tu celular y tu zona, y el
+          servidor calcula el envío y el total antes de cobrarte nada.
+        </p>
 
         {/* Aire al final: la burbuja del chat es fija abajo a la derecha y sin
             esto se sienta encima del botón de enviar el pedido. */}

@@ -26,6 +26,8 @@ import Privacidad from './pages/Privacidad';
 import Terminos from './pages/Terminos';
 import NoEncontrada from './pages/NoEncontrada';
 import { ProveedorCarrito } from './carrito/useCarrito';
+import PantallaDePago from './carrito/PantallaDePago';
+import ResultadoDelPago from './carrito/ResultadoDelPago';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -74,6 +76,20 @@ export default function App() {
           {/* No se indexa: ya está en SIN_INDEXAR de seo/rutas.ts, porque un
               carrito es de una persona y no del público. */}
           <Route path="/carrito" element={<CarritoPagina />} />
+          {/* El paso de pago y su resultado. Tampoco se indexan: `/pago` está
+              en SIN_INDEXAR de seo/rutas.ts, que cubre también lo que cuelga
+              debajo. Son de una persona y de un pedido, no del público.
+
+              El resultado lleva el número del pedido EN LA RUTA y no en una
+              `?consulta=`: así la auditoría de la web puede visitarlo con un
+              número de ejemplo —`test/la-web-se-mide-entera.test.ts` compara
+              las rutas con la lista de lo que se mide, y una dirección con
+              interrogante no la reconoce como parte de ninguna ruta—. La
+              versión sin número existe porque es a donde se cae si Yappy
+              confirma antes de que el servidor nos haya dado el número. */}
+          <Route path="/pago" element={<PantallaDePago />} />
+          <Route path="/pago/resultado" element={<ResultadoDelPago />} />
+          <Route path="/pago/resultado/:numero" element={<ResultadoDelPago />} />
           {/* Las legales SÍ se indexan: un aviso de privacidad que Google no
               encuentra no sirve de aviso, y la Ley 81 pide que la persona
               pueda leerlo ANTES de dar sus datos. Por eso están en RUTAS de

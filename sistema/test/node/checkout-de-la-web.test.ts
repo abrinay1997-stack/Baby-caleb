@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LA_WEB_TIENE_CHECKOUT } from "../../src/dominio/checkout";
@@ -39,9 +39,31 @@ import { LA_WEB_TIENE_CHECKOUT } from "../../src/dominio/checkout";
  * sin comprobar nada. Es la misma lección de `scripts/panel-de-muestra.test.ts`.
  */
 
-const CARRITO = join(import.meta.dirname, "..", "..", "..", "src", "pages", "Carrito.tsx");
+const RAIZ_WEB = join(import.meta.dirname, "..", "..", "..", "src");
+const CARRITO = join(RAIZ_WEB, "pages", "Carrito.tsx");
+const CARPETA = join(RAIZ_WEB, "carrito");
 
-const fuente = await readFile(CARRITO, "utf8");
+/**
+ * Se leen el carrito Y toda la carpeta `src/carrito/`.
+ *
+ * Mirar solo `Carrito.tsx` fue un verde falso de verdad: cuando se construyó
+ * el paso de pago, la llamada quedó en `src/carrito/pago.ts` y el carrito pasó
+ * a ser un enlace a `/pago`. Esta prueba siguió en verde diciendo que la web no
+ * cobraba mientras la web ya cobraba — la trampa §8 por segunda vez, en la
+ * prueba que existe para impedirla.
+ *
+ * Se lee la CARPETA ENTERA y no una lista de archivos a propósito: un archivo
+ * nuevo ahí dentro entra solo, sin que nadie tenga que acordarse.
+ */
+const carritoSolo = await readFile(CARRITO, "utf8");
+const fuente = [
+  carritoSolo,
+  ...(await Promise.all(
+    (await readdir(CARPETA))
+      .filter((n) => n.endsWith(".ts") || n.endsWith(".tsx"))
+      .map((n) => readFile(join(CARPETA, n), "utf8")),
+  )),
+].join("\n");
 
 /**
  * Las señales de que el carrito manda a pagar de verdad.
@@ -52,6 +74,10 @@ const fuente = await readFile(CARRITO, "utf8");
  * servidor que cree el pedido, o arrancar un cobro.
  */
 const SENALES_DE_COBRO = [
+  // La de verdad, desde que existe el paso de pago. Iba delante de todo lo
+  // demás y faltaba: la lista se escribió cuando aún no se sabía cómo se
+  // llamaría la ruta, y nadie volvió a tocarla al ponerle nombre.
+  "/api/pago/yappy/iniciar",
   "/api/pedidos",
   "/api/checkout",
   "/api/pagos",
@@ -60,23 +86,29 @@ const SENALES_DE_COBRO = [
 ];
 
 describe("el carrito de la web y la constante que lo declara", () => {
-  it("se lee de verdad el archivo del carrito", () => {
-    // Si la ruta se rompe —se mueve el archivo, se renombra— esta prueba
-    // leería un archivo vacío y las dos de abajo pasarían sin comprobar nada.
+  it("se leen de verdad los archivos del carrito", () => {
+    // Si una ruta se rompe —se mueve un archivo, se renombra la carpeta— esta
+    // prueba leería texto vacío y las de abajo pasarían sin comprobar nada.
     // Esto es lo que impide ese verde falso.
-    expect(fuente.length).toBeGreaterThan(500);
-    expect(fuente).toContain("export default function Carrito");
+    expect(carritoSolo).toContain("export default function Carrito");
+    expect(fuente.length).toBeGreaterThan(5000);
+    // Y que la carpeta del paso de pago esté DENTRO de lo que se lee: sin esta
+    // línea, volver a apuntar solo a `Carrito.tsx` no pondría nada rojo.
+    expect(fuente).toContain("RUTA_DE_INICIO");
   });
 
-  it("hoy termina en WhatsApp y no llama a ninguna ruta de cobro", () => {
-    for (const senal of SENALES_DE_COBRO) {
-      // `includes` sobre el archivo entero, comentarios incluidos, a
-      // propósito: el comentario de cabecera del carrito habla de lo que
-      // todavía no hace, y si alguien escribe ahí una ruta de cobro es porque
-      // la está programando. Preferible una prueba que se queje de más a una
-      // que mire para otro lado.
-      expect(fuente, `el carrito menciona ${senal}`).not.toContain(senal);
-    }
+  it("hoy el carrito SÍ manda a pagar por la web", () => {
+    // `includes` sobre los archivos enteros, comentarios incluidos, a
+    // propósito: si alguien escribe una ruta de cobro en un comentario es
+    // porque la está programando. Preferible una prueba que se queje de más a
+    // una que mire para otro lado.
+    expect(fuente).toContain("/api/pago/yappy/iniciar");
+  });
+
+  it("y WhatsApp sigue siendo la salida de emergencia", () => {
+    // No es nostalgia: es la única puerta que no depende de un tercero. El día
+    // que Yappy esté caído, esto es lo que queda. Se quitará cuando haya un
+    // cobro real hecho y devuelto, no antes.
     expect(fuente).toContain("whatsappCon");
   });
 

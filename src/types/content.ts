@@ -43,6 +43,18 @@ export interface ProductVariant {
    */
   codigo?: string;
   image: string;
+  /**
+   * Las DEMÁS fotos de esa misma caja, en el orden en que se enseñan.
+   *
+   * `image` es la primera y NO se repite aquí. La galería de la ficha sale de
+   * `image` seguido de estas; una variante sin `images` se ve exactamente como
+   * ayer, con una sola foto y sin miniaturas.
+   *
+   * No es una segunda verdad del catálogo: aquí no hay precio ni existencia,
+   * solo los archivos de `public/img/` que la clienta nos mandó. Que cada uno
+   * exista en disco lo vigila `test/la-galeria-de-la-ficha.test.ts`.
+   */
+  images?: readonly string[];
 }
 
 export interface ProductData {

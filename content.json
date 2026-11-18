@@ -50,42 +50,48 @@
           "size": "Caja RN",
           "range": "4 a 11 lb",
           "units": "160 uds",
-          "image": "/img/producto-nateen-cierre-rn.webp"
+          "image": "/img/producto-nateen-cierre-rn.webp",
+          "images": ["/img/producto-nateen-cierre-rn-2.webp"]
         },
         {
           "codigo": "NAT-S",
           "size": "Caja S",
           "range": "6 a 13 lb",
           "units": "160 uds",
-          "image": "/img/producto-nateen-cierre-s.webp"
+          "image": "/img/producto-nateen-cierre-s.webp",
+          "images": ["/img/producto-nateen-cierre-s-2.webp"]
         },
         {
           "codigo": "NAT-M",
           "size": "Caja M",
           "range": "8 a 19 lb",
           "units": "144 uds",
-          "image": "/img/producto-nateen-cierre-m.webp"
+          "image": "/img/producto-nateen-cierre-m.webp",
+          "images": ["/img/producto-nateen-cierre-m-2.webp"]
         },
         {
           "codigo": "NAT-L",
           "size": "Caja L",
           "range": "15 a 39 lb",
           "units": "128 uds",
-          "image": "/img/producto-nateen-cierre-l.webp"
+          "image": "/img/producto-nateen-cierre-l.webp",
+          "images": ["/img/producto-nateen-cierre-l-2.webp"]
         },
         {
           "codigo": "NAT-XL",
           "size": "Caja XL",
           "range": "26 a 55 lb",
           "units": "112 uds",
-          "image": "/img/producto-nateen-cierre-xl.webp"
+          "image": "/img/producto-nateen-cierre-xl.webp",
+          "images": ["/img/producto-nateen-cierre-xl-2.webp"]
         },
         {
           "codigo": "NAT-XXL",
           "size": "Caja XXL",
           "range": "más de 55 lb",
           "units": "112 uds",
-          "image": "/img/producto-nateen-cierre-xxl.webp"
+          "image": "/img/producto-nateen-cierre-xxl.webp",
+          "images": ["/img/producto-nateen-cierre-xxl-2.webp"]
         }
       ]
     },
@@ -100,21 +106,24 @@
           "size": "Pants L",
           "range": "19 a 31 lb",
           "units": "160 uds",
-          "image": "/img/producto-nateen-pants-l.webp"
+          "image": "/img/producto-nateen-pants-l.webp",
+          "images": ["/img/producto-nateen-pants-l-2.webp"]
         },
         {
           "codigo": "NAT-P-XL",
           "size": "Pants XL",
           "range": "26 a 37.5 lb",
           "units": "160 uds",
-          "image": "/img/producto-nateen-pants-xl.webp"
+          "image": "/img/producto-nateen-pants-xl.webp",
+          "images": ["/img/producto-nateen-pants-xl-2.webp"]
         },
         {
           "codigo": "NAT-P-XXL",
           "size": "Pants XXL",
           "range": "más de 33 lb",
           "units": "160 uds",
-          "image": "/img/producto-nateen-pants-xxl.webp"
+          "image": "/img/producto-nateen-pants-xxl.webp",
+          "images": ["/img/producto-nateen-pants-xxl-2.webp"]
         }
       ]
     },

@@ -58,6 +58,7 @@ const CRED: CredencialesYappy = {
   merchantId: "comercio-de-prueba",
   secretKey: SECRETO,
   domain: DOMINIO,
+  dominiosAceptados: [DOMINIO],
 };
 
 const avisoDe = (letra: string, sobre: Partial<Record<string, string>> = {}) => ({
@@ -226,6 +227,99 @@ describe("verificar el aviso (lo único que puede marcar un pago)", () => {
 });
 
 // ---------------------------------------------------------------------------
+/**
+ * `www` y sin `www`: las dos son NUESTRAS, y Yappy elige con cuál firma.
+ *
+ * Esto se descubrió el 18-nov-2026, el día del primer despliegue del cobro. El
+ * dominio que la dueña declaró en Yappy Comercial lleva `www`, y el código
+ * exigía el ápice exacto. Con eso, las órdenes se habrían creado —el botón
+ * habría funcionado, la clienta habría pagado— y CADA aviso de vuelta se
+ * habría rechazado por no_autorizado: dinero en la cuenta de Yappy y pedidos
+ * sin confirmar, sin un solo error en ninguna pantalla.
+ *
+ * No afloja la verificación. Se aceptan DOS cadenas, las dos escritas por
+ * nosotros, y lo que se mete en el hash es NUESTRA copia de la que coincidió,
+ * no la que vino en la petición. La firma se sigue comprobando con la clave.
+ *
+ * ## Romper a propósito
+ *
+ * Deje `dominiosAceptados` con uno solo, o firme con `cred.domain` en vez de
+ * con el que coincidió. Las dos ponen roja su casilla.
+ */
+describe("el dominio del aviso: los nuestros, y solo los nuestros", () => {
+  const CON_WWW = "www.babycaleb.com";
+  const LOS_DOS: CredencialesYappy = { ...CRED, domain: CON_WWW, dominiosAceptados: [CON_WWW, DOMINIO] };
+  const pas = () => yappy({}, espia([]).buscar);
+
+  it("un aviso firmado para www pasa, aunque lo declarado tenga www", async () => {
+    const hash = await firmaDelIpn(SECRETO, ORDEN, "E", CON_WWW);
+    const r = await pas().verifyWebhook(LOS_DOS, avisoDe("E", { domain: CON_WWW, hash }));
+    expect(r.ok, !r.ok ? r.mensaje : "").toBe(true);
+  });
+
+  it("y uno firmado para el ápice también, con las mismas credenciales", async () => {
+    // Es el caso que importa: no sabemos con cuál de las dos va a firmar Yappy,
+    // y las dos tienen que entrar.
+    const r = await pas().verifyWebhook(LOS_DOS, avisoDe("E"));
+    expect(r.ok, !r.ok ? r.mensaje : "").toBe(true);
+  });
+
+  it("se firma con el dominio QUE COINCIDIÓ, no con uno fijo", async () => {
+    // Si se firmara siempre con `cred.domain` (www), este aviso del ápice
+    // —correctamente firmado para el ápice— se rechazaría.
+    const hash = await firmaDelIpn(SECRETO, ORDEN, "E", DOMINIO);
+    const r = await pas().verifyWebhook(LOS_DOS, avisoDe("E", { domain: DOMINIO, hash }));
+    expect(r.ok).toBe(true);
+
+    // Y al revés: el hash del ápice con el dominio de www NO cuadra.
+    const cruzado = await pas().verifyWebhook(LOS_DOS, avisoDe("E", { domain: CON_WWW, hash }));
+    expect(cruzado.ok).toBe(false);
+  });
+
+  it("un dominio que no es nuestro NO pasa, por bien firmado que venga", async () => {
+    // La prueba de que la lista es una lista nuestra y no «cualquier dominio».
+    const ajeno = "babycaleb.com.ejemplo-malo.net";
+    const hash = await firmaDelIpn(SECRETO, ORDEN, "E", ajeno);
+    const r = await pas().verifyWebhook(LOS_DOS, avisoDe("E", { domain: ajeno, hash }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.codigo).toBe("no_autorizado");
+  });
+
+  it("y un subdominio parecido tampoco", async () => {
+    for (const casi of ["babycaleb.com.co", "wwwbabycaleb.com", "pagos.babycaleb.com", ""]) {
+      const hash = await firmaDelIpn(SECRETO, ORDEN, "E", casi);
+      const r = await pas().verifyWebhook(LOS_DOS, avisoDe("E", { domain: casi, hash }));
+      expect(r.ok, `pasó con «${casi}»`).toBe(false);
+    }
+  });
+
+  it("las credenciales guardan el declarado y, además, los aceptados", () => {
+    const cred = credencialesYappy(
+      "real",
+      new Map([["id_comercio", "x"], ["clave_secreta", "y"]]),
+      CON_WWW,
+      [DOMINIO, CON_WWW, "  "],
+    );
+    expect(cred.ok).toBe(true);
+    if (cred.ok) {
+      // El declarado es UNO: es el que se manda en `urlDomain`.
+      expect(cred.datos.domain).toBe(CON_WWW);
+      // Y la lista no repite ni guarda vacíos.
+      expect(cred.datos.dominiosAceptados).toEqual([CON_WWW, DOMINIO]);
+    }
+  });
+
+  it("sin lista, se acepta solo el declarado — el comportamiento de antes", () => {
+    const cred = credencialesYappy(
+      "real",
+      new Map([["id_comercio", "x"], ["clave_secreta", "y"]]),
+      DOMINIO,
+    );
+    expect(cred.ok).toBe(true);
+    if (cred.ok) expect(cred.datos.dominiosAceptados).toEqual([DOMINIO]);
+  });
+});
+
 describe("los cuatro finales", () => {
   it("solo E es un pago", () => {
     expect(estadoDeLetra("E")).toBe("ejecutado");

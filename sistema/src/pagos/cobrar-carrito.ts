@@ -4,7 +4,7 @@ import { encontrarOCrear } from "../db/clientes";
 import { crearPedido, reglasDelPedido } from "../db/pedidos";
 import { abrirCredenciales } from "../db/pasarelas";
 import { credencialesYappy, yappy } from "./yappy";
-import { DOMINIO_DEL_BOTON } from "./recibir-aviso";
+import { DOMINIO_DECLARADO } from "./recibir-aviso";
 import type { Buscador } from "./proveedor";
 
 /**
@@ -209,7 +209,7 @@ export async function cobrarCarrito(
   const cred = await abrirCredenciales({ db: ctx.db, ahora: ctx.ahora, llaveMaestra: ctx.llaveMaestra }, "yappy");
   if (!cred.ok) return cred;
 
-  const suyas = credencialesYappy(cred.datos.modo, cred.datos.valores, DOMINIO_DEL_BOTON);
+  const suyas = credencialesYappy(cred.datos.modo, cred.datos.valores, DOMINIO_DECLARADO);
   if (!suyas.ok) return suyas;
 
   /**

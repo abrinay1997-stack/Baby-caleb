@@ -121,11 +121,11 @@ describe("el estado que este módulo existe para destapar", () => {
 });
 
 describe("el estado de HOY, con lo que hay en el repositorio", () => {
-  it("el carrito de la web todavía no cobra, y la constante lo dice", () => {
-    // Si esto se pone rojo es porque alguien programó el checkout de la web:
+  it("el carrito de la web ya cobra, y la constante lo dice", () => {
+    // Si esto se pone rojo es porque alguien quitó el checkout de la web:
     // entonces se cambia la constante, y `test/node/checkout-de-la-web.test.ts`
     // comprueba que el cambio corresponde con el carrito de verdad.
-    expect(LA_WEB_TIENE_CHECKOUT).toBe(false);
+    expect(LA_WEB_TIENE_CHECKOUT).toBe(true);
   });
 
   it("así que con tres pasarelas sin credenciales, el interruptor encendido es inerte", () => {
