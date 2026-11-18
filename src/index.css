@@ -42,10 +42,37 @@
   scroll-margin-top: 7rem;
 }
 
-/* Evita scroll horizontal accidental por blobs/animaciones que sobresalen. */
-html,
-body {
+/* ---------------------------------------------------------------------------
+   Evita scroll horizontal accidental por blobs/animaciones que sobresalen.
+
+   EL `clip` DEL BODY NO ES UN SINÓNIMO DE `hidden`, Y POR ESO ESTÁ ESCRITO ASÍ.
+
+   `overflow-x: hidden` convierte al elemento en un CONTENEDOR DE SCROLL: el
+   eje que queda en `visible` se computa a `auto` solo. Con eso, el `<body>`
+   pasa a ser el ancestro desplazable de todo lo que hay dentro — pero quien de
+   verdad se desplaza es la ventana, así que un `position: sticky` ahí adentro
+   se queda con desplazamiento cero y se comporta como si fuera estático.
+
+   Medido en un navegador el 2026-11-18 con la barra de comprar de la ficha:
+   con `hidden` en el body, la barra se iba con el scroll (abajo del viewport a
+   1447 px); cambiando SOLO esa palabra por `clip`, se queda pegada al borde de
+   abajo (844 px de 844). Y el recorte se conserva: un bloque de 900 px metido
+   a la fuerza dentro del body deja `document.documentElement.scrollWidth` en
+   390 — no aparece scroll de lado.
+
+   `overflow: clip` recorta igual pero NO crea contenedor de scroll, que es
+   exactamente lo que se quería aquí: nadie pidió nunca que el body se pudiera
+   desplazar, solo que no se escapara nada de lado. El `hidden` del `<html>` se
+   queda como está: ése sí se propaga al viewport y es el que de verdad recorta.
+   Y si un navegador viejo no entendiera `clip`, descarta la línea y el recorte
+   del `<html>` sigue en pie.
+   --------------------------------------------------------------------------- */
+html {
   overflow-x: hidden;
+}
+
+body {
+  overflow-x: clip;
 }
 
 /* Respeta la preferencia de movimiento reducido a nivel global. */

@@ -85,6 +85,22 @@ ella: a la dueña le falta el último producto de la lista y nada se lo dice.
 No se estima: se mide. El hueco se escribe una vez en el CSS y el alto de la
 barra cambia cada vez que alguien le toca un renglón.
 
+> **La tienda tiene su propia versión de esta regla, y de la 7d.** Las dos de
+> arriba buscan `nav.solo-telefono`, `main.contenido` y `.burbuja-caleb`: son
+> los nombres del panel, no existen en la tienda, y por eso pasaban por encima
+> de la ficha de producto sin mirar nada. La barra de comprar de la ficha
+> —precio y botón, pegados abajo— la mide `scripts/auditar-la-web.mjs`, en los
+> dos momentos en que una barra de abajo se rompe: **abajo del todo**, que es
+> donde se vería que tapa la última fila, y **pegada**, que es cuando coincide
+> con la burbuja del chat. Un diálogo abierto no cuenta: tapa a propósito y se
+> cierra.
+>
+> La barra es `position: sticky` y no `fixed` justamente por la 7f: un elemento
+> pegado sigue en el flujo y **reserva su propio alto**, así que el hueco no se
+> estima, no se escribe en el CSS y no se puede olvidar. Ojo, que para que
+> `sticky` funcione el `<body>` no puede ser un contenedor de scroll — ver el
+> comentario de `overflow-x: clip` en `src/index.css`.
+
 ### 7g · No se desborda de lado
 
 Es el síntoma de todo lo anterior cuando se escapa.
