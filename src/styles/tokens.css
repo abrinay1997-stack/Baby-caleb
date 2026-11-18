@@ -46,8 +46,6 @@
   /* ---------- LÍNEAS, RADIOS, ELEVACIÓN ---------- */
   --hairline: 1px;
   --r-none: 0; --r-sm: 8px; --r-md: 16px; --r-lg: 24px; --r-pill: 999px;
-  --shadow-glow: 0 0 80px -20px var(--accent);
-  --shadow-soft: 0 4px 20px -2px rgba(27, 50, 70, 0.05);
 
   /* ---------- MOVIMIENTO ---------- */
   --d-fast:   0.25s;   
@@ -61,6 +59,38 @@
 
   /* ---------- CAPAS ---------- */
   --z-canvas: 0; --z-content: 10; --z-nav: 100; --z-cursor: 500; --z-overlay: 1000;
+}
+
+/* ---------------------------------------------------------------------------
+ * LO QUE TAILWIND TIENE QUE CONOCER PARA NO TIRARLO A LA BASURA
+ * ---------------------------------------------------------------------------
+ * `rounded-pill`, `shadow-soft` y `shadow-glow` estaban escritos en veintiún
+ * sitios del sitio —los botones del hero, el de la barra, el de «Pedir por
+ * WhatsApp», las tarjetas de tips, de la galería y del catálogo, el enlace de
+ * saltar al contenido— y **ninguno de los tres existía**. Comprobado en el CSS
+ * construido: cero reglas `.rounded-pill`, cero `.shadow-soft`, cero
+ * `.shadow-glow`.
+ *
+ * Tailwind v4 solo fabrica una utilidad si su valor está en `@theme`. Estos
+ * tres vivían en `:root`, que es donde se escriben los tokens de la marca pero
+ * NO es donde Tailwind mira. Una clase que no conoce la descarta **en
+ * silencio**: no hay error, no hay aviso, no falla ninguna prueba — sale un
+ * botón con las esquinas en pico donde el código pedía una pastilla, y una
+ * tarjeta plana donde pedía una sombra. Es exactamente la trampa que
+ * `docs/design-system.md` cierra con «No invente nombres», y lo que hacía que
+ * el catálogo no pareciera una tienda: todo recto y todo al ras.
+ *
+ * Los valores NO se tocan: son los mismos de siempre (`--r-pill` ya estaba
+ * arriba). Lo único que cambia es que ahora Tailwind los ve.
+ *
+ * Si alguien añade un token de marca y quiere usarlo como clase, va aquí
+ * también, y el nombre tiene que empezar por el espacio que le toca
+ * (`--radius-*`, `--shadow-*`, `--color-*`) o seguirá sin existir.
+ * ------------------------------------------------------------------------- */
+@theme {
+  --radius-pill: var(--r-pill);
+  --shadow-soft: 0 4px 20px -2px rgba(27, 50, 70, 0.05);
+  --shadow-glow: 0 0 80px -20px var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {

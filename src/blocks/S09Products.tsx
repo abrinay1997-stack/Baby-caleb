@@ -100,11 +100,43 @@ export default function S09Products() {
     });
   });
 
+  /*
+   * `padding={false}` y el relleno a mano, y no es manía: `.section-padding`
+   * vive en `themes/babycaleb.css` FUERA de toda capa, y las utilidades de
+   * Tailwind van en `@layer utilities`. Lo que está sin capa gana, así que un
+   * `pt-16` puesto aquí no habría hecho nada — el mismo tropiezo que ya costó
+   * los 11 px de `.mono`, anotado en `tokens.css`.
+   *
+   * Arriba 32 px y no 101: la página ya reserva `pt-32` para la barra fija, y
+   * encima iba otro `--section-y` entero. Abajo se queda el valor de siempre,
+   * que es el que separa la tienda de la galería que viene detrás.
+   */
   return (
-    <Section id="productos" ref={containerRef} variant="bg">
+    <Section
+      id="productos"
+      ref={containerRef}
+      variant="bg"
+      padding={false}
+      className="pt-8 pb-[var(--section-y)] md:pt-16"
+    >
+      {/*
+        El titular de la tienda respira menos que el de una sección de
+        contenido, y a propósito.
+
+        `SectionHeader` deja `mb-16 md:mb-24` —hasta 96 px de aire— porque está
+        pensado para una sección que se lee. Esta es la que se compra: medido a
+        390 px, entre la barra y el primer producto había más de tres
+        pantallazos. Lo mismo con el relleno de arriba de `Section`
+        (`--section-y`, hasta 192 px) encima del `pt-32` que ya pone la propia
+        página.
+
+        Es el ritmo del que habla el encargo: lo importante respira y lo
+        secundario no. Aquí lo importante es la rejilla.
+      */}
       <SectionHeader
         kicker="01 / Catálogo"
         title="Esenciales diseñados para proteger su piel."
+        className="mb-8 md:mb-10"
       />
 
       {/*
@@ -167,8 +199,21 @@ export default function S09Products() {
 
               Las columnas crecen con la pantalla y la tarjeta más estrecha
               cabe en un teléfono de 320 px sin desbordarse.
+
+              DOS COLUMNAS YA EN EL TELÉFONO, que es lo que hace que esto
+              parezca una tienda y no una lista. Con una sola, cada tarjeta
+              ocupaba más que la pantalla entera: se veía UN producto por
+              pantallazo y no se podía comparar nada — que era justo lo que la
+              tienda desagrupada venía a resolver. Con dos entran cuatro
+              artículos a la vez y la talla de una marca queda al lado de la
+              de la otra.
+
+              El hueco horizontal es más estrecho que el vertical (`gap-x-3`
+              contra `gap-y-6`): entre dos tarjetas de la misma fila hace falta
+              una separación, entre dos filas hace falta un descanso. Es el
+              ritmo, y uniformarlo es lo que dejaba la rejilla plana.
             */
-            <ul className="m-0 grid list-none grid-cols-1 gap-6 p-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <ul className="m-0 grid list-none grid-cols-2 gap-x-3 gap-y-6 p-0 sm:gap-x-5 sm:gap-y-8 lg:grid-cols-3 xl:grid-cols-4">
               {visibles.map((a) => (
                 <TarjetaDeArticulo
                   key={a.codigo}
