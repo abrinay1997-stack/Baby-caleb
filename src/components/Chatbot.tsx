@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, X, Send, Heart, MessageSquare } from 'lucide-react';
+import { MessageCircle, X, Send, Heart } from 'lucide-react';
 import { sesionDelChat } from '../chat/sesion';
-import { WHATSAPP_URL } from '../data/contacto';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -226,23 +225,15 @@ export default function Chatbot() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick Actions / WhatsApp Direct */}
-          <div className="px-4 bg-surface border-t border-b border-line flex justify-between items-center gap-2 text-xs">
-            <span className="text-muted">¿Prefieres WhatsApp?</span>
-            {/* El número sale de `data/contacto.ts`, que es su único dueño.
-                Aquí estaba escrito a mano —el séptimo sitio, justo el que ese
-                archivo existe para evitar— y el día que cambie, este se queda
-                mandando a un celular que ya no contesta sin que nada falle. */}
-            <a
-              href={WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex min-h-11 items-center gap-1 font-bold text-accent-strong hover:underline focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-2 rounded-md"
-            >
-              <MessageSquare size={14} aria-hidden="true" />
-              Hablar por WhatsApp
-            </a>
-          </div>
+          {/* Aquí había una barra fija que preguntaba «¿Prefieres WhatsApp?»
+              con un enlace al lado. Se fue el 18-nov-2026, con los demás
+              botones de WhatsApp: ofrecer otro canal sin que nadie lo pida,
+              justo encima del campo de escribir, es empujar fuera del chat a
+              quien ya había decidido usarlo.
+
+              El asistente sigue pudiendo dar el WhatsApp cuando la clienta lo
+              PIDA — eso lo decide su respuesta, que viene del CRM, no esta
+              pantalla. Y en el pie del sitio sigue a un toque. */}
 
           {/* Message Input Form */}
           <form onSubmit={handleSendMessage} className="p-3 bg-surface flex items-end gap-2">

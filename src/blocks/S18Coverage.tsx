@@ -102,10 +102,11 @@ export default function S18Coverage() {
               <h3 className="font-bold text-lg text-fg">Cómo pedir</h3>
             </div>
             <p className="text-sm text-muted leading-relaxed">
-              Vendemos únicamente online. Escríbenos por WhatsApp o por DM de Instagram
-              <span className="text-fg font-bold"> (@babycalebpanama)</span>, elegimos juntos la
-              talla y coordinamos la entrega a domicilio. El costo del delivery depende de tu zona
-              y te lo confirmamos antes de cerrar el pedido.
+              Vendemos únicamente online. Elige tu talla en el catálogo, agrégala al
+              carrito y paga con Yappy en la misma página: el costo del delivery depende de
+              tu zona y te lo confirmamos antes de cobrar. Si prefieres que te ayudemos a
+              elegir, escríbenos por DM de Instagram
+              <span className="text-fg font-bold"> (@babycalebpanama)</span> o por WhatsApp.
             </p>
           </div>
         </div>

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, ShoppingBag, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import { WHATSAPP_URL } from '../data/contacto';
 import { useCarrito } from '../carrito/useCarrito';
 
 export default function S01Nav() {
@@ -10,7 +9,6 @@ export default function S01Nav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const { unidades } = useCarrito();
-  const whatsappLink = WHATSAPP_URL;
 
   /**
    * El menú del teléfono es un diálogo, y hasta hoy solo lo decía.
@@ -193,15 +191,13 @@ export default function S01Nav() {
               {link.label}
             </Link>
           ))}
+          {/* Aquí vivía «Pedir por WhatsApp», el CTA naranja de la barra.
+              Se fue cuando la tienda pasó a cobrar por la web: un botón que
+              se lleva a la clienta a otra aplicación compite con el carrito
+              que tiene al lado, y el que gana es el que está pintado de
+              naranja. WhatsApp sigue en el pie y el chat lo ofrece a quien lo
+              pida — ahí lo busca quien lo quiere, no quien pasaba por ahí. */}
           {botonCarrito()}
-          <a
-            href={whatsappLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-accent text-accent-fg px-5 py-2.5 rounded-pill text-sm font-bold hover:opacity-90 transition-opacity focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 shadow-soft"
-          >
-            Pedir por WhatsApp
-          </a>
         </nav>
 
         {/* Carrito y menú juntos: en un teléfono es donde llega el pulgar */}
@@ -282,16 +278,6 @@ export default function S01Nav() {
                   </span>
                 ) : null}
               </Link>
-              <div className="mt-8">
-                <a
-                  href={whatsappLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block bg-accent text-accent-fg px-8 py-4 rounded-pill text-lg font-bold w-full text-center focus-visible:outline-accent-edge"
-                >
-                  Pedir por WhatsApp
-                </a>
-              </div>
             </nav>
           </motion.div>
         )}

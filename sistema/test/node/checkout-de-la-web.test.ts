@@ -105,11 +105,30 @@ describe("el carrito de la web y la constante que lo declara", () => {
     expect(fuente).toContain("/api/pago/yappy/iniciar");
   });
 
-  it("y WhatsApp sigue siendo la salida de emergencia", () => {
-    // No es nostalgia: es la única puerta que no depende de un tercero. El día
-    // que Yappy esté caído, esto es lo que queda. Se quitará cuando haya un
-    // cobro real hecho y devuelto, no antes.
-    expect(fuente).toContain("whatsappCon");
+  it("WhatsApp ya no es un camino de PEDIDO en el carrito", () => {
+    // Decisión del dueño (18-nov-2026): la tienda cobra por la web y el botón
+    // «O pedir por WhatsApp» se fue del carrito. Esta casilla decía lo
+    // contrario —exigía que siguiera— y se puso roja al quitarlo: hizo
+    // exactamente su trabajo, que era avisar de que la regla había cambiado.
+    //
+    // Lo que vigila ahora es que no vuelva por la puerta de atrás: un botón
+    // que se lleva a la clienta a otra aplicación compite con el que cobra, y
+    // el que gana es el que está pintado de naranja.
+    expect(carritoSolo).not.toContain("whatsappCon");
+  });
+
+  it("pero cuando el PAGO falla sigue habiendo a quién escribir", () => {
+    // Esto no es nostalgia y no se quita con los botones de pedido: son las
+    // dos pantallas de la ruta de pago —el aviso de «Yappy está caído» y el
+    // «¿pagaste y no te hemos escrito?»— y salen cuando algo ya falló con el
+    // dinero.
+    //
+    // Quitarle el contacto a alguien que acaba de pagar $50 y no tiene
+    // confirmación no es ordenar la tienda: es dejarla sin a quién reclamar.
+    // Si algún día se quitan, que sea una decisión y no un descuido.
+    expect(fuente, "la ruta de pago se quedó sin forma de hablar con una persona").toContain(
+      "WHATSAPP_URL",
+    );
   });
 
   it("y la constante dice justo eso", () => {

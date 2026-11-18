@@ -2,7 +2,6 @@ import { Link, useLocation } from 'react-router-dom';
 import Seo from '../components/Seo';
 import { Section } from '../components/ui/Section';
 import { buttonVariants } from '../components/ui/Button';
-import { WHATSAPP_URL } from '../data/contacto';
 
 /**
  * La dirección que no existe.
@@ -68,14 +67,6 @@ export default function NoEncontrada() {
           <Link to="/productos" className={buttonVariants({ size: 'lg' })}>
             Ver el catálogo
           </Link>
-          <a
-            href={WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={buttonVariants({ variant: 'outline', size: 'lg' })}
-          >
-            Escribirnos por WhatsApp
-          </a>
         </div>
 
         {/* Aire al final: el globo del chat es fijo abajo a la derecha y sin

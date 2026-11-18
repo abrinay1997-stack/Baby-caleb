@@ -34,26 +34,48 @@ import type { Buscador } from "./proveedor";
  * valida el comercio y el botón falla al abrirse — en voz alta, que es como
  * tiene que fallar esto.
  *
- * Lleva `www` porque ES lo que ella declaró (confirmado el 2026-11-18, antes
- * del primer despliegue del cobro). Estuvo escrito sin `www` hasta ese día: con
- * eso, las órdenes se habrían creado y NINGÚN pago se habría podido verificar,
- * porque el dominio entra en la firma de la notificación.
+ * **Es una URL entera, con `https://` y con la barra final.** No es un
+ * descuido: es lo que el dueño escribió en el paso 4 de Yappy Comercial, y lo
+ * que vale es lo que él escribió, no lo que parezca más limpio. Quitarle la
+ * barra o el esquema «porque un dominio no lleva eso» es exactamente cómo se
+ * vuelve al fallo de abajo.
+ *
+ * Cómo se supo (2026-11-18, con el cobro ya en producción): el primer intento
+ * real contestó «Yappy no validó el comercio: Illegal Arguments». Preguntando
+ * a su API con un ID de comercio INVENTADO contesta otra cosa —`YAPPY-004`,
+ * «Error en el request o algun campo puede estar vacio»—, así que el ID estaba
+ * bien y lo que no le cuadraba era este campo. Antes decía `babycaleb.com`, y
+ * después `www.babycaleb.com`: las dos mal.
+ *
+ * Esto NO debería vivir en el código. Solo el dueño sabe qué escribió, puede
+ * cambiarlo el día que regenere las credenciales, y equivocarse aquí deja la
+ * tienda sin cobrar. Su sitio es un ajuste del panel, y está apuntado como tal.
  */
-export const DOMINIO_DECLARADO = "www.babycaleb.com";
+export const DOMINIO_DECLARADO = "https://babycaleb.com/";
 
 /**
  * Los dominios NUESTROS que se aceptan en un aviso de vuelta.
  *
- * El sitio responde en los dos —`www` manda al otro con un 301— y quién firma
- * el aviso es Yappy, no nosotros: no está en nuestra mano saber con cuál de las
- * dos formas lo va a hacer. Aceptar las dos no afloja nada, porque las dos son
- * nuestras y la firma se sigue comprobando con la clave secreta; lo que evita
- * es que un pago de verdad se caiga por una `www` y la clienta se quede
- * pagando sin pedido.
+ * Son SEIS maneras de escribir el mismo sitio nuestro: con y sin `https://`,
+ * con y sin `www`, con y sin barra final. Quién firma el aviso es Yappy, no
+ * nosotros, y su documentación no dice si devuelve el dominio tal como se
+ * declaró o normalizado de alguna forma — así que no está en nuestra mano
+ * saberlo, y averiguarlo a base de pagos perdidos sale caro.
+ *
+ * Aceptar las seis no afloja nada: las seis son NUESTRO sitio, están escritas
+ * aquí, y la firma se sigue comprobando con la clave secreta, que es lo que de
+ * verdad autoriza. Lo que evita es que un pago real se caiga por una barra.
  *
  * El declarado va PRIMERO a propósito: es el que se manda y el más probable.
  */
-export const NUESTROS_DOMINIOS = [DOMINIO_DECLARADO, "babycaleb.com"] as const;
+export const NUESTROS_DOMINIOS = [
+  DOMINIO_DECLARADO,
+  "https://babycaleb.com",
+  "https://www.babycaleb.com",
+  "https://www.babycaleb.com/",
+  "babycaleb.com",
+  "www.babycaleb.com",
+] as const;
 
 /**
  * LA DIRECCIÓN A LA QUE YAPPY MANDA EL AVISO, que NO es el dominio declarado.
