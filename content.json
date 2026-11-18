@@ -16,8 +16,8 @@
     "sub": "Pañales y wipes hipoalergénicos: sin químicos agresivos, sin perfumes, sin alcohol, sin cloro.",
     "image": "/img/hero-bebe.png",
     "cta": {
-      "label": "Pedir por WhatsApp",
-      "href": "https://wa.me/50767575065"
+      "label": "Ver el catálogo",
+      "href": "/productos"
     }
   },
   "trust": [
@@ -188,7 +188,7 @@
     },
     {
       "title": "Delivery a domicilio",
-      "text": "Vendemos 100% online: haces tu pedido por WhatsApp o Instagram y te lo llevamos a domicilio en Ciudad de Panamá."
+      "text": "Vendemos 100% online: eliges, pagas en la página y te lo llevamos a domicilio en Ciudad de Panamá."
     }
   ],
   "education": [
@@ -223,18 +223,18 @@
   "howToBuy": [
     {
       "step": "01",
-      "title": "Escríbenos",
-      "text": "Contáctanos directamente por WhatsApp al 6757-5065 o por DM en Instagram."
+      "title": "Elige",
+      "text": "Entra al catálogo y elige tu producto, tu presentación y tu talla. Si dudas con la talla, el asistente del chat te ayuda."
     },
     {
       "step": "02",
-      "title": "Elige",
-      "text": "Selecciona producto, presentación y talla — te asesoramos si tienes dudas."
+      "title": "Paga",
+      "text": "Agrégalo al carrito y paga con Yappy en la misma página. El total con el envío te lo confirmamos antes de cobrar."
     },
     {
       "step": "03",
       "title": "Recibe",
-      "text": "Te lo llevamos a domicilio en Ciudad de Panamá. Coordinamos día y zona por WhatsApp."
+      "text": "Te lo llevamos a domicilio en Ciudad de Panamá. Eliges tu zona al pagar y te confirmamos el costo del envío antes de cobrar."
     }
   ],
   "faq": [
@@ -260,11 +260,11 @@
     },
     {
       "q": "¿Tienen tienda física?",
-      "a": "Hoy vendemos únicamente online: haces tu pedido por WhatsApp o por DM de Instagram y te lo entregamos por delivery en Ciudad de Panamá."
+      "a": "Hoy vendemos únicamente online: haces tu pedido aquí mismo en la página, pagas con Yappy y te lo entregamos por delivery en Ciudad de Panamá."
     },
     {
       "q": "¿Cuánto cuesta el delivery?",
-      "a": "Depende de tu ubicación. Escríbenos por WhatsApp con tu zona y te confirmamos el costo antes de cerrar el pedido."
+      "a": "Depende de tu zona. La eliges al pagar y te decimos el costo del envío antes de cobrarte, en la misma pantalla."
     },
     {
       "q": "¿Los pañales son biodegradables?",

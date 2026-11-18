@@ -6,6 +6,9 @@ import { getContentData } from '../data/content';
 import { useCatalogo, desdeDe } from '../hooks/useCatalogo';
 import { prefiereMenosMovimiento } from '../lib/movimiento';
 
+/** Lo que empieza por `/` es de este sitio y se navega sin recargar. */
+const esDeCasa = (href: string): boolean => href.startsWith('/');
+
 export default function S02Hero() {
   const containerRef = useRef<HTMLDivElement>(null);
   const h1Ref = useRef<HTMLHeadingElement>(null);
@@ -114,21 +117,36 @@ export default function S02Hero() {
             {data.sub}
           </p>
 
+          {/* El botón grande del hero llevaba a WhatsApp y ahora lleva a la
+              tienda, así que tiene que ser un `Link` de verdad: con un `<a
+              target="_blank">` cada visita abriría una pestaña nueva del mismo
+              sitio y perdería el carrito que tiene en esta.
+
+              `esDeCasa` decide por la forma del enlace y no por una bandera
+              nueva en el archivo: lo que empieza por `/` es nuestro. Así el
+              día que la dueña quiera volver a mandar el botón fuera, le basta
+              con cambiar la dirección en `content.json`.
+
+              Y el segundo botón se fue: desde que el primero lleva al
+              catálogo, decían lo mismo dos veces. */}
           <div className="hero-cta mt-4 w-full md:w-auto flex flex-col sm:flex-row gap-3">
-            <a
-              href={data.cta.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-full sm:inline-flex items-center justify-center bg-accent text-accent-fg px-8 py-4 rounded-pill font-bold text-lg hover:opacity-90 transition-opacity focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 shadow-glow"
-            >
-              {data.cta.label}
-            </a>
-            <Link
-              to="/productos"
-              className="flex w-full sm:inline-flex items-center justify-center border border-line bg-bg/60 backdrop-blur text-fg px-8 py-4 rounded-pill font-bold text-lg hover:border-accent-edge hover:text-accent-strong transition-colors focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4"
-            >
-              Ver catálogo
-            </Link>
+            {esDeCasa(data.cta.href) ? (
+              <Link
+                to={data.cta.href}
+                className="flex w-full sm:inline-flex items-center justify-center bg-accent text-accent-fg px-8 py-4 rounded-pill font-bold text-lg hover:opacity-90 transition-opacity focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 shadow-glow"
+              >
+                {data.cta.label}
+              </Link>
+            ) : (
+              <a
+                href={data.cta.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full sm:inline-flex items-center justify-center bg-accent text-accent-fg px-8 py-4 rounded-pill font-bold text-lg hover:opacity-90 transition-opacity focus-visible:outline-accent-edge focus-visible:outline-2 focus-visible:outline-offset-4 shadow-glow"
+              >
+                {data.cta.label}
+              </a>
+            )}
           </div>
         </div>
 

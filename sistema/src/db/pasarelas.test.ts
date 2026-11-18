@@ -714,6 +714,51 @@ describe("cambiarModo", () => {
 
 describe("abrirCredenciales", () => {
   /**
+   * La pasarela tiene que estar ENCENDIDA para que se abra su baúl.
+   *
+   * Antes no hacía falta, y ese era el fallo: con el checkout apagado y Yappy
+   * apagada, la web seguía creando pedidos, apartando mercancía y abriendo
+   * órdenes en Yappy. Lo único que escondía el botón era la pantalla; la ruta
+   * `POST /api/pago/yappy/iniciar` es pública. El día que hubiera que parar la
+   * tienda, el panel habría dicho «apagado» mientras seguía cobrando.
+   *
+   * Estas pruebas van del BAÚL, no del interruptor, así que lo encienden para
+   * poder mirar lo suyo. El interruptor tiene su propia casilla, abajo.
+   */
+  const encender = async (cuales: string[]): Promise<void> => {
+    const r = await guardar(
+      { db: env.DB, ahora, actor: "yarielis@babycaleb.com" },
+      { clave: "pasarelas_activas", valor: cuales, motivo: "montar el escenario" },
+    );
+    if (!r.ok) throw new Error(r.mensaje);
+  };
+
+  beforeEach(async () => {
+    await encender(["yappy", "tilopay", "paypal"]);
+  });
+
+  it("NO abre el baúl de una pasarela apagada en Ajustes", async () => {
+    // El freno de emergencia. Es la única puerta por la que una credencial
+    // sale hacia una pasarela, así que puesta aquí vale también para la de
+    // mañana; repetida en cada llamador, un día alguien escribiría el llamador
+    // y no la comprobación.
+    const g = await guardar(
+      { db: env.DB, ahora, actor: "yarielis@babycaleb.com" },
+      { clave: "pasarelas_activas", valor: [], motivo: "la dueña paró la tienda" },
+    );
+    expect(g.ok).toBe(true);
+
+    const r = await abrirCredenciales(ctx, "yappy");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.codigo).toBe("pasarela_no_disponible");
+      // Que diga DÓNDE se enciende: un «no disponible» a secas manda a buscar
+      // el fallo en la pasarela, que es el sitio equivocado.
+      expect(r.mensaje).toContain("Ajustes");
+    }
+  });
+
+  /**
    * **El fallo caro, probado.** Con las credenciales de los DOS modos puestas,
    * lo que sale es el juego del modo en el que está la pasarela — y nunca el
    * otro.
@@ -733,7 +778,14 @@ describe("abrirCredenciales", () => {
     expect(enPrueba.datos.valores.get("id_comercio")).toBe(ID_FALSO);
     expect(enPrueba.datos.valores.get("clave_secreta")).toBe(CLAVE_FALSA);
 
-    await cambiarModo(ctx, { pasarela: "yappy", modo: "real", motivo: "a producción" });
+    // Apagar para cambiar de modo NO es un rodeo de la prueba: es la regla del
+    // sistema, y está ahí por esto mismo — «el modo decide con qué claves se
+    // cobra, y cambiarlo con el cobro abierto es exactamente como se acaba
+    // cobrando de verdad con las credenciales de prueba».
+    await encender([]);
+    const cm = await cambiarModo(ctx, { pasarela: "yappy", modo: "real", motivo: "a producción" });
+    expect(cm.ok, !cm.ok ? cm.mensaje : "").toBe(true);
+    await encender(["yappy"]);
 
     const enReal = await abrirCredenciales(ctx, "yappy");
     expect(enReal.ok).toBe(true);

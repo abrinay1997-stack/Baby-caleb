@@ -385,12 +385,49 @@ describe("crear el cobro", () => {
 });
 
 // ---------------------------------------------------------------------------
+/**
+ * LOS DATOS DE EJEMPLO DE AQUÍ SALEN DE SU OPENAPI, NO DE LA CABEZA.
+ *
+ * Esto estaba escrito contra una respuesta INVENTADA: un objeto plano con
+ * `code` y `amount` arriba, a veces envuelto en `data`, `result` o
+ * `transaction`. Tilopay no usa ninguno de esos tres nombres. Contesta
+ * `{ type, message, response: [...] }` y `response` es un ARRAY
+ * (`tilopay.com/developers/openapi.json`, `/api/v1/consult`, verificado
+ * leyéndolo).
+ *
+ * Había incluso una casilla llamada «mira dentro de la respuesta si viene
+ * envuelta» que recorría esos tres nombres y pasaba — porque probaba el código
+ * contra la suposición del propio código. Es una variante de la trampa §6 que
+ * conviene nombrar: **una prueba cuyo dato de entrada se adivinó vigila la
+ * adivinanza, no a la pasarela.** La regla de «no se escribe código con
+ * nombres adivinados» existía; faltaba para los datos de ejemplo.
+ *
+ * Con la respuesta de verdad delante, el adaptador anterior sacaba `code` y
+ * `amount` en `undefined`: todo cobro habría quedado «pendiente» con monto
+ * `null`, para siempre. No mordió porque nadie llama todavía a este módulo.
+ */
+const FILA = {
+  id_tilopay: "T-9",
+  orderNumber: "BC-7",
+  amount: "12.50",
+  currency: "USD",
+  code: "1",
+  auth: "123456",
+  commission: "0.45",
+  iva_commission: "0.03",
+  cost: "0.40",
+  cost_iva: "0.03",
+  net_to_liquidate: "11.54",
+  environment: "PROD",
+};
+/** La envoltura que Tilopay pone de verdad alrededor de las filas. */
+const consulta = (...filas: Record<string, unknown>[]) => ({
+  cuerpo: { type: "200", message: "ok", response: filas },
+});
+
 describe("la consulta, que es lo que aprueba", () => {
-  it("devuelve el estado Y el monto que dice Tilopay", async () => {
-    const e = espia([
-      LOGIN_OK,
-      { cuerpo: { code: "1", amount: "12.50", tpt: "T-9", commission: "0.45", iva_commission: "0.03" } },
-    ]);
+  it("lee la fila de dentro de `response`, que es un array", async () => {
+    const e = espia([LOGIN_OK, consulta(FILA)]);
     const r = await consultarDetalle(e.buscar, CRED, "BC-7");
 
     expect(r.ok).toBe(true);
@@ -398,31 +435,71 @@ describe("la consulta, que es lo que aprueba", () => {
       expect(r.datos.estado).toBe("aprobado");
       expect(r.datos.montoCents).toBe(1250);
       expect(r.datos.referencia).toBe("T-9");
-      // La comisión lleva su ITBMS sumado: 0.45 + 0.03 = 0.48.
-      expect(r.datos.comisionCents).toBe(48);
+    }
+  });
+
+  it("la comisión es lo que Tilopay SE QUEDA, no `commission + iva`", async () => {
+    // Su fila trae seis deducciones. Sumando solo las dos primeras salen 48
+    // centavos; lo que de verdad se queda son 12.50 − 11.54 = 96. Antes se
+    // recogía la mitad y cada asiento de liquidación quedaba descuadrado.
+    const e = espia([LOGIN_OK, consulta(FILA)]);
+    const r = await consultarDetalle(e.buscar, CRED, "BC-7");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.datos.comisionCents).toBe(96);
+  });
+
+  it("y sin el neto se cae a las dos comisiones, nunca a cero", async () => {
+    const { net_to_liquidate: _, ...sinNeto } = FILA;
+    const e = espia([LOGIN_OK, consulta(sinNeto)]);
+    const r = await consultarDetalle(e.buscar, CRED, "BC-7");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.datos.comisionCents).toBe(48);
+  });
+
+  it("dice EN QUÉ ENTORNO se cobró, que es lo único que delata el modo", async () => {
+    // En Tilopay el modo de prueba se cambia desde SU portal, no desde la
+    // integración: las credenciales son las mismas. Con la cuenta en Test, una
+    // tarjeta de prueba devuelve `code: "1"` y marcaríamos pagado un pedido
+    // por el que no entró un dólar. Este campo es la única forma de verlo.
+    const e = espia([LOGIN_OK, consulta({ ...FILA, environment: "Test" })]);
+    const r = await consultarDetalle(e.buscar, CRED, "BC-7");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.datos.entorno).toBe("Test");
+  });
+
+  it("con varios intentos manda el APROBADO, no el primero", async () => {
+    // Una orden puede traer un rechazo y después el bueno. Quedarse con el
+    // primero dejaría sin cobrar un pedido que sí se pagó.
+    const rechazado = { ...FILA, code: "99", id_tilopay: "T-8", net_to_liquidate: "0.00" };
+    const e = espia([LOGIN_OK, consulta(rechazado, FILA)]);
+    const r = await consultarDetalle(e.buscar, CRED, "BC-7");
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.datos.estado).toBe("aprobado");
+      expect(r.datos.referencia).toBe("T-9");
+    }
+  });
+
+  it("sin ninguna fila es PENDIENTE, no rechazado", async () => {
+    // Ni una fila quiere decir «Tilopay no sabe de esa orden todavía». Darlo
+    // por perdido cerraría un pago que puede estar en camino.
+    const e = espia([LOGIN_OK, consulta()]);
+    const r = await consultarDetalle(e.buscar, CRED, "BC-7");
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.datos.estado).toBe("pendiente");
+      expect(r.datos.montoCents).toBeNull();
     }
   });
 
   it("pregunta por NUESTRO número de orden, con la llave de integración", async () => {
-    const e = espia([LOGIN_OK, { cuerpo: { code: "1", amount: "12.50" } }]);
+    const e = espia([LOGIN_OK, consulta(FILA)]);
     await consultarDetalle(e.buscar, CRED, "BC-7");
 
     const c = e.llamadas[1];
     expect(c?.url).toBe(`${HOST}/api/v1/consult`);
     expect((c?.cuerpo as Record<string, unknown>).orderNumber).toBe("BC-7");
     expect((c?.cuerpo as Record<string, unknown>).key).toBe("llave-de-integracion");
-  });
-
-  it("mira dentro de la respuesta si viene envuelta", async () => {
-    for (const envoltura of ["data", "result", "transaction"]) {
-      const e = espia([LOGIN_OK, { cuerpo: { [envoltura]: { code: "1", amount: "20.00" } } }]);
-      const r = await consultarDetalle(e.buscar, CRED, "BC-7");
-      expect(r.ok, envoltura).toBe(true);
-      if (r.ok) {
-        expect(r.datos.estado, envoltura).toBe("aprobado");
-        expect(r.datos.montoCents, envoltura).toBe(2000);
-      }
-    }
   });
 
   /**
@@ -434,7 +511,7 @@ describe("la consulta, que es lo que aprueba", () => {
    * compara a decidir qué hacer, y lo que hace es no aprobar.
    */
   it("sin monto legible, montoCents es null y no cero", async () => {
-    const e = espia([LOGIN_OK, { cuerpo: { code: "1" } }]);
+    const e = espia([LOGIN_OK, consulta({ code: "1" })]);
     const r = await consultarDetalle(e.buscar, CRED, "BC-7");
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -444,7 +521,7 @@ describe("la consulta, que es lo que aprueba", () => {
   });
 
   it("sin comisión reportada, comisionCents es null: no se calcula a ojo", async () => {
-    const e = espia([LOGIN_OK, { cuerpo: { code: "1", amount: "12.50" } }]);
+    const e = espia([LOGIN_OK, consulta({ code: "1", amount: "12.50" })]);
     const r = await consultarDetalle(e.buscar, CRED, "BC-7");
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.datos.comisionCents).toBeNull();
@@ -472,7 +549,8 @@ describe("lo que este adaptador NO hace", () => {
       estado: "aprobado",
       montoCents: 1250,
       referencia: "T-9",
-      comisionCents: 48,
+      comisionCents: 96,
+      entorno: "PROD",
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.datos.estado).toBe("aprobado");

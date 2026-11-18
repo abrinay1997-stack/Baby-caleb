@@ -562,6 +562,43 @@ export async function crearPedido(
 // ---------------------------------------------------------------------------
 
 /**
+ * CUÁNTO SE APARTA LA MERCANCÍA DE UN PEDIDO QUE NACE DE LA WEB.
+ *
+ * Es otro reloj que el de `reglasDelPedido`, y por eso está aparte. Un pedido
+ * que toma una persona por teléfono puede no vencer: hay alguien responsable
+ * de él. Uno que nace de un botón público, no — si no vence, cada clienta que
+ * toca «pagar» y no termina retira mercancía de la venta **para siempre**.
+ *
+ * Eso no es hipotético: así estaba. `reglasDelPedido` saca el plazo de
+ * `reserva_horas_comprobante`, que estaba sin decidir, así que los pedidos de
+ * la web nacían con `vence_en = NULL`; y el cron que libera las reservas busca
+ * `WHERE vence_en IS NOT NULL`, de modo que no soltaba ninguno, nunca. La
+ * pantalla de «reservas vencidas» decía 0 porque cuenta con la misma
+ * condición: estructuralmente 0, pasara lo que pasara.
+ *
+ * Y si la clave está PENDIENTE esto **se niega**, en vez de apartar sin reloj.
+ * Dejar de vender hasta que alguien ponga el número es malo; vender mientras
+ * el inventario se vacía solo y en silencio es peor, y no se nota hasta que la
+ * tienda dice «agotado» con la mercancía en la bodega.
+ */
+export async function minutosDeReservaEnLinea(
+  ctx: ContextoDeLectura,
+): Promise<Resultado<number>> {
+  const r = await leerVigentes(ctx);
+  if (!r.ok) return r;
+  const a = r.datos.ajustes.find((x) => x.clave === "reserva_minutos_pago_en_linea");
+  if (a === undefined || a.pendiente || typeof a.valor !== "number") {
+    return fallo(
+      "entrada_invalida",
+      "falta decidir cuántos minutos se aparta un pedido mientras la clienta paga en línea. " +
+        "Está en Configuración › Ajustes, en «Cuánto se aparta un pedido mientras la clienta paga en línea». " +
+        "Sin ese número la web no puede cobrar: un pedido sin plazo deja la mercancía apartada para siempre.",
+    );
+  }
+  return ok(a.valor);
+}
+
+/**
  * Las reglas que `crearPedido` exige RESUELTAS.
  *
  * Esa función se niega a inventar ninguna —«aquí no se inventa ninguno», dice

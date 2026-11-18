@@ -1,7 +1,7 @@
 import { fallo, ok, type Resultado } from "../contrato/resultado";
 import { iniciarCobro } from "../db/cobros-en-linea";
 import { encontrarOCrear } from "../db/clientes";
-import { crearPedido, reglasDelPedido } from "../db/pedidos";
+import { crearPedido, minutosDeReservaEnLinea, reglasDelPedido } from "../db/pedidos";
 import { abrirCredenciales } from "../db/pasarelas";
 import { credencialesYappy, yappy } from "./yappy";
 import { DOMINIO_DECLARADO } from "./recibir-aviso";
@@ -182,6 +182,8 @@ export async function cobrarCarrito(
 
   // ---- 2 · El pedido, con los precios del SERVIDOR -------------------------
   const reglas = await reglasDelPedido({ db: ctx.db, ahora: ctx.ahora });
+  const minutos = await minutosDeReservaEnLinea({ db: ctx.db, ahora: ctx.ahora });
+  if (!minutos.ok) return minutos;
   if (!reglas.ok) return reglas;
 
   const pedido = await crearPedido(
@@ -190,7 +192,14 @@ export async function cobrarCarrito(
       ahora: ctx.ahora,
       actor: "web: checkout",
       abonoMinimoCents: reglas.datos.abonoMinimoCents,
-      minutosParaAbonar: reglas.datos.minutosParaAbonar,
+      /**
+       * El reloj de la WEB, no el del teléfono.
+       *
+       * `reglasDelPedido` da el plazo de un pedido que toma una persona, que
+       * puede no vencer. Este nace de un botón público y tiene que vencer
+       * siempre: si no, cada carrito abandonado se queda con la caja.
+       */
+      minutosParaAbonar: minutos.datos,
     },
     {
       idempotencia: carrito.idempotencia,
