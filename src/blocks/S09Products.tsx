@@ -12,7 +12,6 @@ import {
   productosDeLaTiendaDelSistema,
 } from '../hooks/useCatalogo';
 import { fotoPorCodigos } from '../components/FotoDeProducto';
-import { whatsappCon } from '../data/contacto';
 import {
   SIN_FILTROS,
   articulosDeLaTienda,
@@ -227,17 +226,6 @@ export default function S09Products() {
           )}
         </>
       )}
-
-      <div className="mt-10 text-center">
-        <a
-          href={whatsappCon('Hola Baby Caleb, tengo una consulta sobre el catálogo')}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={buttonVariants({ variant: 'outline' })}
-        >
-          Consultar por WhatsApp
-        </a>
-      </div>
     </Section>
   );
 }

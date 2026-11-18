@@ -49,16 +49,19 @@ export default function S13Tips() {
         ))}
       </div>
 
+      {/* Aquí había un botón de WhatsApp con el celular ESCRITO A MANO
+          —`wa.me/507…`—, que era justo el séptimo sitio que `data/contacto.ts`
+          existe para evitar: el día que cambie el número, ese botón sigue
+          mandando a un teléfono que ya no contesta sin que nada falle.
+
+          Se fue con los demás botones de WhatsApp (18-nov-2026). La pregunta
+          se queda, porque es buena, y la contesta el asistente del chat, que
+          está en todas las pantallas y sabe del negocio. */}
       <div className="mt-16 text-center">
-        <p className="text-muted mb-4">¿Tienes una duda que no está aquí?</p>
-        <a
-          href="https://wa.me/50767575065"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center bg-accent text-accent-fg px-8 py-4 rounded-pill font-bold hover:opacity-90 transition-opacity shadow-glow"
-        >
-          Pregúntanos por WhatsApp
-        </a>
+        <p className="text-muted">
+          ¿Tienes una duda que no está aquí? Pregúntale al asistente del chat,
+          abajo a la derecha: contesta al momento.
+        </p>
       </div>
     </Section>
   );

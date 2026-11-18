@@ -5,7 +5,6 @@ import { Button, buttonVariants } from '../components/ui/Button';
 import { useCatalogo, dolares, type VariantePublica } from '../hooks/useCatalogo';
 import { useCarrito } from '../carrito/useCarrito';
 import { MAXIMO_POR_LINEA } from '../carrito/carrito';
-import { whatsappCon } from '../data/contacto';
 
 /**
  * El título y la descripción, pasados a mano.
@@ -130,25 +129,6 @@ export default function Carrito() {
   );
   const hayAgotados = conPrecio.some((l) => l.variante?.disponibilidad === 'agotado');
 
-  /**
-   * El mensaje: códigos, cantidades y nombres. Sin precios, a propósito.
-   *
-   * El código va entre paréntesis porque es lo que Yarielis busca en el panel;
-   * el nombre va para que la clienta reconozca lo que pidió al releer su
-   * propio mensaje.
-   */
-  const mensaje = [
-    'Hola, quiero hacer este pedido:',
-    '',
-    ...lineas.map((l) => {
-      const nombre = l.variante?.nombre ?? 'Producto';
-      const talla = l.variante?.talla === null ? '' : ` ${l.variante?.talla ?? ''}`;
-      return `• ${l.cantidad} × ${nombre}${talla} (${l.codigo})`;
-    }),
-    '',
-    'Quedo pendiente de la cotización con el envío. Gracias.',
-  ].join('\n');
-
   if (carrito.lineas.length === 0) {
     return (
       <main id="main-content" className="min-h-dvh pt-32 md:pt-24">
@@ -272,17 +252,14 @@ export default function Carrito() {
           <Link to="/pago" className={buttonVariants({ size: 'lg' })}>
             Continuar al pago
           </Link>
-          {/* El camino de siempre, en segundo plano pero entero: es el que
-              funciona si Yappy está caído o si la clienta quiere que una
-              persona le cotice. */}
-          <a
-            href={whatsappCon(mensaje)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={buttonVariants({ variant: 'outline', size: 'lg' })}
-          >
-            O pedir por WhatsApp
-          </a>
+          {/* Aquí estaba «O pedir por WhatsApp». Se fue por decisión del
+              dueño el 18-nov-2026: el pago se hace en la web y WhatsApp deja
+              de ser una salida que compite con el botón de al lado.
+
+              Si Yappy está caído, lo que ve la clienta es el aviso de la
+              pantalla de pago, que lo dice con nombre y apellido; y WhatsApp
+              sigue a un toque en el pie y en el chat si lo pide. Lo que ya no
+              hay es un botón que se la lleve de la tienda antes de intentarlo. */}
           <Button variant="ghost" onClick={vaciar} className="sm:ml-auto">
             Vaciar el carrito
           </Button>

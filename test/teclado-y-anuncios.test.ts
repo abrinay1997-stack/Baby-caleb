@@ -93,13 +93,22 @@ describe('el chat se puede usar con teclado y se oye', () => {
     expect(chat).toMatch(/id="chat-mensaje"/);
   });
 
-  it('el número de WhatsApp sale de su único dueño', () => {
-    // Estaba escrito a mano aquí —el séptimo sitio, justo el que
-    // `data/contacto.ts` existe para evitar.
-    expect(chat).toContain('WHATSAPP_URL');
+  it('el chat no ofrece WhatsApp sin que se lo pidan', () => {
+    // Tenía una barra fija encima del campo de escribir: «¿Prefieres
+    // WhatsApp?» con el enlace al lado. Se fue el 18-nov-2026 con los demás
+    // botones de WhatsApp — empujaba fuera del chat a quien ya había decidido
+    // usarlo. El asistente lo sigue dando cuando se lo PIDEN: eso lo decide su
+    // respuesta, que viene del CRM, no esta pantalla.
+    expect(chat).not.toMatch(/Prefieres WhatsApp\?<\/span>/);
+    expect(chat).not.toMatch(/href=\{WHATSAPP_URL\}/);
+  });
+
+  it('y nadie ha vuelto a escribir el celular a mano', () => {
+    // La lección de verdad, y sigue viva aunque el enlace ya no esté:
+    // `data/contacto.ts` es el único dueño del número.
     expect(
       /wa\.me\/\d/.test(chat),
-      'Volvió a haber un celular escrito a mano en el chat. Use WHATSAPP_URL.',
+      'Volvió a haber un celular escrito a mano en el chat. Use data/contacto.ts.',
     ).toBe(false);
   });
 });

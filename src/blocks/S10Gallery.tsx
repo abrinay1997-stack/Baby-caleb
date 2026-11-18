@@ -36,7 +36,7 @@ export default function S10Gallery() {
       <SectionHeader
         kicker="02 / Galería completa"
         title="Todas las presentaciones, con precio."
-        description="Cada variante disponible con foto y precio. Ordena por WhatsApp con un solo tap."
+        description="Cada variante disponible con foto y precio. Agrégala al carrito y paga en la web."
       />
 
       <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
