@@ -37,6 +37,15 @@ import type { VarianteParaFicha } from "../src/seo/producto";
 const SEGUNDOS = 60;
 
 export interface SistemaWebBinding {
+  /**
+   * El aviso de pago de Yappy. La web solo lo enruta: quien abre la clave del
+   * baúl, comprueba el dominio, verifica la firma y aplica el cobro es el
+   * sistema. Así la clave secreta nunca viaja al Worker expuesto a internet.
+   */
+  avisoDeYappy?(consulta: string): Promise<
+    | { ok: true; datos: { estado: string; mensaje: string } }
+    | { ok: false; codigo: string; mensaje: string }
+  >;
   catalogo(): Promise<
     | {
         ok: true;

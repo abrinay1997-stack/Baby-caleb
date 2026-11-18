@@ -39,6 +39,7 @@ export * from "./referencias";
 export * from "./proveedor";
 
 import { HERRAMIENTAS_DE_AJUSTES } from "./herramientas/ajustes";
+import { HERRAMIENTAS_DE_AVISOS } from "./herramientas/avisos-de-pago";
 import { HERRAMIENTAS_DE_CATALOGO } from "./herramientas/catalogo";
 import { HERRAMIENTAS_DE_CATALOGO_ESCRITURA } from "./herramientas/catalogo-escritura";
 import { HERRAMIENTAS_DE_CONTABILIDAD } from "./herramientas/contabilidad";
@@ -80,6 +81,7 @@ export function catalogo(): Registro {
     ...HERRAMIENTAS_DE_MAESTROS,
     ...HERRAMIENTAS_DE_PRECIOS_Y_STOCK,
     ...HERRAMIENTAS_DE_AJUSTES,
+  ...HERRAMIENTAS_DE_AVISOS,
     ...HERRAMIENTAS_DE_ENTREGAS,
     ...HERRAMIENTAS_DE_DEVOLUCIONES,
     ...HERRAMIENTAS_DE_MOTORIZADOS,

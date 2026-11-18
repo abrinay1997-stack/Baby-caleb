@@ -6,6 +6,7 @@ import { rutaCortaDeProducto, slugDeRuta } from "../src/seo/producto";
 import { PREFIJO, imagen } from "./imagenes";
 import { urlDelSitio } from "./sitio";
 import { quiereIndexarse, redireccionCanonica, seIndexa } from "./visibilidad";
+import { avisoDeYappy } from "./pago";
 
 /**
  * `babycaleb-web`: la misma web, servida desde Cloudflare.
@@ -81,6 +82,18 @@ export default {
     // del borde y ya trae las suyas propias.
     if (url.pathname === "/api/catalogo") {
       return await catalogo(peticion, env.SISTEMA);
+    }
+
+    /**
+     * El aviso de pago de Yappy. Entra por la web porque el sistema está
+     * detrás de Cloudflare Access, que contestaría un 302 de login antes de
+     * que el Worker corra — y Yappy no entiende un login.
+     *
+     * No pasa por `conCabeceras`: lo que contesta no es una página, es un
+     * código de estado que le dice a Yappy si reintentar.
+     */
+    if (url.pathname === "/api/pago/yappy") {
+      return await avisoDeYappy(peticion, env.SISTEMA);
     }
 
     if (url.pathname === "/api/salud") {
