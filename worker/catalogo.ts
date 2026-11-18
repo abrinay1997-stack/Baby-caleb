@@ -42,6 +42,14 @@ export interface SistemaWebBinding {
    * baúl, comprueba el dominio, verifica la firma y aplica el cobro es el
    * sistema. Así la clave secreta nunca viaja al Worker expuesto a internet.
    */
+  /**
+   * El carrito convertido en pedido con su cobro arrancado. La web solo
+   * enruta: el pedido, los precios y el cobro los hace el sistema.
+   */
+  cobrarCarrito?(carrito: unknown): Promise<
+    | { ok: true; datos: unknown }
+    | { ok: false; codigo: string; mensaje: string }
+  >;
   avisoDeYappy?(consulta: string): Promise<
     | { ok: true; datos: { estado: string; mensaje: string } }
     | { ok: false; codigo: string; mensaje: string }

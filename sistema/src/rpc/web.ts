@@ -5,7 +5,8 @@ import { type CatalogoPublico, catalogoPublico } from "./catalogo";
 import { zonasPublicas } from "./zonas";
 import type { ZonaPublica } from "./zonas";
 import { leerPublico } from "../db/archivos";
-import { recibirAvisoDeYappy, type Resuelto } from "../pagos/recibir-aviso";
+import { DOMINIO_DEL_BOTON, recibirAvisoDeYappy, type Resuelto } from "../pagos/recibir-aviso";
+import { cobrarCarrito, type CarritoACobrar, type ListoParaPagar } from "../pagos/cobrar-carrito";
 
 /**
  * Lo que la web puede pedirle al sistema (03-contratos §2).
@@ -98,6 +99,46 @@ export class SistemaWeb extends WorkerEntrypoint<Env> {
     const a = await leerPublico({ db: this.env.DB, r2: this.env.PRIVADO }, clave);
     if (a === null) return ok(null);
     return ok({ bytes: await new Response(a.cuerpo).arrayBuffer(), mime: a.mime });
+  }
+
+  /**
+   * El carrito de la web, convertido en un pedido que se puede pagar.
+   *
+   * Lo que entra son CÓDIGOS Y CANTIDADES. Ni un precio, ni un total, ni el
+   * costo del envío: todo eso lo pone el servidor leyendo la base. Un carrito
+   * manipulado desde las herramientas del navegador —diez segundos de trabajo—
+   * cambia lo que esa persona VE, no lo que se le cobra.
+   *
+   * Devuelve los tres valores del botón de Yappy y nada más. La clave secreta
+   * del comercio se queda aquí: hay una prueba que comprueba que no sale.
+   *
+   * **Decisión de MCP (CLAUDE.md · TRAMPAS §13):** la capacidad de «crear un
+   * pedido y cobrarlo» ya existe por MCP, repartida en `crear_pedido` y
+   * `registrar_cobro`, y con confirmación de una persona porque mueve dinero.
+   * Esto no es una capacidad nueva: es la misma, abierta a una clienta que no
+   * tiene a nadie al otro lado. Lo que sí entra con este cambio es
+   * `ver_avisos_de_pago`, que es la pregunta que la dueña va a hacer cuando
+   * una clienta diga que ya pagó.
+   */
+  async cobrarCarrito(carrito: CarritoACobrar): Promise<Resultado<ListoParaPagar>> {
+    if (carrito === null || typeof carrito !== "object") {
+      return fallo("entrada_invalida", "carrito inválido");
+    }
+    return await cobrarCarrito(
+      {
+        db: this.env.DB,
+        ahora: Date.now(),
+        llaveMaestra: this.env.PASARELAS_LLAVE_MAESTRA,
+        /*
+          La URL del aviso sale del SERVIDOR, nunca del navegador. Si viniera
+          de fuera, cualquiera podría pedir que Yappy mandara el aviso de SU
+          pago a una dirección suya — y entonces el pago nunca se aplicaría
+          aquí, o peor, se aplicaría donde esa persona quisiera.
+        */
+        urlDelAviso: `https://${DOMINIO_DEL_BOTON}/api/pago/yappy`,
+      },
+      carrito,
+    );
   }
 
   /**
