@@ -1,4 +1,5 @@
 import { fallo, ok, type Resultado } from "../contrato/resultado";
+import { aTextoDeDinero, deTextoDeDinero } from "./importes";
 import type { Modo } from "../dominio/pasarelas";
 import type { AvisoVerificado, Buscador, CobroCreado, OrdenDeCobro, PaymentProvider } from "./proveedor";
 
@@ -87,64 +88,15 @@ export function credencialesTilopay(
 // ---------------------------------------------------------------------------
 
 /**
- * Centavos enteros → el texto que espera Tilopay («12.50»).
+ * Los importes, del módulo común.
  *
- * El sistema guarda centavos enteros a propósito —un `number` con decimales
- * suma mal el dinero— y las pasarelas hablan en texto con dos decimales. La
- * conversión vive en UN sitio, con su prueba, en los dos sentidos.
+ * Se re-exportan con el nombre que ya usaban las pruebas de este adaptador.
+ * La implementación vive en `importes.ts` porque Yappy pide exactamente lo
+ * mismo, y porque esta conversión ya tuvo un fallo que costaba dinero: dos
+ * copias son dos sitios donde el arreglo puede aplicarse a una y no a la otra.
  */
-export function aTextoTilopay(centavos: number): string {
-  const signo = centavos < 0 ? "-" : "";
-  const abs = Math.abs(Math.trunc(centavos));
-  return `${signo}${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
-}
-
-/**
- * El texto que devuelve Tilopay → centavos enteros.
- *
- * Devuelve `null` en vez de `NaN` o un redondeo callado: un importe que no se
- * entiende tiene que PARAR la comparación, no convertirse en un número que
- * casualmente no cuadre. `Number("12.5")` da 12.5 y `12.5 * 100` da 1250.0000000000002
- * en coma flotante; por eso se parte el texto en vez de multiplicar.
- */
-export function deTextoTilopay(texto: unknown): number | null {
-  if (typeof texto === "number" && Number.isFinite(texto)) {
-    // Algunas respuestas traen número. Se pasa por su texto para no heredar el
-    // error de la coma flotante.
-    return deTextoTilopay(texto.toFixed(2));
-  }
-  if (typeof texto !== "string") return null;
-  const limpio = texto.trim();
-
-  /**
-   * LA COMA SOLO SE ACEPTA COMO SEPARADOR DE MILES, Y SE COMPRUEBA.
-   *
-   * Esto empezó siendo `.replace(/,/g, "")`, que es lo que uno escribe sin
-   * pensar, y con eso `"12,50"` daba 125000 centavos: **mil doscientos
-   * cincuenta dólares en vez de doce con cincuenta**, cien veces más.
-   *
-   * No es una rareza teórica: la coma decimal es lo normal en media
-   * Latinoamérica, y basta con que una respuesta de Tilopay venga así. Y el
-   * error cae del lado que cuesta dinero: con nuestro pedido en $1250.00 y su
-   * respuesta «12,50», los dos números coincidirían y se aprobaría un pedido
-   * de mil doscientos cincuenta por doce dólares.
-   *
-   * Un importe ambiguo no se adivina: se rechaza. Así que la coma solo pasa en
-   * grupos de tres (`1,250.00`); `12,50` no es un grupo de tres y sale `null`,
-   * que PARA la comparación en vez de resolverla mal.
-   */
-  const conMiles = /^-?\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?$/;
-  const sinMiles = /^-?\d+(?:\.\d{1,2})?$/;
-  if (!sinMiles.test(limpio) && !conMiles.test(limpio)) return null;
-
-  const m = /^(-?)(\d[\d,]*?)(?:\.(\d{1,2}))?$/.exec(limpio);
-  if (m === null) return null;
-  const enteros = Number((m[2] ?? "").replace(/,/g, ""));
-  const decimales = Number((m[3] ?? "").padEnd(2, "0"));
-  if (!Number.isSafeInteger(enteros) || !Number.isSafeInteger(decimales)) return null;
-  const total = enteros * 100 + decimales;
-  return m[1] === "-" ? -total : total;
-}
+export const aTextoTilopay = aTextoDeDinero;
+export const deTextoTilopay = deTextoDeDinero;
 
 // ---------------------------------------------------------------------------
 // Los estados

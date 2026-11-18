@@ -19,6 +19,8 @@
 
 const codificador = new TextEncoder();
 
+import { igualesSinAtajo } from "./comparar";
+
 export type SujetoSesion = "motorizado" | "cliente";
 
 /** Horas que vale cada tipo de sesión (07-seguridad.md §3). */
@@ -46,13 +48,6 @@ function aBase64Url(bytes: Uint8Array): string {
   let binario = "";
   for (const b of bytes) binario += String.fromCharCode(b);
   return btoa(binario).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function igualesSinAtajo(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diferencia = 0;
-  for (let i = 0; i < a.length; i++) diferencia |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diferencia === 0;
 }
 
 async function firmar(secreto: string, mensaje: string): Promise<string> {

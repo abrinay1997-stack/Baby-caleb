@@ -65,6 +65,24 @@ export interface PaymentProvider<Credenciales, Aviso, Estado extends string = st
   /** Pregunta a la pasarela cómo quedó una orden, para el conciliador. */
   consultar(cred: Credenciales, ordenId: string): Promise<Resultado<{ estado: Estado }>>;
   refundPayment(cred: Credenciales, referencia: string, montoCents: number): Promise<Resultado<never>>;
+  /**
+   * Cómo se llama NUESTRA orden hacia ESTA pasarela, si tiene reglas propias.
+   *
+   * Existe por una restricción de Yappy que rompe en producción y no en
+   * desarrollo: su `orderId` es alfanumérico de 1 a 15 caracteres, y nuestra
+   * referencia interna es `BC-000014-01M7P2J6VM5TXY4XS31CEVD4GY` —treinta y
+   * cinco, con guiones—. Yappy la rechaza con un error que no dice que el
+   * problema sea el largo, así que el cobro falla y nadie sabe por qué.
+   *
+   * La primera versión generaba la referencia en `iniciarCobro`, igual para
+   * todas. Eso obligaba a quien escribe esa función a conocer los límites de
+   * cada pasarela, que es justo lo que un adaptador existe para encapsular. Lo
+   * encontró la prueba de punta a punta del aviso de Yappy.
+   *
+   * Opcional: la pasarela que no tenga reglas —Tilopay acepta la larga— no lo
+   * implementa y se queda con la de siempre, que es más legible.
+   */
+  referenciaDeOrden?(numeroDePedido: string): string;
 }
 
 /** El `fetch` que usa un adaptador. Se inyecta para poder probarlo sin red. */

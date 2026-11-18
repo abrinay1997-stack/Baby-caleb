@@ -5,6 +5,7 @@ import { type CatalogoPublico, catalogoPublico } from "./catalogo";
 import { zonasPublicas } from "./zonas";
 import type { ZonaPublica } from "./zonas";
 import { leerPublico } from "../db/archivos";
+import { recibirAvisoDeYappy, type Resuelto } from "../pagos/recibir-aviso";
 
 /**
  * Lo que la web puede pedirle al sistema (03-contratos §2).
@@ -97,6 +98,43 @@ export class SistemaWeb extends WorkerEntrypoint<Env> {
     const a = await leerPublico({ db: this.env.DB, r2: this.env.PRIVADO }, clave);
     if (a === null) return ok(null);
     return ok({ bytes: await new Response(a.cuerpo).arrayBuffer(), mime: a.mime });
+  }
+
+  /**
+   * El aviso de pago de Yappy (el IPN), que llega POR LA WEB.
+   *
+   * Tiene que entrar por ahí y no por aquí directamente, y el motivo es de
+   * infraestructura: el Worker del sistema está ENTERO detrás de Cloudflare
+   * Access, que contesta un 302 de login antes de que el Worker corra. Yappy
+   * recibiría ese 302, no entendería nada, y el pago de la clienta no se
+   * aplicaría nunca. La web sí es pública, así que recibe la URL y la pasa por
+   * este binding — que no sale a internet.
+   *
+   * Lo que entra es la cadena de consulta TAL CUAL. No se confía en nada de
+   * ella: `recibirAvisoDeYappy` abre la clave del baúl, comprueba que el
+   * dominio es el nuestro, verifica la firma en tiempo constante, y solo
+   * entonces aplica. El aviso es un GET abierto que cualquiera puede llamar.
+   *
+   * **Decisión de MCP (CLAUDE.md · TRAMPAS §13):** esto no es una capacidad
+   * que la dueña vaya a querer por una herramienta — nadie «recibe un aviso de
+   * pago» a mano; lo manda Yappy. Lo que sí hace falta por MCP, y entra en el
+   * mismo cambio, es poder PREGUNTAR por esos avisos: cuando una clienta diga
+   * «ya pagué» y el sistema diga que no, la pregunta es «¿llegó el aviso de
+   * Yappy de este pedido, y qué decía?». Eso es `ver_avisos_de_cobro`.
+   */
+  async avisoDeYappy(consulta: string): Promise<Resultado<Resuelto>> {
+    if (typeof consulta !== "string" || consulta.length > 2048) {
+      return fallo("entrada_invalida", "aviso inválido");
+    }
+    return await recibirAvisoDeYappy(
+      {
+        db: this.env.DB,
+        ahora: Date.now(),
+        actor: "yappy: aviso de pago",
+        llaveMaestra: this.env.PASARELAS_LLAVE_MAESTRA,
+      },
+      consulta,
+    );
   }
 
   async salud(): Promise<Resultado<{ sano: boolean; version: string }>> {
