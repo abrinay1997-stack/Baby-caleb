@@ -4,17 +4,16 @@ import Seo from '../components/Seo';
 import { Section } from '../components/ui/Section';
 import { buttonVariants } from '../components/ui/Button';
 import { useCatalogo } from '../hooks/useCatalogo';
-import {
-  jsonLdProducto,
-  metaDeProducto,
-  precioLegible,
-  rangoDePeso,
-} from '../seo/producto';
+import { jsonLdProducto, metaDeProducto, rangoDePeso } from '../seo/producto';
 import { getContentData } from '../data/content';
 import { useCarrito } from '../carrito/useCarrito';
 import { CompartirProducto } from '../components/CompartirProducto'
 import { PedirPorWhatsapp } from '../components/PedirPorWhatsapp'
 import { FotoDeProducto, fotoDeVariante } from '../components/FotoDeProducto'
+import { PrecioDeLaFicha } from '../components/PrecioDeLaFicha'
+import { BarraDeCompra } from '../components/BarraDeCompra'
+import { AcordeonesDeFicha, seccionesDeLaFicha } from '../components/AcordeonesDeFicha'
+import { productosDeLaTiendaDelSistema } from '../hooks/useCatalogo'
 
 /** Cuánto se queda el «Agregado» antes de volver a su texto normal. */
 const AVISO_MS = 2000;
@@ -31,6 +30,26 @@ const AVISO_MS = 2000;
  * No hay diseño nuevo: usa `Section` y los botones que ya existen. Una ficha
  * de producto que se vea distinta al resto del sitio no es una mejora, es una
  * página que parece de otra tienda.
+ *
+ * ## Cómo está ordenada, y por qué
+ *
+ * El dueño pidió tres cosas para esta pantalla y las tres viven en un sitio
+ * cada una, no repartidas por el JSX:
+ *
+ *  1. **El precio arriba, grande, pegado a la foto** — `PrecioDeLaFicha`. Era
+ *     la cuarta fila de un `<dl>`, a 807 px del inicio en un teléfono de
+ *     844 px de alto: el último centímetro de la pantalla, y eso sin contar la
+ *     barra del navegador. Ahora encabeza la columna de datos, que en el
+ *     teléfono es lo que va justo debajo de la foto.
+ *  2. **El botón de comprar, del color más llamativo y fijo abajo** —
+ *     `BarraDeCompra`, pegada con `sticky` para que reserve su propio hueco.
+ *  3. **La descripción larga, abajo y en acordeones** — `AcordeonesDeFicha`,
+ *     con `<details>` de verdad.
+ *
+ * Las otras dos que pidió —un precio tachado con su porcentaje y las cuotas—
+ * **no están, y no es un olvido**: no hay dato que las respalde. El porqué
+ * largo está en `PrecioDeLaFicha.tsx`, y que no se cuelen inventadas lo
+ * vigila `test/sin-rebajas-inventadas.test.ts`.
  */
 export default function FichaProducto() {
   const { slug } = useParams<{ slug: string }>();
@@ -92,6 +111,29 @@ export default function FichaProducto() {
   const agotado = variante.disponibilidad === 'agotado';
   const url = `${window.location.origin}/productos/${variante.slug}`;
 
+  // Agregar al carrito se hace desde DOS sitios —la columna y la barra de
+  // abajo— y el aviso de «Agregado» es uno solo. La acción vive aquí para que
+  // los dos botones hagan exactamente lo mismo; escrita dos veces, un día uno
+  // de ellos se olvidaría de avisar.
+  const agregarAlCarrito = () => {
+    agregar(variante.codigo);
+    setAgregado(true);
+  };
+
+  // La ficha de `content.json` a la que pertenece esta presentación, buscada
+  // por el CÓDIGO y no por el `id`: nadie garantiza que el `id` del archivo
+  // coincida con el slug del sistema. Es de donde sale la descripción cuando
+  // el sistema no la manda — la misma regla que la foto.
+  const delArchivo = getContentData().products.find((p) =>
+    p.variants.some((v) => v.codigo === variante.codigo),
+  );
+
+  const secciones = seccionesDeLaFicha(
+    variante,
+    productosDeLaTiendaDelSistema(),
+    delArchivo?.description,
+  );
+
   return (
     <main id="main-content" className="pt-32 md:pt-24 min-h-dvh flex flex-col">
       <Seo
@@ -139,6 +181,15 @@ export default function FichaProducto() {
           )}
 
           <div className="flex flex-col gap-6">
+            {/* PRIMERO el precio, y no por capricho de orden: en el teléfono
+                esta columna va DEBAJO de la foto, así que encabezarla es la
+                única forma de quedar «pegado a la foto». El nombre va justo
+                después — a esa altura la foto ya dice qué es. */}
+            <PrecioDeLaFicha
+              precioCents={variante.precioCents}
+              disponibilidad={variante.disponibilidad}
+            />
+
             {/* Sin traducir: los nombres llevan marca y término técnico
                 —«Nateen», «Dany Baby», «pants»— y «pants» traducido a
                 «pantalones» describiría otra cosa. */}
@@ -163,23 +214,7 @@ export default function FichaProducto() {
                 <dt className="text-muted min-w-28">Por caja</dt>
                 <dd className="text-fg font-bold">{variante.unidadesPorCaja} unidades</dd>
               </div>
-              <div className="flex gap-2">
-                <dt className="text-muted min-w-28">Precio</dt>
-                <dd className="text-accent-strong font-bold text-lg">
-                  {precioLegible(variante.precioCents)}
-                </dd>
-              </div>
             </dl>
-
-            {/* Se dice si hay o no hay. NUNCA cuántas quedan: eso es del
-                negocio, y el sistema tampoco lo manda hasta aquí. */}
-            <p className={agotado ? 'text-muted text-sm' : 'text-sm text-fg'}>
-              {agotado
-                ? 'Ahora mismo está agotado. Escríbenos y te avisamos cuando entre.'
-                : variante.disponibilidad === 'pocas'
-                  ? 'Quedan pocas cajas.'
-                  : 'Disponible para entrega.'}
-            </p>
 
             <div className="flex flex-col gap-3 sm:flex-row">
               {/* Sale o no sale según lo que diga el panel: el ajuste
@@ -194,10 +229,7 @@ export default function FichaProducto() {
               {agotado ? null : (
                 <button
                   type="button"
-                  onClick={() => {
-                    agregar(variante.codigo);
-                    setAgregado(true);
-                  }}
+                  onClick={agregarAlCarrito}
                   className={buttonVariants({ variant: 'outline' })}
                 >
                   {agregado ? 'Agregado ✓' : 'Agregar al carrito'}
@@ -218,7 +250,25 @@ export default function FichaProducto() {
             </p>
           </div>
         </div>
+
+        {/* El texto largo, abajo del todo y plegado: lo que decide la compra es
+            la foto, el precio y el botón, y una parrafada en medio los empuja
+            fuera de la pantalla. Sin descripción no sale nada — no hay bloque
+            vacío que abrir. */}
+        <AcordeonesDeFicha secciones={secciones} />
       </Section>
+
+      {/* Agotado no lleva barra: no hay nada que comprar, y un botón que no se
+          puede usar pegado abajo todo el rato es ruido. La columna de arriba
+          ya dice qué pasa y ofrece que avisemos por WhatsApp. */}
+      {agotado ? null : (
+        <BarraDeCompra
+          nombre={variante.nombre}
+          precioCents={variante.precioCents}
+          agregado={agregado}
+          onAgregar={agregarAlCarrito}
+        />
+      )}
     </main>
   );
 }
