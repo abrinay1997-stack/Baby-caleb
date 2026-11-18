@@ -81,8 +81,15 @@ export const RUTAS: Record<string, MetaDeRuta> = {
   },
 };
 
-/** Rutas que existen pero NO se indexan: son de una persona, no del público. */
-export const SIN_INDEXAR = ["/carrito", "/mi-cuenta", "/pedido", "/seguimiento"];
+/**
+ * Rutas que existen pero NO se indexan: son de una persona, no del público.
+ *
+ * `/pago` cubre también `/pago/resultado/<numero>`, porque `seIndexa` mira
+ * tanto el camino exacto como lo que empieza por él y una barra. Una página de
+ * resultado de pago en Google sería, además de inútil, el número de pedido de
+ * alguien suelto en un buscador.
+ */
+export const SIN_INDEXAR = ["/carrito", "/pago", "/mi-cuenta", "/pedido", "/seguimiento"];
 
 export function metaDe(camino: string): MetaDeRuta | null {
   // Sin la barra final: «/faq/» y «/faq» son la misma página.
