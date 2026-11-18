@@ -328,13 +328,21 @@ export function yappy(
       // El cuerpo NO se incluye en el mensaje: una respuesta de error puede
       // devolver lo que se le mandó, el ID de comercio incluido, y ese mensaje
       // acaba en una pantalla o en un registro.
+      //
+      // El DOMINIO sí se dice, y a propósito. No es secreto —es la dirección
+      // pública del sitio— y es el campo que más veces va a estar mal: tiene
+      // que ser letra por letra el que se escribió en Yappy Comercial, barra
+      // final incluida. La primera vez que esto falló en producción, el
+      // mensaje decía solo «Illegal Arguments» y hubo que deducir cuál de los
+      // dos campos era. Diciéndolo, quien lo lee compara con su panel y ya.
       const estado = (j.status ?? {}) as Record<string, unknown>;
       const dice = comoTexto(estado.description);
+      const conQue = `Le mandamos el dominio «${cred.domain}»: tiene que ser letra por letra el de Yappy Comercial.`;
       return fallo(
         "pasarela_no_disponible",
         dice === null
-          ? "Yappy no validó el comercio. Revise el ID de comercio y el dominio en Pasarelas."
-          : `Yappy no validó el comercio: ${dice}`,
+          ? `Yappy no validó el comercio. ${conQue}`
+          : `Yappy no validó el comercio: ${dice}. ${conQue}`,
       );
     }
     return ok(t);

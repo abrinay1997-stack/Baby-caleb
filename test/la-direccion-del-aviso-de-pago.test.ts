@@ -87,27 +87,57 @@ describe('el dominio declarado y la dirección del aviso son dos cosas', () => {
     return m?.[1] ?? '';
   };
 
-  it('el declarado lleva www, que es lo que ella puso en Yappy', () => {
-    expect(valor('DOMINIO_DECLARADO')).toBe('www.babycaleb.com');
+  it('el declarado es la URL ENTERA que el dueño escribió en Yappy', () => {
+    // Con `https://` y con la barra final. Lo que vale es lo que él escribió,
+    // no lo que parezca más limpio: quitarle cualquiera de las dos cosas es
+    // volver al «Illegal Arguments» del 18-nov-2026.
+    expect(valor('DOMINIO_DECLARADO')).toBe('https://babycaleb.com/');
   });
 
-  it('la dirección del aviso es la que contesta sin redirigir', () => {
-    expect(valor('DOMINIO_DEL_AVISO')).toBe('babycaleb.com');
+  it('la dirección del aviso es un HOST pelado, sin esquema ni barra', () => {
+    // Se le pega delante `https://` y detrás `/api/pago/yappy`. Si aquí
+    // entrara una URL entera —como la de arriba— saldría
+    // `https://https://babycaleb.com//api/pago/yappy`, y Yappy llamaría a una
+    // dirección que no existe. Nadie se enteraría hasta el primer pago.
+    const aviso = valor('DOMINIO_DEL_AVISO');
+    expect(aviso).toBe('babycaleb.com');
+    expect(aviso).not.toContain('://');
+    expect(aviso).not.toContain('/');
   });
 
-  it('y las dos están en la lista de las nuestras', () => {
-    // La lista es la que se acepta de vuelta. Una dirección del aviso que no
-    // estuviera ahí sería una que nos llamaríamos a nosotros mismos y luego
-    // rechazaríamos.
-    const m = /NUESTROS_DOMINIOS = \[([^\]]+)\]/.exec(avisos);
+  it('y por eso los dos NO son el mismo valor', () => {
+    expect(valor('DOMINIO_DECLARADO')).not.toBe(valor('DOMINIO_DEL_AVISO'));
+  });
+
+  it('y la lista de vuelta cubre las seis formas de escribir el sitio', () => {
+    // Yappy no documenta si devuelve el dominio tal como se declaró o
+    // normalizado. Averiguarlo a base de pagos perdidos sale caro, así que se
+    // aceptan todas las maneras de escribir NUESTRO sitio — y solo las
+    // nuestras: lo que autoriza de verdad sigue siendo la firma.
+    const m = /NUESTROS_DOMINIOS = \[([\s\S]*?)\]/.exec(avisos);
     expect(m).not.toBeNull();
     const lista = m?.[1] ?? '';
     expect(lista).toContain('DOMINIO_DECLARADO');
-    expect(lista).toContain('"babycaleb.com"');
+    for (const forma of [
+      '"https://babycaleb.com"',
+      '"https://www.babycaleb.com"',
+      '"https://www.babycaleb.com/"',
+      '"babycaleb.com"',
+      '"www.babycaleb.com"',
+    ]) {
+      expect(lista, `falta ${forma}`).toContain(forma);
+    }
   });
 
   it('el declarado va PRIMERO: es el que se manda y el más probable', () => {
     const m = /NUESTROS_DOMINIOS = \[\s*([A-Z_]+)/.exec(avisos);
     expect(m?.[1]).toBe('DOMINIO_DECLARADO');
+  });
+
+  it('y el fallo de validación dice QUÉ dominio se mandó', () => {
+    // «Illegal Arguments» a secas obligó a deducir cuál de los dos campos
+    // estaba mal. Con el dominio delante, quien lo lee compara con su panel.
+    const adaptador = leer('sistema/src/pagos/yappy.ts');
+    expect(adaptador).toContain('Le mandamos el dominio «${cred.domain}»');
   });
 });
