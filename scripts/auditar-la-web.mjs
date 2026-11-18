@@ -59,8 +59,45 @@ const raiz = join(fileURLToPath(new URL('../dist', import.meta.url)));
 const tipos = { '.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json',
   '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml',
   '.woff2':'font/woff2','.ico':'image/x-icon','.txt':'text/plain','.xml':'application/xml','.avif':'image/avif' };
+/**
+ * El catálogo que ve la auditoría, y por qué no vale el de la copia del build.
+ *
+ * `dist` es la web sola: `/api/catalogo` lo sirve el Worker, que aquí no está.
+ * Sin esta respuesta el `fetch` se cae, la tienda se queda con
+ * `src/data/catalogo.respaldo.json` —que se generó con **las doce variantes en
+ * `agotado`**— y entonces no se pinta ni el botón de agregar al carrito ni la
+ * barra de comprar: la pantalla con la que se vende se mide a medias y el
+ * informe dice «sin fallas» de cosas que no estaban en la página
+ * (`docs/TRAMPAS.md` §4).
+ *
+ * Así que se sirve el MISMO sobre que manda el Worker, con los precios de la
+ * copia del build —ninguna cifra inventada— y las tres disponibilidades, que
+ * son tres caminos distintos de la ficha: `disponible` saca el botón y la
+ * barra, `pocas` cambia la frase y `agotado` los quita.
+ */
+const CATALOGO_DE_PRUEBA = await (async () => {
+  const copia = JSON.parse(
+    await readFile(new URL('../src/data/catalogo.respaldo.json', import.meta.url), 'utf8'),
+  );
+  const ESTADOS = { 'NAT-M': 'disponible', 'NAT-S': 'pocas' };
+  return JSON.stringify({
+    variantes: (copia.variantes ?? []).map((v) => ({
+      ...v,
+      disponibilidad: ESTADOS[v.codigo] ?? v.disponibilidad,
+    })),
+    productos: [],
+    whatsapp: { numero: null },
+    desdeRespaldo: false,
+  });
+})();
+
 const servidor = createServer(async (req, res) => {
   let ruta = decodeURIComponent((req.url || '/').split('?')[0]);
+  if (ruta === '/api/catalogo') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(CATALOGO_DE_PRUEBA);
+    return;
+  }
   let archivo = join(raiz, ruta);
   try { if ((await stat(archivo)).isDirectory()) archivo = join(archivo, 'index.html'); }
   catch { archivo = join(raiz, 'index.html'); }
@@ -197,6 +234,96 @@ const auditar = () => {
     }
   }
   return fallos;
+};
+
+/**
+ * La barra de comprar de la ficha: que no tape, y que no la tapen.
+ *
+ * POR QUÉ NO LA MIDE LA REGLA DEL PANEL. El §7f y el §7d ya existen en
+ * `medir-el-panel.mjs`, pero buscan `nav.solo-telefono`, `main.contenido` y
+ * `.burbuja-caleb`: los nombres del PANEL. En la tienda no hay ninguno de los
+ * tres, así que las dos reglas pasaban por aquí sin mirar nada y decían «sin
+ * fallas» — que es justo lo que `docs/TRAMPAS.md` §4 llama no decir nada.
+ *
+ * Son los dos momentos en que una barra de abajo se rompe, y hay que medir
+ * cada uno donde pasa:
+ *
+ *  · **Abajo del todo (§7f).** Una barra `fixed` no empuja nada: la última
+ *    fila de la página queda debajo de ella y nadie se entera. La de la ficha
+ *    es `sticky`, así que al final del contenido se sienta en su sitio y no
+ *    tapa nada — esto es lo que lo comprueba, y lo que se pondría rojo el día
+ *    que alguien la cambie a `fixed` sin reservar el hueco.
+ *  · **Pegada (§7d).** Mientras está pegada al borde de abajo coincide con la
+ *    burbuja del chat, que es `fixed bottom-6 right-6`. Si se sienta encima
+ *    del botón de comprar, el botón no se puede pulsar — es el mismo fallo que
+ *    tapó «No cuadra» en el panel de Cobros.
+ *
+ * Un diálogo abierto no cuenta: tapa a propósito y se cierra (la tarjeta del
+ * píxel es `role="dialog"`). Lo que se vigila es lo que tapa SIEMPRE.
+ */
+const medirLaBarraDeCompra = (momento) => {
+  const fallas = [];
+  const barra = document.querySelector('[data-barra-de-compra]');
+  if (barra === null) return fallas;
+
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return false;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none') return false;
+    return typeof el.checkVisibility === 'function' ? el.checkVisibility() : true;
+  };
+  const donde = (el) => {
+    const t = (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    return `<${el.tagName.toLowerCase()}>${t ? ` «${t}»` : ''}`;
+  };
+  // Se solapan de verdad: dos rectángulos que se rozan por un píxel no
+  // esconden nada, y perseguir eso daría rojos que nadie puede arreglar.
+  const solape = (a, b) => ({
+    ancho: Math.min(a.right, b.right) - Math.max(a.left, b.left),
+    alto: Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top),
+  });
+  const DIANAS = "button, a[href], [role='button'], summary, input, select, textarea";
+
+  if (momento === 'abajo') {
+    const caja = barra.getBoundingClientRect();
+    for (const el of document.querySelectorAll(DIANAS)) {
+      if (barra.contains(el) || !visible(el)) continue;
+      const s = solape(el.getBoundingClientRect(), caja);
+      if (s.ancho > 1 && s.alto > 1) {
+        fallas.push({
+          regla: 'la barra de comprar no tapa el contenido',
+          detalle: `con la página abajo del todo, la barra cubre ${Math.round(s.ancho)}×${Math.round(
+            s.alto,
+          )}px de ${donde(el)}`,
+        });
+      }
+    }
+    return fallas;
+  }
+
+  const flotantes = [...document.body.querySelectorAll('*')].filter((el) => {
+    if (barra.contains(el) || el.contains(barra)) return false;
+    if (getComputedStyle(el).position !== 'fixed') return false;
+    if (el.closest('[role="dialog"]') !== null) return false;
+    return visible(el);
+  });
+  for (const capa of flotantes) {
+    const c = capa.getBoundingClientRect();
+    for (const el of barra.querySelectorAll(DIANAS)) {
+      if (!visible(el)) continue;
+      const s = solape(el.getBoundingClientRect(), c);
+      if (s.ancho > 1 && s.alto > 1) {
+        fallas.push({
+          regla: 'nada se sienta encima de la barra de comprar',
+          detalle: `con la barra pegada, ${donde(capa)} cubre ${Math.round(s.ancho)}×${Math.round(
+            s.alto,
+          )}px de ${donde(el)}`,
+        });
+      }
+    }
+  }
+  return fallas;
 };
 
 // ---------------------------------------------------------------------------
@@ -357,6 +484,79 @@ const navegador = await abrirNavegador();
   console.log(`✓ la regla del contraste caza sus ${MUESTRAS.length} muestras`);
 }
 
+// ---------------------------------------------------------------------------
+// Y la de la barra de comprar también se prueba a sí misma
+// ---------------------------------------------------------------------------
+// `docs/design-system.md` lo pide con todas las letras: cada regla lleva su par
+// de muestras, una que tiene que suspender y otra que tiene que aprobar. Y se
+// corren POR EL MISMO CAMINO por el que se mide la web —con el scroll puesto
+// donde toca—, porque medir en otro estado es la trampa §14: una medida hecha
+// con la página arriba del todo da por buena justo la barra que tapa el final.
+{
+  const barra = (posicion, extra = '') =>
+    `<div data-barra-de-compra style="position:${posicion};left:0;right:0;bottom:0;height:60px;background:#F2EFE5;display:flex;align-items:center;justify-content:flex-end;${extra}">
+       <button style="height:44px;width:200px">Agregar al carrito</button>
+     </div>`;
+  const burbuja = `<div style="position:fixed;right:24px;bottom:24px;width:56px;height:56px;background:#EE924A">
+                     <button style="width:56px;height:56px">Chat</button>
+                   </div>`;
+  const relleno = `<div style="height:1500px"></div>`;
+  const ultimoEnlace = `<a href="#x" style="display:block;height:40px">El último enlace</a>`;
+
+  const MUESTRAS = [
+    {
+      nombre: 'una barra fija sin hueco tapa la última fila',
+      momento: 'abajo',
+      debe: 'suspender',
+      html: `${relleno}${ultimoEnlace}${barra('fixed')}`,
+    },
+    {
+      nombre: 'una barra pegada se sienta al final y no tapa nada',
+      momento: 'abajo',
+      debe: 'aprobar',
+      html: `${relleno}${ultimoEnlace}${barra('sticky')}`,
+    },
+    {
+      nombre: 'la burbuja del chat encima del botón de comprar',
+      momento: 'pegada',
+      debe: 'suspender',
+      html: `${relleno}${barra('sticky', 'padding-right:16px')}${burbuja}`,
+    },
+    {
+      nombre: 'la burbuja al lado, con su hueco reservado',
+      momento: 'pegada',
+      debe: 'aprobar',
+      html: `${relleno}${barra('sticky', 'padding-right:88px')}${burbuja}`,
+    },
+  ];
+
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 600 } });
+  const p = await ctx.newPage();
+  const rotas = [];
+  for (const m of MUESTRAS) {
+    await p.setContent(`<!doctype html><html lang="es"><body style="margin:0">${m.html}</body></html>`);
+    await p.evaluate(
+      (abajo) => window.scrollTo(0, abajo ? document.documentElement.scrollHeight : 0),
+      m.momento === 'abajo',
+    );
+    await p.waitForTimeout(80);
+    const suspende = (await p.evaluate(medirLaBarraDeCompra, m.momento)).length > 0;
+    if (suspende !== (m.debe === 'suspender')) {
+      rotas.push(`  ${m.nombre}: tenía que ${m.debe} y ${suspende ? 'suspendió' : 'aprobó'}`);
+    }
+  }
+  await ctx.close();
+  if (rotas.length > 0) {
+    console.error('\nLa regla de la barra de comprar dejó de señalar su propia muestra:');
+    for (const r of rotas) console.error(r);
+    console.error('\nNo se midió la web: un control que no caza su propio caso no dice nada de lo demás.');
+    await navegador.close();
+    servidor.close();
+    process.exit(1);
+  }
+  console.log(`✓ la regla de la barra de comprar caza sus ${MUESTRAS.length} muestras`);
+}
+
 let totalFallos = 0;
 const delSeptimo = [];
 
@@ -394,6 +594,19 @@ for (const [nombreVista, tamano] of VISTAS) {
     // rojos que un revisor descarta con razón, y una regla así deja de
     // leerse (`docs/TRAMPAS.md` §14).
     for (const f of await p.evaluate(medir, { tactilMinimo: 24, exencionPorSeparacion: true })) {
+      delSeptimo.push({ vista: nombreVista, pagina, ...f });
+    }
+
+    // La barra de comprar, en los dos momentos en que puede fallar. Seguimos
+    // abajo del todo: ahí es donde se vería que tapa la última fila.
+    for (const f of await p.evaluate(medirLaBarraDeCompra, 'abajo')) {
+      delSeptimo.push({ vista: nombreVista, pagina, ...f });
+    }
+    // Y arriba del todo, que es donde seguro está pegada al borde de abajo:
+    // ahí es donde coincide con la burbuja del chat.
+    await p.evaluate(() => window.scrollTo(0, 0));
+    await p.waitForTimeout(150);
+    for (const f of await p.evaluate(medirLaBarraDeCompra, 'pegada')) {
       delSeptimo.push({ vista: nombreVista, pagina, ...f });
     }
   }
