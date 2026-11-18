@@ -7,6 +7,7 @@ import { PREFIJO, imagen } from "./imagenes";
 import { urlDelSitio } from "./sitio";
 import { quiereIndexarse, redireccionCanonica, seIndexa } from "./visibilidad";
 import { avisoDeYappy } from "./pago";
+import { iniciarPagoYappy } from "./iniciar-pago";
 
 /**
  * `babycaleb-web`: la misma web, servida desde Cloudflare.
@@ -92,6 +93,14 @@ export default {
      * No pasa por `conCabeceras`: lo que contesta no es una página, es un
      * código de estado que le dice a Yappy si reintentar.
      */
+    /**
+     * Arrancar el pago desde el carrito. Crea un pedido, así que lleva límite
+     * por IP: sin él, un guion aparta la bodega entera sin pagar nada.
+     */
+    if (url.pathname === "/api/pago/yappy/iniciar") {
+      return await iniciarPagoYappy(peticion, env.SISTEMA, env.LIMITE_PAGO);
+    }
+
     if (url.pathname === "/api/pago/yappy") {
       return await avisoDeYappy(peticion, env.SISTEMA);
     }

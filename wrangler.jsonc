@@ -34,7 +34,12 @@
   // así que una petición bloqueada no llega a costar nada en el proveedor del
   // modelo — que es el punto.
   "ratelimits": [
-    { "name": "LIMITE_CHAT", "namespace_id": "2001", "simple": { "limit": 15, "period": 60 } }
+    { "name": "LIMITE_CHAT", "namespace_id": "2001", "simple": { "limit": 15, "period": 60 } },
+
+    // El checkout. Más estrecho que el chat porque protege otra cosa: cada
+    // pedido APARTA cajas de la bodega. Seis por minuto deja sitio de sobra a
+    // una clienta que se equivoca y reintenta, y ninguno a un guion.
+    { "name": "LIMITE_PAGO", "namespace_id": "2002", "simple": { "limit": 6, "period": 60 } }
   ],
 
   "assets": {

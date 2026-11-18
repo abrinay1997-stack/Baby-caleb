@@ -71,6 +71,19 @@ export interface Env {
    */
   readonly LIMITE_CHAT?: { limit(opciones: { key: string }): Promise<{ success: boolean }> };
 
+  /**
+   * El límite del checkout, por IP.
+   *
+   * Va aparte del chat porque protege de otra cosa: el chat cuesta dinero en
+   * el proveedor del modelo, y esto APARTA INVENTARIO. Un guion que cree mil
+   * pedidos deja la bodega reservada y la tienda diciendo «agotado» a las
+   * clientas de verdad, sin haber pagado un centavo.
+   *
+   * Más estrecho que el del chat a propósito: nadie paga seis veces en un
+   * minuto, pero sí escribe seis mensajes.
+   */
+  readonly LIMITE_PAGO?: { limit(opciones: { key: string }): Promise<{ success: boolean }> };
+
   /** El dominio del sitio, para el canónico y Open Graph. */
   readonly SITE_URL?: string;
   /**
