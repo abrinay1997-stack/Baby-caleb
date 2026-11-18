@@ -143,7 +143,8 @@ describe("el hash del aviso", () => {
 
 // ---------------------------------------------------------------------------
 describe("verificar el aviso (lo único que puede marcar un pago)", () => {
-  const pas = () => yappy({ aliasYappy: "60000000" }, espia([]).buscar);
+  // Verificar un aviso no necesita teléfono de nadie: la fábrica va sin extras.
+  const pas = () => yappy({}, espia([]).buscar);
 
   it("un aviso bien firmado pasa, y trae nuestro estado en palabras", async () => {
     const r = await pas().verifyWebhook(CRED, avisoDe("E"));
@@ -451,14 +452,43 @@ describe("las credenciales y lo que no se hace", () => {
   });
 
   it("consultar dice que esa integración es otra, no que no se puede", async () => {
-    const r = await yappy({ aliasYappy: "6" }, espia([]).buscar).consultar(CRED, ORDEN);
+    const r = await yappy({}, espia([]).buscar).consultar(CRED, ORDEN);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.mensaje).toMatch(/API Comercial/i);
   });
 
   it("el reembolso dice dónde se hace", async () => {
-    const r = await yappy({ aliasYappy: "6" }, espia([]).buscar).refundPayment(CRED, "TX-1", 1250);
+    const r = await yappy({}, espia([]).buscar).refundPayment(CRED, "TX-1", 1250);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.mensaje).toMatch(/Yappy Comercial/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("el teléfono se pide donde se usa", () => {
+  /**
+   * Sin alias no se crea una orden, y el mensaje dice QUÉ falta.
+   *
+   * Antes la fábrica lo exigía siempre, así que la ruta del aviso —que no
+   * necesita el teléfono de nadie— tenía que inventarse un `{ aliasYappy: "" }`
+   * para contentar al tipo. Un valor falso puesto para eso es exactamente como
+   * se cuela un dato vacío donde después hace falta uno de verdad: Yappy
+   * habría creado la orden y la solicitud no habría llegado a ningún teléfono.
+   */
+  it("crear una orden sin teléfono falla, y no se gasta una llamada", async () => {
+    const e = espia([TOKEN_OK, ORDEN_OK]);
+    const r = await yappy({}, e.buscar).createPayment(CRED, {
+      ordenId: ORDEN,
+      montoCents: 1250,
+      urlAviso: "u",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.mensaje).toMatch(/teléfono/i);
+    expect(e.llamadas.length).toBe(0);
+  });
+
+  it("verificar un aviso NO necesita teléfono", async () => {
+    const r = await yappy().verifyWebhook(CRED, avisoDe("E"));
+    expect(r.ok).toBe(true);
   });
 });

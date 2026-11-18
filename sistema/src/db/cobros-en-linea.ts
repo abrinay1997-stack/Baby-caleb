@@ -152,7 +152,16 @@ export async function iniciarCobro<C, A, E extends string>(
 
   const pagoId = ulid(ctx.ahora);
   /**
-   * El `intento_ref` lleva el número del pedido DELANTE.
+   * El `intento_ref`, con el formato QUE ESA PASARELA ACEPTE.
+   *
+   * Lo decide el adaptador (`referenciaDeOrden`) porque las reglas son suyas:
+   * Yappy solo acepta 1 a 15 caracteres alfanuméricos, y la referencia larga
+   * de abajo —treinta y cinco, con guiones— la rechaza con un error que no
+   * dice que el problema sea el largo. Generarla aquí para todas obligaba a
+   * esta función a conocer los límites de cada pasarela; lo encontró la prueba
+   * de punta a punta del aviso de Yappy.
+   *
+   * La de por defecto lleva el número del pedido DELANTE.
    *
    * Es lo que la dueña ve en el panel de Tilopay, y «BC-104-01K9…» le dice de
    * qué pedido es sin abrir nada. Un ULID a secas la obligaría a buscarlo aquí
@@ -160,7 +169,7 @@ export async function iniciarCobro<C, A, E extends string>(
    * —`pagos.intento_ref` tiene UNIQUE— así que un reintento del mismo pedido
    * no choca con el anterior.
    */
-  const intentoRef = `${p.numero}-${pagoId}`;
+  const intentoRef = pasarela.referenciaDeOrden?.(p.numero) ?? `${p.numero}-${pagoId}`;
 
   await ctx.db
     .prepare(

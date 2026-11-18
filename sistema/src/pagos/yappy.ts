@@ -249,7 +249,15 @@ async function leerJson(r: Response): Promise<Record<string, unknown> | null> {
   }
 }
 
-/** Lo que hace falta además de la orden, y que solo sabe quien cobra. */
+/**
+ * Lo que hace falta además de la orden, y que solo sabe quien cobra.
+ *
+ * Va OPCIONAL en la fábrica a propósito. Verificar un aviso no necesita el
+ * teléfono de nadie, y exigirlo para eso obligaba a inventarse un
+ * `{ aliasYappy: "" }` en la ruta del aviso — un valor falso puesto para
+ * contentar a un tipo, que es justo como se cuela un dato vacío donde después
+ * hace falta uno de verdad. Así que se pide donde se usa: al crear la orden.
+ */
 export interface ExtrasDeYappy {
   /**
    * El teléfono panameño de la clienta, sin prefijo.
@@ -258,11 +266,11 @@ export interface ExtrasDeYappy {
    * número dado de alta en su programa de pruebas: con cualquier otro, la orden
    * se crea y el pago nunca llega a ningún teléfono.
    */
-  readonly aliasYappy: string;
+  readonly aliasYappy?: string | undefined;
 }
 
 export function yappy(
-  extras: ExtrasDeYappy,
+  extras: ExtrasDeYappy = {},
   buscar: Buscador = fetch,
 ): PaymentProvider<CredencialesYappy, AvisoDeYappy, EstadoYappy> {
   /**
@@ -319,6 +327,12 @@ export function yappy(
         return fallo(
           "entrada_invalida",
           `Yappy solo acepta un número de orden alfanumérico de 1 a ${LARGO_MAXIMO_ORDEN} caracteres, y «${orden.ordenId}» no lo es.`,
+        );
+      }
+      if (extras.aliasYappy === undefined || extras.aliasYappy.trim() === "") {
+        return fallo(
+          "entrada_invalida",
+          "Yappy necesita el teléfono de la clienta (sin prefijo) para mandarle la solicitud de pago.",
         );
       }
       if (orden.montoCents < 1) {
@@ -451,5 +465,8 @@ export function yappy(
         "El Botón de Pago de Yappy no devuelve dinero por API: el reembolso se hace desde Yappy Comercial y después se anota aquí.",
       );
     },
+
+    /** Yappy sí tiene reglas propias: 1 a 15 caracteres alfanuméricos. */
+    referenciaDeOrden: referenciaParaYappy,
   };
 }
